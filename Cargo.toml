@@ -1,0 +1,29 @@
+[package]
+name = "semioscan"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alloy-chains.workspace = true
+alloy-contract.workspace = true
+alloy-dyn-abi.workspace = true
+alloy-primitives = { version = "1.0.0", default-features = false, features = [
+    "std",
+    "rlp",
+] }
+alloy-provider = { version = "0.14.0", default-features = false, features = [
+    "anvil-node",
+    "reqwest",
+] }
+alloy-rpc-types.workspace = true
+alloy-sol-types.workspace = true
+alloy-sol-type-parser.workspace = true
+axum.workspace = true
+anyhow.workspace = true
+common.workspace = true
+dotenvy.workspace = true
+odos-sdk.workspace = true
+serde.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
