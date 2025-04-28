@@ -6,7 +6,10 @@ use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info};
 
-use crate::price::{PriceCalculator, TokenPriceResult};
+use crate::{
+    RouterType,
+    price::{PriceCalculator, TokenPriceResult},
+};
 
 type Responder = oneshot::Sender<Result<TokenPriceResult, String>>;
 
@@ -31,7 +34,7 @@ impl PriceJob {
                         let result = job
                             .handle_calculate_price(
                                 cmd.chain_id,
-                                cmd.liquidator_address,
+                                cmd.router_type,
                                 cmd.token_address,
                                 cmd.from_block,
                                 cmd.to_block,
@@ -54,7 +57,7 @@ impl PriceJob {
     async fn get_or_create_calculator(
         &mut self,
         chain_id: u64,
-        liquidator_address: Address,
+        router_type: RouterType,
     ) -> anyhow::Result<&mut PriceCalculator> {
         if let std::collections::hash_map::Entry::Vacant(e) = self.calculators.entry(chain_id) {
             // Create a new calculator for this chain
@@ -71,8 +74,12 @@ impl PriceJob {
             let usdc_address = chain.usdc_address();
 
             // Create and insert calculator
-            let calculator =
-                PriceCalculator::new(router_address, usdc_address, liquidator_address, provider);
+            let calculator = PriceCalculator::new(
+                router_address,
+                usdc_address,
+                router_type.address(),
+                provider,
+            );
             e.insert(calculator);
         }
 
@@ -83,14 +90,12 @@ impl PriceJob {
     async fn handle_calculate_price(
         &mut self,
         chain_id: u64,
-        liquidator_address: Address,
+        router_type: RouterType,
         token_address: Address,
         from_block: u64,
         to_block: u64,
     ) -> anyhow::Result<TokenPriceResult> {
-        let calculator = self
-            .get_or_create_calculator(chain_id, liquidator_address)
-            .await?;
+        let calculator = self.get_or_create_calculator(chain_id, router_type).await?;
 
         calculator
             .calculate_price_between_blocks(token_address, from_block, to_block)
@@ -109,7 +114,7 @@ pub enum Command {
 
 pub struct CalculatePriceCommand {
     pub chain_id: u64,
-    pub liquidator_address: Address,
+    pub router_type: RouterType,
     pub token_address: Address,
     pub from_block: u64,
     pub to_block: u64,

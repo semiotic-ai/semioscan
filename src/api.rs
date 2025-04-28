@@ -9,9 +9,25 @@ use serde::Deserialize;
 
 const V2_LIQUIDATOR_ADDRESS: &str = "0x498020622CA0d5De103b7E78E3eFe5819D0d28AB";
 // TODO: support pre-v2 routers
-// const V1_LIQUIDATOR_ADDRESS: &str = "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6";
+const LO_LIQUIDATOR_ADDRESS: &str = "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6";
 
-/// Query parameters for the `/api/v1/price` endpoint.
+/// Router type enum
+#[derive(Debug, Clone, Copy)]
+pub enum RouterType {
+    V2,
+    LimitOrder,
+}
+
+impl RouterType {
+    pub fn address(&self) -> Address {
+        match self {
+            Self::V2 => V2_LIQUIDATOR_ADDRESS.parse().unwrap(),
+            Self::LimitOrder => LO_LIQUIDATOR_ADDRESS.parse().unwrap(),
+        }
+    }
+}
+
+/// Query parameters for the price endpoints.
 #[derive(Debug, Deserialize)]
 struct PriceQuery {
     chain_id: u64,
@@ -20,27 +36,24 @@ struct PriceQuery {
     to_block: u64,
 }
 
-/// Handler for the `/api/v1/price` endpoint.
-async fn get_price(
+/// Handler for the v2 price endpoint.
+async fn get_v2_price(
     State(price_job): State<PriceJobHandle>,
     axum::extract::Query(params): axum::extract::Query<PriceQuery>,
 ) -> Result<Json<String>, String> {
-    info!(params = ?params, "Received price request");
+    info!(router_type = "v2", params = ?params, "Received price request");
 
     let token_address = params.token_address;
-
     let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
-
-    let liquidator_address = V2_LIQUIDATOR_ADDRESS.parse().unwrap();
 
     price_job
         .tx
         .send(Command::CalculatePrice(CalculatePriceCommand {
-            chain_id: params.chain_id,
-            liquidator_address,
             token_address,
             from_block: params.from_block,
             to_block: params.to_block,
+            chain_id: params.chain_id,
+            router_type: RouterType::V2,
             responder: responder_tx,
         }))
         .await
@@ -56,10 +69,25 @@ async fn get_price(
     }
 }
 
+/// Handler for the limit order price endpoint.
+async fn get_lo_price(
+    State(_price_job): State<PriceJobHandle>,
+    axum::extract::Query(params): axum::extract::Query<PriceQuery>,
+) -> Result<Json<String>, String> {
+    info!(router_type = "limit_order", params = ?params, "Received price request");
+
+    // For now, return an informative error since limit order is not implemented
+    Err("Limit order price calculation is not yet implemented".to_string())
+}
+
 /// Starts the API server.
 pub async fn serve_api(listener: TcpListener, price_job: PriceJobHandle) -> anyhow::Result<()> {
     let app = Router::new()
-        .route("/api/v1/price", get(get_price))
+        // Original path for backward compatibility
+        .route("/api/v1/price", get(get_v2_price))
+        // New explicit paths for different router types
+        .route("/api/v1/price/v2", get(get_v2_price))
+        .route("/api/v1/price/lo", get(get_lo_price))
         .with_state(price_job);
 
     let addr = listener.local_addr()?;
