@@ -58,7 +58,7 @@ impl PriceJob {
     ) -> anyhow::Result<&mut PriceCalculator> {
         if let std::collections::hash_map::Entry::Vacant(e) = self.calculators.entry(chain_id) {
             // Create a new calculator for this chain
-            info!("Creating new PriceCalculator for chain_id: {chain_id}");
+            info!(chain_id = chain_id, "Creating new PriceCalculator");
 
             let chain = NamedChain::try_from(chain_id)
                 .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;

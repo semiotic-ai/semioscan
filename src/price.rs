@@ -90,7 +90,10 @@ impl PriceCalculator {
             return Ok(None);
         }
 
-        info!("Processing swap event: {:?}", event);
+        info!(
+            event = ?event,
+            "Processing swap event"
+        );
 
         let token_in_indices: Vec<usize> = event
             .tokensIn
@@ -132,12 +135,18 @@ impl PriceCalculator {
         end_block: u64,
     ) -> anyhow::Result<TokenPriceResult> {
         info!(
-            "Starting price calculation for token: {:?}, from block: {}, to block: {}",
-            token_address, start_block, end_block
+            token_address = ?token_address,
+            start_block = start_block,
+            end_block = end_block,
+            "Starting price calculation"
         );
 
         let token_decimals = self.get_token_decimals(token_address).await?;
-        debug!("Token decimals for {:?}: {}", token_address, token_decimals);
+        debug!(
+            token_address = ?token_address,
+            token_decimals = token_decimals,
+            "Token decimals"
+        );
 
         let mut price_data = TokenPriceResult::new(token_address);
 
@@ -151,7 +160,11 @@ impl PriceCalculator {
         while current_block <= end_block {
             let to_block = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, end_block);
 
-            info!("Fetching logs for blocks {} to {}", current_block, to_block);
+            info!(
+                current_block = current_block,
+                to_block = to_block,
+                "Fetching logs for block range"
+            );
 
             let filter = Filter::new()
                 .from_block(current_block)
@@ -159,29 +172,41 @@ impl PriceCalculator {
                 .event_signature(event_topic)
                 .address(self.router_address);
 
-            debug!("Filter: {:?}", filter);
+            debug!(
+                filter = ?filter,
+                "Filter for block range"
+            );
 
             match self.provider.get_logs(&filter).await {
                 Ok(logs) => {
                     info!(
-                        "Fetched {} logs for blocks {} to {}",
-                        logs.len(),
-                        current_block,
-                        to_block
+                        logs_count = logs.len(),
+                        current_block = current_block,
+                        to_block = to_block,
+                        "Fetched logs for block range"
                     );
 
                     for log in logs {
-                        debug!("Log: {:?}", log);
+                        debug!(
+                            address = ?log.address(),
+                            "Processing log"
+                        );
 
                         // Only process logs from the target contract
                         if log.address() != self.router_address {
-                            debug!("Skipping log from address: {:?}", log.address());
+                            debug!(
+                                address = ?log.address(),
+                                "Skipping log from address"
+                            );
                             continue;
                         }
 
                         // Check if this is a SwapMulti event
                         if log.topics().is_empty() || log.topics()[0] != event_topic {
-                            debug!("Skipping log with unmatched event topic");
+                            debug!(
+                                event_topic = ?event_topic,
+                                "Skipping log with unmatched event topic"
+                            );
                             continue;
                         }
 
@@ -195,32 +220,36 @@ impl PriceCalculator {
                                 {
                                     Ok(Some((token_amount, usdc_amount))) => {
                                         debug!(
-                                            "Processed swap: token_amount = {}, usdc_amount = {}",
-                                            token_amount, usdc_amount
+                                            token_address = ?token_address,
+                                            token_amount = token_amount,
+                                            usdc_amount = usdc_amount,
+                                            "Processed swap"
                                         );
                                         price_data.add_swap(token_amount, usdc_amount);
                                     }
                                     Ok(None) => {
                                         debug!(
-                                            "Swap event did not match token address {:?}",
-                                            token_address
+                                            token_address = ?token_address,
+                                            "Swap event did not match token address"
                                         );
                                     }
                                     Err(e) => {
-                                        error!("Error processing swap event: {:?}", e);
+                                        error!(error = ?e, "Error processing swap event");
                                     }
                                 }
                             }
                             Err(e) => {
-                                error!("Failed to decode SwapMulti log: {:?}", e);
+                                error!(error = ?e, "Failed to decode SwapMulti log");
                             }
                         }
                     }
                 }
                 Err(e) => {
                     error!(
-                        "Error fetching logs for blocks {} to {}: {:?}",
-                        current_block, to_block, e
+                        error = ?e,
+                        current_block = current_block,
+                        to_block = to_block,
+                        "Error fetching logs for block range"
                     );
                 }
             }
@@ -229,11 +258,11 @@ impl PriceCalculator {
         }
 
         info!(
-            "Finished price calculation for token: {:?}. Total token amount: {}, total USDC amount: {}, transaction count: {}",
-            token_address,
-            price_data.total_token_amount,
-            price_data.total_usdc_amount,
-            price_data.transaction_count
+            token_address = ?token_address,
+            total_token_amount = price_data.total_token_amount,
+            total_usdc_amount = price_data.total_usdc_amount,
+            transaction_count = price_data.transaction_count,
+            "Finished price calculation"
         );
 
         Ok(price_data)
