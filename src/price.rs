@@ -1,8 +1,7 @@
 use alloy_primitives::{Address, B256, U256, keccak256};
-use alloy_provider::Provider;
+use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
-use common::LikwidProvider;
 use odos_sdk::{Erc20, OdosV2Router::SwapMulti};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -40,18 +39,25 @@ impl TokenPriceResult {
 }
 
 pub struct PriceCalculator {
-    provider: LikwidProvider,
+    provider: RootProvider,
     router_address: Address,
     usdc_address: Address,
+    liquidator_address: Address,
     token_decimals_cache: HashMap<Address, u8>,
 }
 
 impl PriceCalculator {
-    pub fn new(router_address: Address, usdc_address: Address, provider: LikwidProvider) -> Self {
+    pub fn new(
+        router_address: Address,
+        usdc_address: Address,
+        liquidator_address: Address,
+        provider: RootProvider,
+    ) -> Self {
         Self {
             provider,
             router_address,
             usdc_address,
+            liquidator_address,
             token_decimals_cache: HashMap::new(),
         }
     }
@@ -79,6 +85,13 @@ impl PriceCalculator {
         token_address: Address,
         token_decimals: u8,
     ) -> anyhow::Result<Option<(f64, f64)>> {
+        if event.sender != self.liquidator_address {
+            debug!("Skipping swap not initiated by our liquidator address");
+            return Ok(None);
+        }
+
+        info!("Processing swap event: {:?}", event);
+
         let token_in_indices: Vec<usize> = event
             .tokensIn
             .iter()

@@ -7,9 +7,14 @@ use crate::{CalculatePriceCommand, Command, job::PriceJobHandle};
 use axum::{Json, Router, extract::State, routing::get};
 use serde::Deserialize;
 
+const V2_LIQUIDATOR_ADDRESS: &str = "0x498020622CA0d5De103b7E78E3eFe5819D0d28AB";
+// TODO: support pre-v2 routers
+// const V1_LIQUIDATOR_ADDRESS: &str = "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6";
+
 /// Query parameters for the `/api/v1/price` endpoint.
 #[derive(Debug, Deserialize)]
 struct PriceQuery {
+    chain_id: u64,
     token_address: Address,
     from_block: u64,
     to_block: u64,
@@ -26,9 +31,13 @@ async fn get_price(
 
     let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
 
+    let liquidator_address = V2_LIQUIDATOR_ADDRESS.parse().unwrap();
+
     price_job
         .tx
         .send(Command::CalculatePrice(CalculatePriceCommand {
+            chain_id: params.chain_id,
+            liquidator_address,
             token_address,
             from_block: params.from_block,
             to_block: params.to_block,
