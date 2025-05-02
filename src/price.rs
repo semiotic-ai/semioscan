@@ -8,7 +8,10 @@ use odos_sdk::{
 };
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::Mutex;
 use tracing::{debug, error, info};
+
+use crate::PriceCache;
 
 // Price calculation result
 #[derive(Default, Debug, Clone, Serialize)]
@@ -20,7 +23,7 @@ pub struct TokenPriceResult {
 }
 
 impl TokenPriceResult {
-    fn new(token_address: Address) -> Self {
+    pub fn new(token_address: Address) -> Self {
         Self {
             token_address,
             ..Default::default()
@@ -33,11 +36,19 @@ impl TokenPriceResult {
         self.transaction_count += 1;
     }
 
+    /// Get the average price of the token
     pub fn get_average_price(&self) -> f64 {
         if self.total_token_amount == 0.0 {
             return 0.0;
         }
         self.total_usdc_amount / self.total_token_amount
+    }
+
+    /// Merge two price results together
+    pub fn merge(&mut self, other: &Self) {
+        self.total_token_amount += other.total_token_amount;
+        self.total_usdc_amount += other.total_usdc_amount;
+        self.transaction_count += other.transaction_count;
     }
 }
 
@@ -47,6 +58,7 @@ pub struct PriceCalculator {
     usdc_address: Address,
     liquidator_address: Address,
     token_decimals_cache: HashMap<Address, u8>,
+    price_cache: Mutex<PriceCache>,
 }
 
 impl PriceCalculator {
@@ -62,6 +74,7 @@ impl PriceCalculator {
             usdc_address,
             liquidator_address,
             token_decimals_cache: HashMap::new(),
+            price_cache: Default::default(),
         }
     }
 
@@ -95,7 +108,7 @@ impl PriceCalculator {
 
         info!(
             event = ?event,
-            "Processing swap event"
+            "Processing swap"
         );
 
         let token_in_indices: Vec<usize> = event
@@ -178,151 +191,159 @@ impl PriceCalculator {
             "Starting price calculation"
         );
 
+        // Check cache and calculate gaps that need to be filled
+        let (cached_result, gaps) = {
+            let cache = self.price_cache.lock().unwrap();
+            cache.calculate_gaps(token_address, start_block, end_block)
+        };
+
+        // If there are no gaps, we can return the cached result
+        if let Some(result) = cached_result.clone() {
+            if gaps.is_empty() {
+                info!(
+                    token_address = ?token_address,
+                    "Using complete cached result for block range"
+                );
+                return Ok(result);
+            }
+        }
+
+        // Initialize with any cached data or create new result
+        let mut price_data = cached_result.unwrap_or_else(|| TokenPriceResult::new(token_address));
         let token_decimals = self.get_token_decimals(token_address).await?;
-        debug!(
-            token_address = ?token_address,
-            token_decimals = token_decimals,
-            "Token decimals"
-        );
 
-        let mut price_data = TokenPriceResult::new(token_address);
-
-        const MAX_BLOCK_RANGE: u64 = 2_000;
-        let mut current_block = start_block;
-
-        // Event signatures
-        let multi_swap_signature =
-            "SwapMulti(address,uint256[],address[],uint256[],address[],uint32)";
-        let multi_swap_topic = B256::from_slice(&*keccak256(multi_swap_signature.as_bytes()));
-
-        let single_swap_signature = "Swap(address,uint256,address,uint256,address,int256,uint32)";
-        let single_swap_topic = B256::from_slice(&*keccak256(single_swap_signature.as_bytes()));
-
-        while current_block <= end_block {
-            let to_block = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, end_block);
-
+        // Process each gap
+        for (gap_start, gap_end) in gaps {
             info!(
-                current_block = current_block,
-                to_block = to_block,
-                "Fetching logs for block range"
+                token_address = ?token_address,
+                gap_start = gap_start,
+                gap_end = gap_end,
+                "Processing uncached block range"
             );
 
-            // Create a filter that includes both event signatures
-            let filter = Filter::new()
-                .from_block(current_block)
-                .to_block(to_block)
-                .address(self.router_address);
+            // Process the gap using existing logic
+            let mut current_block = gap_start;
+            const MAX_BLOCK_RANGE: u64 = 2_000;
 
-            debug!(
-                filter = ?filter,
-                "Filter for all swap events"
-            );
+            // Event signatures
+            let multi_swap_signature =
+                "SwapMulti(address,uint256[],address[],uint256[],address[],uint32)";
+            let multi_swap_topic = B256::from_slice(&*keccak256(multi_swap_signature.as_bytes()));
 
-            match self.provider.get_logs(&filter).await {
-                Ok(logs) => {
-                    info!(
-                        logs_count = logs.len(),
-                        current_block = current_block,
-                        to_block = to_block,
-                        "Fetched logs for block range"
-                    );
+            let single_swap_signature =
+                "Swap(address,uint256,address,uint256,address,int256,uint32)";
+            let single_swap_topic = B256::from_slice(&*keccak256(single_swap_signature.as_bytes()));
 
-                    for log in logs {
-                        // Process based on the event signature in the first topic
-                        if !log.topics().is_empty() {
-                            let topic = log.topics()[0];
+            let mut gap_result = TokenPriceResult::new(token_address);
 
-                            if topic == multi_swap_topic {
-                                // Process as SwapMulti event
-                                match SwapMulti::decode_log(&log.into()) {
-                                    Ok(event) => {
-                                        debug!(event = ?event, "Decoded SwapMulti event");
+            while current_block <= gap_end {
+                let to_block = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, gap_end);
 
-                                        match self
-                                            .process_swap_event(
-                                                &event,
-                                                token_address,
-                                                token_decimals,
-                                            )
-                                            .await
-                                        {
-                                            Ok(Some((token_amount, usdc_amount))) => {
-                                                debug!(
-                                                    token_address = ?token_address,
-                                                    token_amount = token_amount,
-                                                    usdc_amount = usdc_amount,
-                                                    "Processed SwapMulti"
-                                                );
-                                                price_data.add_swap(token_amount, usdc_amount);
-                                            }
-                                            Ok(None) => {
-                                                debug!(
-                                                    token_address = ?token_address,
-                                                    "SwapMulti event did not match token address"
-                                                );
-                                            }
-                                            Err(e) => {
-                                                error!(error = ?e, "Error processing SwapMulti event");
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        error!(error = ?e, "Failed to decode SwapMulti log");
-                                    }
-                                }
-                            } else if topic == single_swap_topic {
-                                // Process as Swap event
-                                match Swap::decode_log(&log.into()) {
-                                    Ok(event) => {
-                                        debug!(event = ?event, "Decoded Swap event");
+                // Create a filter for all swap events
+                let filter = Filter::new()
+                    .from_block(current_block)
+                    .to_block(to_block)
+                    .address(self.router_address);
 
-                                        match self
-                                            .process_single_swap_event(
-                                                &event,
-                                                token_address,
-                                                token_decimals,
-                                            )
-                                            .await
-                                        {
-                                            Ok(Some((token_amount, usdc_amount))) => {
-                                                debug!(
-                                                    token_address = ?token_address,
-                                                    token_amount = token_amount,
-                                                    usdc_amount = usdc_amount,
-                                                    "Processed Swap"
-                                                );
-                                                price_data.add_swap(token_amount, usdc_amount);
-                                            }
-                                            Ok(None) => {
-                                                debug!(
-                                                    token_address = ?token_address,
-                                                    "Swap event did not match token address"
-                                                );
-                                            }
-                                            Err(e) => {
-                                                error!(error = ?e, "Error processing Swap event");
+                match self.provider.get_logs(&filter).await {
+                    Ok(logs) => {
+                        info!(
+                            logs_count = logs.len(),
+                            current_block = current_block,
+                            to_block = to_block,
+                            "Fetched logs for block range"
+                        );
+
+                        for log in logs {
+                            // Process based on the event signature in the first topic
+                            if !log.topics().is_empty() {
+                                let topic = log.topics()[0];
+
+                                if topic == multi_swap_topic {
+                                    // Process SwapMulti event
+                                    match SwapMulti::decode_log(&log.into()) {
+                                        Ok(event) => {
+                                            match self
+                                                .process_swap_event(
+                                                    &event,
+                                                    token_address,
+                                                    token_decimals,
+                                                )
+                                                .await
+                                            {
+                                                Ok(Some((token_amount, usdc_amount))) => {
+                                                    gap_result.add_swap(token_amount, usdc_amount);
+                                                }
+                                                Ok(None) => {
+                                                    // Not relevant for our token
+                                                }
+                                                Err(e) => {
+                                                    error!(error = ?e, "Error processing SwapMulti event");
+                                                }
                                             }
                                         }
+                                        Err(e) => {
+                                            error!(error = ?e, "Failed to decode SwapMulti log");
+                                        }
                                     }
-                                    Err(e) => {
-                                        error!(error = ?e, "Failed to decode Swap log");
+                                } else if topic == single_swap_topic {
+                                    // Process Swap event
+                                    match Swap::decode_log(&log.into()) {
+                                        Ok(event) => {
+                                            match self
+                                                .process_single_swap_event(
+                                                    &event,
+                                                    token_address,
+                                                    token_decimals,
+                                                )
+                                                .await
+                                            {
+                                                Ok(Some((token_amount, usdc_amount))) => {
+                                                    gap_result.add_swap(token_amount, usdc_amount);
+                                                }
+                                                Ok(None) => {
+                                                    // Not relevant for our token
+                                                }
+                                                Err(e) => {
+                                                    error!(error = ?e, "Error processing Swap event");
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            error!(error = ?e, "Failed to decode Swap log");
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    Err(e) => {
+                        error!(
+                            error = ?e,
+                            current_block = current_block,
+                            to_block = to_block,
+                            "Error fetching logs for block range"
+                        );
+                    }
                 }
-                Err(e) => {
-                    error!(
-                        error = ?e,
-                        current_block = current_block,
-                        to_block = to_block,
-                        "Error fetching logs for block range"
-                    );
-                }
+
+                current_block = to_block + 1;
             }
 
-            current_block = to_block + 1;
+            // Cache the gap result
+            {
+                let mut cache = self.price_cache.lock().unwrap();
+                cache.insert(token_address, gap_start, gap_end, gap_result.clone());
+            }
+
+            // Merge the gap result with our main result
+            price_data.merge(&gap_result);
+        }
+
+        // Cache the complete result
+        {
+            let mut cache = self.price_cache.lock().unwrap();
+            cache.insert(token_address, start_block, end_block, price_data.clone());
         }
 
         info!(
