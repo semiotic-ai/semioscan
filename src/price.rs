@@ -2,7 +2,10 @@ use alloy_primitives::{Address, B256, U256, keccak256};
 use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
-use odos_sdk::{Erc20, OdosV2Router::SwapMulti};
+use odos_sdk::{
+    Erc20,
+    OdosV2Router::{Swap, SwapMulti},
+};
 use serde::Serialize;
 use std::collections::HashMap;
 use tracing::{debug, error, info};
@@ -128,6 +131,40 @@ impl PriceCalculator {
         Ok(None)
     }
 
+    // Process the single Swap event
+    async fn process_single_swap_event(
+        &mut self,
+        event: &Swap,
+        token_address: Address,
+        token_decimals: u8,
+    ) -> anyhow::Result<Option<(f64, f64)>> {
+        if event.sender != self.liquidator_address {
+            debug!("Skipping swap not initiated by our liquidator address");
+            return Ok(None);
+        }
+
+        info!(
+            event = ?event,
+            "Processing single swap event"
+        );
+
+        // Check if the input token matches the token we're analyzing
+        if event.inputToken != token_address {
+            return Ok(None);
+        }
+
+        // Check if the output token is USDC
+        if event.outputToken != self.usdc_address {
+            return Ok(None);
+        }
+
+        let stablecoin_decimals = self.get_token_decimals(event.outputToken).await?;
+        let token_amount = self.normalize_amount(event.inputAmount, token_decimals);
+        let usdc_amount = self.normalize_amount(event.amountOut, stablecoin_decimals);
+
+        Ok(Some((token_amount, usdc_amount)))
+    }
+
     pub async fn calculate_price_between_blocks(
         &mut self,
         token_address: Address,
@@ -153,9 +190,13 @@ impl PriceCalculator {
         const MAX_BLOCK_RANGE: u64 = 2_000;
         let mut current_block = start_block;
 
-        // Event signature for SwapMulti
-        let event_signature = "SwapMulti(address,uint256[],address[],uint256[],address[],uint32)";
-        let event_topic = B256::from_slice(&*keccak256(event_signature.as_bytes()));
+        // Event signatures
+        let multi_swap_signature =
+            "SwapMulti(address,uint256[],address[],uint256[],address[],uint32)";
+        let multi_swap_topic = B256::from_slice(&*keccak256(multi_swap_signature.as_bytes()));
+
+        let single_swap_signature = "Swap(address,uint256,address,uint256,address,int256,uint32)";
+        let single_swap_topic = B256::from_slice(&*keccak256(single_swap_signature.as_bytes()));
 
         while current_block <= end_block {
             let to_block = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, end_block);
@@ -166,15 +207,15 @@ impl PriceCalculator {
                 "Fetching logs for block range"
             );
 
+            // Create a filter that includes both event signatures
             let filter = Filter::new()
                 .from_block(current_block)
                 .to_block(to_block)
-                .event_signature(event_topic)
                 .address(self.router_address);
 
             debug!(
                 filter = ?filter,
-                "Filter for block range"
+                "Filter for all swap events"
             );
 
             match self.provider.get_logs(&filter).await {
@@ -187,59 +228,86 @@ impl PriceCalculator {
                     );
 
                     for log in logs {
-                        debug!(
-                            address = ?log.address(),
-                            "Processing log"
-                        );
+                        // Process based on the event signature in the first topic
+                        if !log.topics().is_empty() {
+                            let topic = log.topics()[0];
 
-                        // Only process logs from the target contract
-                        if log.address() != self.router_address {
-                            debug!(
-                                address = ?log.address(),
-                                "Skipping log from address"
-                            );
-                            continue;
-                        }
+                            if topic == multi_swap_topic {
+                                // Process as SwapMulti event
+                                match SwapMulti::decode_log(&log.into()) {
+                                    Ok(event) => {
+                                        debug!(event = ?event, "Decoded SwapMulti event");
 
-                        // Check if this is a SwapMulti event
-                        if log.topics().is_empty() || log.topics()[0] != event_topic {
-                            debug!(
-                                event_topic = ?event_topic,
-                                "Skipping log with unmatched event topic"
-                            );
-                            continue;
-                        }
-
-                        match SwapMulti::decode_log(&log.into()) {
-                            Ok(event) => {
-                                info!(event = ?event, "Decoded SwapMulti event");
-
-                                match self
-                                    .process_swap_event(&event, token_address, token_decimals)
-                                    .await
-                                {
-                                    Ok(Some((token_amount, usdc_amount))) => {
-                                        debug!(
-                                            token_address = ?token_address,
-                                            token_amount = token_amount,
-                                            usdc_amount = usdc_amount,
-                                            "Processed swap"
-                                        );
-                                        price_data.add_swap(token_amount, usdc_amount);
-                                    }
-                                    Ok(None) => {
-                                        debug!(
-                                            token_address = ?token_address,
-                                            "Swap event did not match token address"
-                                        );
+                                        match self
+                                            .process_swap_event(
+                                                &event,
+                                                token_address,
+                                                token_decimals,
+                                            )
+                                            .await
+                                        {
+                                            Ok(Some((token_amount, usdc_amount))) => {
+                                                debug!(
+                                                    token_address = ?token_address,
+                                                    token_amount = token_amount,
+                                                    usdc_amount = usdc_amount,
+                                                    "Processed SwapMulti"
+                                                );
+                                                price_data.add_swap(token_amount, usdc_amount);
+                                            }
+                                            Ok(None) => {
+                                                debug!(
+                                                    token_address = ?token_address,
+                                                    "SwapMulti event did not match token address"
+                                                );
+                                            }
+                                            Err(e) => {
+                                                error!(error = ?e, "Error processing SwapMulti event");
+                                            }
+                                        }
                                     }
                                     Err(e) => {
-                                        error!(error = ?e, "Error processing swap event");
+                                        error!(error = ?e, "Failed to decode SwapMulti log");
                                     }
                                 }
-                            }
-                            Err(e) => {
-                                error!(error = ?e, "Failed to decode SwapMulti log");
+                            } else if topic == single_swap_topic {
+                                // Process as Swap event
+                                match Swap::decode_log(&log.into()) {
+                                    Ok(event) => {
+                                        debug!(event = ?event, "Decoded Swap event");
+
+                                        match self
+                                            .process_single_swap_event(
+                                                &event,
+                                                token_address,
+                                                token_decimals,
+                                            )
+                                            .await
+                                        {
+                                            Ok(Some((token_amount, usdc_amount))) => {
+                                                debug!(
+                                                    token_address = ?token_address,
+                                                    token_amount = token_amount,
+                                                    usdc_amount = usdc_amount,
+                                                    "Processed Swap"
+                                                );
+                                                price_data.add_swap(token_amount, usdc_amount);
+                                            }
+                                            Ok(None) => {
+                                                debug!(
+                                                    token_address = ?token_address,
+                                                    "Swap event did not match token address"
+                                                );
+                                            }
+                                            Err(e) => {
+                                                error!(error = ?e, "Error processing Swap event");
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!(error = ?e, "Failed to decode Swap log");
+                                    }
+                                }
                             }
                         }
                     }
