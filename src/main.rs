@@ -1,10 +1,15 @@
 use std::process::ExitCode;
 
 use semioscan::bootstrap::run;
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() -> ExitCode {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with(fmt::layer().with_target(true).json().with_ansi(true))
+        .init();
+
     if let Err(e) = run().await {
         tracing::error!("Clearing Job error: {e}");
         return ExitCode::from(1);
