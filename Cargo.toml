@@ -7,14 +7,8 @@ edition = "2024"
 alloy-chains.workspace = true
 alloy-contract.workspace = true
 alloy-dyn-abi.workspace = true
-alloy-primitives = { version = "1.0.0", default-features = false, features = [
-    "std",
-    "rlp",
-] }
-alloy-provider = { version = "0.14.0", default-features = false, features = [
-    "anvil-node",
-    "reqwest",
-] }
+alloy-primitives.workspace = true
+alloy-provider.workspace = true
 alloy-rpc-types.workspace = true
 alloy-sol-types.workspace = true
 alloy-sol-type-parser.workspace = true
