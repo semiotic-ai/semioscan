@@ -1,7 +1,7 @@
 use std::process::ExitCode;
 
 use semioscan::bootstrap::run;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
 async fn main() -> ExitCode {

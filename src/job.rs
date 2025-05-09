@@ -1,14 +1,14 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::Address;
-use common::{Usdc, create_read_provider};
+use common::{create_read_provider, Usdc};
 use odos_sdk::OdosChain;
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info};
 
 use crate::{
-    RouterType,
     price::{PriceCalculator, TokenPriceResult},
+    RouterType,
 };
 
 type Responder = oneshot::Sender<Result<TokenPriceResult, String>>;

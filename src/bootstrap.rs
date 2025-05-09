@@ -1,7 +1,7 @@
 use dotenvy::dotenv;
 use tokio::net::TcpListener;
 
-use crate::{PriceJob, serve_api};
+use crate::{serve_api, PriceJob};
 
 /// Main entry point for the application.
 pub async fn run() -> anyhow::Result<()> {

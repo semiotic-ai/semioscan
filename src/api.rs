@@ -2,9 +2,9 @@ use alloy_primitives::Address;
 use tokio::net::TcpListener;
 use tracing::info;
 
-use crate::{CalculatePriceCommand, Command, job::PriceJobHandle};
+use crate::{job::PriceJobHandle, CalculatePriceCommand, Command};
 
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{extract::State, routing::get, Json, Router};
 use serde::Deserialize;
 
 const V2_LIQUIDATOR_ADDRESS: &str = "0x498020622CA0d5De103b7E78E3eFe5819D0d28AB";
