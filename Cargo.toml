@@ -16,6 +16,7 @@ axum.workspace = true
 anyhow.workspace = true
 common.workspace = true
 dotenvy.workspace = true
+erc20-rs.workspace = true
 odos-sdk.workspace = true
 serde.workspace = true
 tokio.workspace = true

@@ -2,10 +2,8 @@ use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
-use odos_sdk::{
-    Erc20,
-    OdosV2Router::{Swap, SwapMulti},
-};
+use erc20_rs::Erc20;
+use odos_sdk::OdosV2Router::{Swap, SwapMulti};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
