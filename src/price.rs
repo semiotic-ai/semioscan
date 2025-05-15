@@ -48,6 +48,21 @@ impl TokenPriceResult {
         self.total_usdc_amount += other.total_usdc_amount;
         self.transaction_count += other.transaction_count;
     }
+
+    /// Get the total token amount
+    pub fn total_token_amount(&self) -> f64 {
+        self.total_token_amount
+    }
+
+    /// Get the total USDC amount
+    pub fn total_usdc_amount(&self) -> f64 {
+        self.total_usdc_amount
+    }
+
+    /// Get the transaction count
+    pub fn transaction_count(&self) -> usize {
+        self.transaction_count
+    }
 }
 
 pub struct PriceCalculator {
