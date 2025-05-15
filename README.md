@@ -24,3 +24,7 @@
 
 - Packaged as a Docker container for easy deployment
 - Designed to run as a microservice within a blockchain infrastructure
+
+## CLI
+ 
+See the [CLI README](docs/cli.md) for more information.
