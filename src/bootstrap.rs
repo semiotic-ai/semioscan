@@ -152,7 +152,7 @@ pub async fn run() -> anyhow::Result<()> {
 
             match responder_rx.await? {
                 Ok(result) => {
-                    println!("Gas cost: {}", result.total_gas_cost);
+                    println!("Gas cost: {}", result.formatted_gas_cost());
                     println!("Transaction count: {}", result.transaction_count);
                 }
                 Err(e) => {

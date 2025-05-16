@@ -46,6 +46,27 @@ impl GasCostResult {
         self.total_gas_cost = self.total_gas_cost.saturating_add(other.total_gas_cost);
         self.transaction_count += other.transaction_count;
     }
+
+    /// Get the total gas cost formatted as a string
+    pub fn formatted_gas_cost(&self) -> String {
+        self.format_gas_cost()
+    }
+
+    fn format_gas_cost(&self) -> String {
+        let gas_cost = self.total_gas_cost;
+
+        const DECIMALS: u8 = 18; // All EVM chains use 18 decimals
+        let divisor = U256::from(10).pow(U256::from(DECIMALS));
+
+        let whole = gas_cost / divisor;
+        let fractional = gas_cost % divisor;
+
+        // Convert fractional part to string with leading zeros
+        let fractional_str = format!("{:0width$}", fractional, width = DECIMALS as usize);
+
+        // Format with proper decimal places, ensuring we don't have trailing zeros
+        format!("{}.{}", whole, fractional_str.trim_end_matches('0'))
+    }
 }
 
 // Event signatures as constants
