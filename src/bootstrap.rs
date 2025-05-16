@@ -3,7 +3,9 @@ use clap::{Parser, Subcommand};
 use dotenvy::dotenv;
 use tokio::net::TcpListener;
 
-use crate::{serve_api, PriceJob, RouterType};
+use crate::{
+    serve_api, CalculateGasCommand, CalculatePriceCommand, Command, CommandHandler, RouterType,
+};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -39,6 +41,27 @@ enum Commands {
         #[arg(long, value_parser = parse_router_type)]
         router_type: RouterType,
     },
+    /// Calculate gas cost for a given block range
+    Gas {
+        /// Chain ID to query
+        #[arg(long)]
+        chain_id: u64,
+        /// Signer address to query
+        #[arg(long)]
+        signer_address: Address,
+        /// Output token address to query
+        #[arg(long)]
+        output_token: Address,
+        /// Starting block number
+        #[arg(long)]
+        from_block: u64,
+        /// Ending block number
+        #[arg(long)]
+        to_block: u64,
+        /// Router type (v2 or lo)
+        #[arg(long, value_parser = parse_router_type)]
+        router_type: RouterType,
+    },
 }
 
 fn parse_router_type(s: &str) -> Result<RouterType, String> {
@@ -60,7 +83,7 @@ pub async fn run() -> anyhow::Result<()> {
         Commands::Api { port } => {
             // Start the API server
             let listener = TcpListener::bind(&format!("0.0.0.0:{port}")).await?;
-            let price_job_handle = PriceJob::init();
+            let price_job_handle = CommandHandler::init();
             serve_api(listener, price_job_handle).await?;
         }
         Commands::Price {
@@ -71,7 +94,7 @@ pub async fn run() -> anyhow::Result<()> {
             router_type,
         } => {
             // Initialize price job for CLI usage
-            let price_job_handle = PriceJob::init();
+            let price_job_handle = CommandHandler::init();
 
             // Create a oneshot channel for the response
             let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
@@ -79,16 +102,14 @@ pub async fn run() -> anyhow::Result<()> {
             // Send the price calculation command
             price_job_handle
                 .tx
-                .send(crate::Command::CalculatePrice(
-                    crate::CalculatePriceCommand {
-                        chain_id,
-                        router_type,
-                        token_address,
-                        from_block,
-                        to_block,
-                        responder: responder_tx,
-                    },
-                ))
+                .send(Command::CalculatePrice(CalculatePriceCommand {
+                    chain_id,
+                    router_type,
+                    token_address,
+                    from_block,
+                    to_block,
+                    responder: responder_tx,
+                }))
                 .await?;
 
             // Wait for and print the result
@@ -102,6 +123,40 @@ pub async fn run() -> anyhow::Result<()> {
                 Err(e) => {
                     eprintln!("Error calculating price: {}", e);
                     return Err(anyhow::anyhow!(e));
+                }
+            }
+        }
+        Commands::Gas {
+            chain_id,
+            signer_address,
+            output_token,
+            from_block,
+            to_block,
+            router_type,
+        } => {
+            let price_job_handle = CommandHandler::init();
+            let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
+
+            price_job_handle
+                .tx
+                .send(Command::CalculateGas(CalculateGasCommand {
+                    chain_id,
+                    signer_address,
+                    output_token,
+                    from_block,
+                    to_block,
+                    router_type,
+                    responder: responder_tx,
+                }))
+                .await?;
+
+            match responder_rx.await? {
+                Ok(result) => {
+                    println!("Gas cost: {}", result.total_gas_cost);
+                    println!("Transaction count: {}", result.transaction_count);
+                }
+                Err(e) => {
+                    eprintln!("Error calculating gas cost: {}", e);
                 }
             }
         }

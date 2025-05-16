@@ -11,7 +11,7 @@ async fn main() -> ExitCode {
         .init();
 
     if let Err(e) = run().await {
-        tracing::error!("Clearing Job error: {e}");
+        tracing::error!("Semioscan error: {e}");
         return ExitCode::from(1);
     }
     ExitCode::SUCCESS

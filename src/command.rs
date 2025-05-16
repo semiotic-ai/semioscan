@@ -8,21 +8,21 @@ use tracing::{error, info};
 
 use crate::{
     price::{PriceCalculator, TokenPriceResult},
-    RouterType,
+    GasCostCalculator, GasCostResult, RouterType,
 };
 
-type Responder = oneshot::Sender<Result<TokenPriceResult, String>>;
+type Responder<T> = oneshot::Sender<Result<T, String>>;
 
-pub struct PriceJob {
+pub struct CommandHandler {
     calculators: HashMap<u64, PriceCalculator>,
 }
 
-impl PriceJob {
+impl CommandHandler {
     /// Initializes the `PriceJob` and returns a `PriceJobHandle`.
-    pub fn init() -> PriceJobHandle {
+    pub fn init() -> SemioscanHandle {
         let (tx, mut rx) = mpsc::channel(10);
 
-        let job = PriceJob {
+        let job = CommandHandler {
             calculators: HashMap::new(),
         };
 
@@ -43,14 +43,30 @@ impl PriceJob {
                             .map_err(|e| e.to_string());
 
                         if cmd.responder.send(result).is_err() {
-                            error!("Failed to send response");
+                            error!("Failed to send price calculation response");
+                        }
+                    }
+                    Command::CalculateGas(cmd) => {
+                        let result = job
+                            .handle_calculate_gas(
+                                cmd.chain_id,
+                                cmd.signer_address,
+                                cmd.output_token,
+                                cmd.from_block,
+                                cmd.to_block,
+                            )
+                            .await
+                            .map_err(|e| e.to_string());
+
+                        if cmd.responder.send(result).is_err() {
+                            error!("Failed to send gas cost response");
                         }
                     }
                 }
             }
         });
 
-        PriceJobHandle { tx }
+        SemioscanHandle { tx }
     }
 
     /// Get or create a PriceCalculator for the specified chain
@@ -101,15 +117,43 @@ impl PriceJob {
             .calculate_price_between_blocks(token_address, from_block, to_block)
             .await
     }
+
+    async fn handle_calculate_gas(
+        &mut self,
+        chain_id: u64,
+        signer_address: Address,
+        output_token: Address,
+        from_block: u64,
+        to_block: u64,
+    ) -> anyhow::Result<GasCostResult> {
+        let chain = NamedChain::try_from(chain_id)
+            .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
+
+        let provider = create_read_provider(chain)?;
+
+        let calculator = GasCostCalculator::new(provider);
+
+        calculator
+            .calculate_gas_cost_between_blocks(
+                chain_id,
+                signer_address,
+                output_token,
+                from_block,
+                to_block,
+            )
+            .await
+    }
 }
 
 #[derive(Clone)]
-pub struct PriceJobHandle {
+pub struct SemioscanHandle {
     pub tx: mpsc::Sender<Command>,
 }
 
+/// Commands for the Semioscan `CommandHandler`
 pub enum Command {
     CalculatePrice(CalculatePriceCommand),
+    CalculateGas(CalculateGasCommand),
 }
 
 pub struct CalculatePriceCommand {
@@ -118,5 +162,15 @@ pub struct CalculatePriceCommand {
     pub token_address: Address,
     pub from_block: u64,
     pub to_block: u64,
-    pub responder: Responder,
+    pub responder: Responder<TokenPriceResult>,
+}
+
+pub struct CalculateGasCommand {
+    pub chain_id: u64,
+    pub signer_address: Address,
+    pub output_token: Address,
+    pub from_block: u64,
+    pub to_block: u64,
+    pub router_type: RouterType,
+    pub responder: Responder<GasCostResult>,
 }

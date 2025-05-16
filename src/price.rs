@@ -2,14 +2,15 @@ use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
+use axum::{extract::State, Json};
 use erc20_rs::Erc20;
 use odos_sdk::OdosV2Router::{Swap, SwapMulti};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tracing::{debug, error, info};
 
-use crate::PriceCache;
+use crate::{CalculatePriceCommand, Command, PriceCache, RouterType, SemioscanHandle};
 
 // Price calculation result
 #[derive(Default, Debug, Clone, Serialize)]
@@ -369,4 +370,57 @@ impl PriceCalculator {
 
         Ok(price_data)
     }
+}
+
+/// Query parameters for the price endpoints.
+#[derive(Debug, Deserialize)]
+pub struct PriceQuery {
+    chain_id: u64,
+    token_address: Address,
+    from_block: u64,
+    to_block: u64,
+}
+
+/// Handler for the v2 price endpoint.
+pub async fn get_v2_price(
+    State(price_job): State<SemioscanHandle>,
+    axum::extract::Query(params): axum::extract::Query<PriceQuery>,
+) -> Result<Json<String>, String> {
+    info!(router_type = "v2", params = ?params, "Received price request");
+
+    let token_address = params.token_address;
+    let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
+
+    price_job
+        .tx
+        .send(Command::CalculatePrice(CalculatePriceCommand {
+            token_address,
+            from_block: params.from_block,
+            to_block: params.to_block,
+            chain_id: params.chain_id,
+            router_type: RouterType::V2,
+            responder: responder_tx,
+        }))
+        .await
+        .map_err(|_| "Failed to send command".to_string())?;
+
+    match responder_rx.await {
+        Ok(Ok(result)) => Ok(Json(format!(
+            "Average price: {}",
+            result.get_average_price()
+        ))),
+        Ok(Err(err)) => Err(err),
+        Err(_) => Err("Failed to receive response".to_string()),
+    }
+}
+
+/// Handler for the limit order price endpoint.
+pub async fn get_lo_price(
+    State(_price_job): State<SemioscanHandle>,
+    axum::extract::Query(params): axum::extract::Query<PriceQuery>,
+) -> Result<Json<String>, String> {
+    info!(router_type = "limit_order", params = ?params, "Received price request");
+
+    // For now, return an informative error since limit order is not implemented
+    Err("Limit order price calculation is not yet implemented".to_string())
 }
