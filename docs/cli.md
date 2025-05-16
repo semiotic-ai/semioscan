@@ -31,3 +31,11 @@ cargo run --bin semioscan price -- --chain-id 8453 --token-address 0x78a087d713B
 
 This will calculate the average price of the token between the two blocks for the limit
 order signer, i.e. for all non-v2 routers on that chain.
+
+## Calculate Gas
+
+```bash
+RUST_LOG=info cargo run --bin semioscan -- gas --chain-id 137 --signer-address 0x498020622CA0d5De103b7E78E3eFe5819D0d28AB --output-token 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 --from-block 71559546 --to-block 71559546 --router-type v2  
+```
+
+You should be able to see the [details of that transaction on polygonscan](https://polygonscan.com/tx/0xa8eccf2546db7d440e0639734053dbbcc68b7928852f63ad6815ea5cf7bbea3d).
