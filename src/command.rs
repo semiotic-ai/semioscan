@@ -1,6 +1,6 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::Address;
-use common::{create_read_provider, Usdc};
+use common::{create_l1_read_provider, Usdc};
 use odos_sdk::OdosChain;
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
@@ -83,7 +83,7 @@ impl CommandHandler {
                 .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
 
             // Create provider for this chain
-            let provider = create_read_provider(chain)?;
+            let provider = create_l1_read_provider(chain)?;
 
             // Get chain-specific addresses
             let router_address = chain.v2_router_address();
@@ -129,7 +129,7 @@ impl CommandHandler {
         let chain = NamedChain::try_from(chain_id)
             .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
 
-        let provider = create_read_provider(chain)?;
+        let provider = create_l1_read_provider(chain)?;
 
         let calculator = GasCostCalculator::new(provider);
 
