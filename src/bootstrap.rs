@@ -4,7 +4,8 @@ use dotenvy::dotenv;
 use tokio::net::TcpListener;
 
 use crate::{
-    serve_api, CalculateGasCommand, CalculatePriceCommand, Command, CommandHandler, RouterType,
+    serve_api, CalculateAmountCommand, CalculateGasCommand, CalculatePriceCommand, Command,
+    CommandHandler, RouterType,
 };
 
 #[derive(Parser)]
@@ -61,6 +62,25 @@ enum Commands {
         /// Router type (v2 or lo)
         #[arg(long, value_parser = parse_router_type)]
         router_type: RouterType,
+    },
+    /// Calculate bridged amount of a token received by a recipient
+    /// for a given block range
+    BridgeAmount {
+        /// Chain ID to query
+        #[arg(long)]
+        chain_id: u64,
+        /// Recipient address
+        #[arg(long)]
+        to: Address,
+        /// Token address
+        #[arg(long)]
+        token: Address,
+        /// Starting block number
+        #[arg(long)]
+        from_block: u64,
+        /// Ending block number
+        #[arg(long)]
+        to_block: u64,
     },
 }
 
@@ -157,6 +177,37 @@ pub async fn run() -> anyhow::Result<()> {
                 }
                 Err(e) => {
                     eprintln!("Error calculating gas cost: {}", e);
+                }
+            }
+        }
+        Commands::BridgeAmount {
+            chain_id,
+            to,
+            token,
+            from_block,
+            to_block,
+        } => {
+            let price_job_handle = CommandHandler::init();
+            let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
+
+            price_job_handle
+                .tx
+                .send(Command::CalculateAmount(CalculateAmountCommand {
+                    chain_id,
+                    to,
+                    token,
+                    from_block,
+                    to_block,
+                    responder: responder_tx,
+                }))
+                .await?;
+
+            match responder_rx.await? {
+                Ok(result) => {
+                    println!("Amount: {}", result.amount);
+                }
+                Err(e) => {
+                    eprintln!("Error calculating amount: {}", e);
                 }
             }
         }

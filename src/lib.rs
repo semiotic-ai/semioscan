@@ -1,3 +1,4 @@
+mod amount;
 mod api;
 pub mod bootstrap;
 mod command;
@@ -7,6 +8,7 @@ mod gas_l1;
 mod price;
 mod price_cache;
 
+pub use amount::*;
 pub use api::*;
 pub use command::*;
 pub use gas_cache::*;

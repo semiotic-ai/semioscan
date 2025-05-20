@@ -8,7 +8,7 @@ use tracing::{error, info};
 
 use crate::{
     price::{PriceCalculator, TokenPriceResult},
-    GasCostCalculator, GasCostResult, RouterType,
+    AmountCalculator, AmountResult, GasCostCalculator, GasCostResult, RouterType,
 };
 
 type Responder<T> = oneshot::Sender<Result<T, String>>;
@@ -60,6 +60,21 @@ impl CommandHandler {
 
                         if cmd.responder.send(result).is_err() {
                             error!("Failed to send gas cost response");
+                        }
+                    }
+                    Command::CalculateAmount(cmd) => {
+                        let result = job
+                            .handle_calculate_amount(
+                                cmd.chain_id,
+                                cmd.to,
+                                cmd.token,
+                                cmd.from_block,
+                                cmd.to_block,
+                            )
+                            .await
+                            .map_err(|e| e.to_string());
+                        if cmd.responder.send(result).is_err() {
+                            error!("Failed to send amount response");
                         }
                     }
                 }
@@ -143,6 +158,26 @@ impl CommandHandler {
             )
             .await
     }
+
+    async fn handle_calculate_amount(
+        &mut self,
+        chain_id: u64,
+        to: Address,
+        token: Address,
+        from_block: u64,
+        to_block: u64,
+    ) -> anyhow::Result<AmountResult> {
+        let chain = NamedChain::try_from(chain_id)
+            .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
+
+        let provider = create_l1_read_provider(chain)?;
+
+        let calculator = AmountCalculator::new(provider);
+
+        calculator
+            .calculate_amount_between_blocks(chain_id, to, token, from_block, to_block)
+            .await
+    }
 }
 
 #[derive(Clone)]
@@ -154,6 +189,7 @@ pub struct SemioscanHandle {
 pub enum Command {
     CalculatePrice(CalculatePriceCommand),
     CalculateGas(CalculateGasCommand),
+    CalculateAmount(CalculateAmountCommand),
 }
 
 pub struct CalculatePriceCommand {
@@ -173,4 +209,13 @@ pub struct CalculateGasCommand {
     pub to_block: u64,
     pub router_type: RouterType,
     pub responder: Responder<GasCostResult>,
+}
+
+pub struct CalculateAmountCommand {
+    pub chain_id: u64,
+    pub to: Address,
+    pub token: Address,
+    pub from_block: u64,
+    pub to_block: u64,
+    pub responder: Responder<AmountResult>,
 }
