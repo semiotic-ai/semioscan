@@ -192,7 +192,7 @@ impl CommandHandler {
         let calculator = AmountCalculator::new(provider);
 
         calculator
-            .calculate_transfer_amount_between_blocks(chain_id, to, token, from_block, to_block)
+            .calculate_mint_amount_between_blocks(chain_id, to, token, from_block, to_block)
             .await
     }
 

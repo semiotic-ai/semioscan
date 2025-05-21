@@ -6,7 +6,7 @@ use odos_sdk::OdosV2Router::SwapMulti;
 use tracing::{error, info};
 
 alloy_sol_types::sol! {
-    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Mint(address indexed minter, address indexed to, uint256 amount);
 }
 
 pub struct AmountResult {
@@ -25,7 +25,9 @@ impl AmountCalculator {
         Self { provider }
     }
 
-    pub async fn calculate_transfer_amount_between_blocks(
+    /// Calculate the amount of a token received by a recipient
+    /// for a given block range, using the Mint event
+    pub async fn calculate_mint_amount_between_blocks(
         &self,
         chain_id: u64,
         to: Address,
@@ -42,8 +44,8 @@ impl AmountCalculator {
 
         let contract_address = token;
 
-        // Calculate the Transfer event signature hash
-        let transfer_signature = "Transfer(address,address,uint256)";
+        // Calculate the Mint event signature hash
+        let transfer_signature = "Mint(address,address,uint256)";
         let transfer_topic = B256::from_slice(&*keccak256(transfer_signature.as_bytes()));
 
         let mut current_block = from_block;
@@ -60,14 +62,14 @@ impl AmountCalculator {
             let logs = self.provider.get_logs(&filter).await?;
 
             for log in logs {
-                match Transfer::decode_log(&log.into()) {
+                match Mint::decode_log(&log.into()) {
                     Ok(event) => {
                         if event.to == to {
-                            result.amount = result.amount.saturating_add(event.value);
+                            result.amount = result.amount.saturating_add(event.amount);
                         }
                     }
                     Err(e) => {
-                        error!(error = ?e, "Failed to decode Transfer log");
+                        error!(error = ?e, "Failed to decode Mint log");
                     }
                 }
             }
