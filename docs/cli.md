@@ -6,15 +6,15 @@
 cargo run --bin semioscan api -- --port 3000
 ```
 
-Then, in the browser, navigate to 
+Then, in the browser, navigate to
 
 `http://localhost:3000/api/v1/price/v2?chain_id=8453&token_address=0x78a087d713Be963Bf307b18F2Ff8122EF9A63ae9&from_block=29490100&to_block=29499100`
 
-where: 
+where:
 
-- `8453` is the chain id for Base, 
-- `0x78a087d713Be963Bf307b18F2Ff8122EF9A63ae9` is the address of the token, 
-- `29490100` is the starting block for the price calculation, and 
+- `8453` is the chain id for Base,
+- `0x78a087d713Be963Bf307b18F2Ff8122EF9A63ae9` is the address of the token,
+- `29490100` is the starting block for the price calculation, and
 - `29499100` is the ending block for the price calculation.
 
 ## Calculate Price
@@ -39,3 +39,11 @@ RUST_LOG=info cargo run --bin semioscan -- gas --chain-id 137 --signer-address 0
 ```
 
 You should be able to see the [details of that transaction on polygonscan](https://polygonscan.com/tx/0xa8eccf2546db7d440e0639734053dbbcc68b7928852f63ad6815ea5cf7bbea3d).
+
+## Calculate Liqudation Amount
+
+```bash
+RUST_LOG=info cargo run --bin semioscan -- transfer-amount --chain-id 42161 --router 0xa669e7A0d4b3e4Fa48af2dE86BD4CD7126Be4e13 --to 0x3c440a8653d6bad527a96d0f8bff55a934a2a67f --token 0xaf88d065e77c8cC2239327C5EDb3A432268e5831 --from-block 306126306 --to-block 315667779 
+```
+
+This will calculate the liquidated amount in USDC delivered to the recipient between the two blocks inclusive.
