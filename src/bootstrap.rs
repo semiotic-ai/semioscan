@@ -4,8 +4,8 @@ use dotenvy::dotenv;
 use tokio::net::TcpListener;
 
 use crate::{
-    serve_api, CalculateBridgeAmountCommand, CalculateGasCommand, CalculatePriceCommand,
-    CalculateSwapMultiAmountCommand, Command, CommandHandler, RouterType,
+    serve_api, CalculateGasCommand, CalculatePriceCommand, CalculateTransferAmountCommand, Command,
+    CommandHandler, RouterType,
 };
 
 #[derive(Parser)]
@@ -20,10 +20,10 @@ struct Cli {
 enum Commands {
     /// Start the API server
     Api {
-        /// Port to run the API server on
         #[arg(short, long, default_value = "3000")]
         port: String,
     },
+    /// Port to run the API server on
     /// Calculate token price for a given block range
     Price {
         /// Chain ID to query
@@ -63,34 +63,12 @@ enum Commands {
         #[arg(long, value_parser = parse_router_type)]
         router_type: RouterType,
     },
-    /// Calculate bridged amount of a token received by a recipient
+    /// Calculate the amount of a token transferred to a recipient
     /// for a given block range
-    BridgeAmount {
+    TransferAmount {
         /// Chain ID to query
         #[arg(long)]
         chain_id: u64,
-        /// Recipient address
-        #[arg(long)]
-        to: Address,
-        /// Token address
-        #[arg(long)]
-        token: Address,
-        /// Starting block number
-        #[arg(long)]
-        from_block: u64,
-        /// Ending block number
-        #[arg(long)]
-        to_block: u64,
-    },
-    /// Calculate swap multi amount of a token received by a recipient
-    /// for a given block range
-    SwapMultiAmount {
-        /// Chain ID to query
-        #[arg(long)]
-        chain_id: u64,
-        /// Recipient address
-        #[arg(long)]
-        from: Address,
         /// Router address
         #[arg(long)]
         router: Address,
@@ -205,43 +183,9 @@ pub async fn run() -> anyhow::Result<()> {
                 }
             }
         }
-        Commands::BridgeAmount {
-            chain_id,
-            to,
-            token,
-            from_block,
-            to_block,
-        } => {
-            let price_job_handle = CommandHandler::init();
-            let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
-
-            price_job_handle
-                .tx
-                .send(Command::CalculateBridgeAmount(
-                    CalculateBridgeAmountCommand {
-                        chain_id,
-                        to,
-                        token,
-                        from_block,
-                        to_block,
-                        responder: responder_tx,
-                    },
-                ))
-                .await?;
-
-            match responder_rx.await? {
-                Ok(result) => {
-                    println!("Amount: {}", result.amount);
-                }
-                Err(e) => {
-                    eprintln!("Error calculating amount: {}", e);
-                }
-            }
-        }
-        Commands::SwapMultiAmount {
+        Commands::TransferAmount {
             chain_id,
             router,
-            from,
             to,
             token,
             from_block,
@@ -252,11 +196,10 @@ pub async fn run() -> anyhow::Result<()> {
 
             price_job_handle
                 .tx
-                .send(Command::CalculateSwapMultiAmount(
-                    CalculateSwapMultiAmountCommand {
+                .send(Command::CalculateTransferAmount(
+                    CalculateTransferAmountCommand {
                         chain_id,
                         router,
-                        from,
                         to,
                         token,
                         from_block,

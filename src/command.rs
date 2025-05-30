@@ -62,27 +62,11 @@ impl CommandHandler {
                             error!("Failed to send gas cost response");
                         }
                     }
-                    Command::CalculateBridgeAmount(cmd) => {
+                    Command::CalculateTransferAmount(cmd) => {
                         let result = job
                             .handle_calculate_transfer_amount(
                                 cmd.chain_id,
-                                cmd.to,
-                                cmd.token,
-                                cmd.from_block,
-                                cmd.to_block,
-                            )
-                            .await
-                            .map_err(|e| e.to_string());
-                        if cmd.responder.send(result).is_err() {
-                            error!("Failed to send amount response");
-                        }
-                    }
-                    Command::CalculateSwapMultiAmount(cmd) => {
-                        let result = job
-                            .handle_calculate_swap_multi_amount(
-                                cmd.chain_id,
                                 cmd.router,
-                                cmd.from,
                                 cmd.to,
                                 cmd.token,
                                 cmd.from_block,
@@ -179,29 +163,7 @@ impl CommandHandler {
     async fn handle_calculate_transfer_amount(
         &mut self,
         chain_id: u64,
-        to: Address,
-        token: Address,
-        from_block: u64,
-        to_block: u64,
-    ) -> anyhow::Result<AmountResult> {
-        let chain = NamedChain::try_from(chain_id)
-            .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
-
-        let provider = create_l1_read_provider(chain)?;
-
-        let calculator = AmountCalculator::new(provider);
-
-        calculator
-            .calculate_mint_amount_between_blocks(chain_id, to, token, from_block, to_block)
-            .await
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn handle_calculate_swap_multi_amount(
-        &mut self,
-        chain_id: u64,
         router: Address,
-        from: Address,
         to: Address,
         token: Address,
         from_block: u64,
@@ -215,8 +177,8 @@ impl CommandHandler {
         let calculator = AmountCalculator::new(provider);
 
         calculator
-            .calculate_swap_multi_amount_between_blocks(
-                chain_id, router, from, to, token, from_block, to_block,
+            .calculate_transfer_amount_between_blocks(
+                chain_id, router, to, token, from_block, to_block,
             )
             .await
     }
@@ -231,8 +193,7 @@ pub struct SemioscanHandle {
 pub enum Command {
     CalculatePrice(CalculatePriceCommand),
     CalculateGas(CalculateGasCommand),
-    CalculateBridgeAmount(CalculateBridgeAmountCommand),
-    CalculateSwapMultiAmount(CalculateSwapMultiAmountCommand),
+    CalculateTransferAmount(CalculateTransferAmountCommand),
 }
 
 pub struct CalculatePriceCommand {
@@ -266,6 +227,16 @@ pub struct CalculateBridgeAmountCommand {
 pub struct CalculateSwapMultiAmountCommand {
     pub chain_id: u64,
     pub from: Address,
+    pub router: Address,
+    pub to: Address,
+    pub token: Address,
+    pub from_block: u64,
+    pub to_block: u64,
+    pub responder: Responder<AmountResult>,
+}
+
+pub struct CalculateTransferAmountCommand {
+    pub chain_id: u64,
     pub router: Address,
     pub to: Address,
     pub token: Address,
