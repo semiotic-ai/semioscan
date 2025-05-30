@@ -1,10 +1,11 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::Address;
-use common::{create_l1_read_provider, Usdc};
+use common::create_l1_read_provider;
 use odos_sdk::OdosChain;
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info};
+use usdshe::Usdc;
 
 use crate::{
     price::{PriceCalculator, TokenPriceResult},
@@ -103,7 +104,7 @@ impl CommandHandler {
 
             // Get chain-specific addresses
             let router_address = chain.v2_router_address();
-            let usdc_address = chain.usdc_address();
+            let usdc_address = chain.usdc_address()?;
 
             // Create and insert calculator
             let calculator = PriceCalculator::new(

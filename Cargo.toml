@@ -24,3 +24,4 @@ serde.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+usdshe.workspace = true
