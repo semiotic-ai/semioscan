@@ -1,13 +1,11 @@
 use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
-use alloy_sol_types::{sol, SolEvent};
+use alloy_sol_types::SolEvent;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info};
 
-sol! {
-    event Transfer(address indexed from, address indexed to, uint256 value);
-}
+use crate::Transfer;
 
 pub struct AmountResult {
     pub chain_id: u64,
