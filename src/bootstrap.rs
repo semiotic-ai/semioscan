@@ -47,21 +47,21 @@ enum Commands {
         /// Chain ID to query
         #[arg(long)]
         chain_id: u64,
-        /// Signer address to query
+        /// From address to query
         #[arg(long)]
-        signer_address: Address,
-        /// Output token address to query
+        from: Address,
+        /// To address to query
         #[arg(long)]
-        output_token: Address,
+        to: Address,
+        /// Token address to query
+        #[arg(long)]
+        token: Address,
         /// Starting block number
         #[arg(long)]
         from_block: u64,
         /// Ending block number
         #[arg(long)]
         to_block: u64,
-        /// Router type (v2 or lo)
-        #[arg(long, value_parser = parse_router_type)]
-        router_type: RouterType,
     },
     /// Calculate the amount of a token transferred to a recipient
     /// for a given block range
@@ -151,11 +151,11 @@ pub async fn run() -> anyhow::Result<()> {
         }
         Commands::Gas {
             chain_id,
-            signer_address,
-            output_token,
+            from,
+            to,
+            token,
             from_block,
             to_block,
-            router_type,
         } => {
             let price_job_handle = CommandHandler::init();
             let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
@@ -164,11 +164,11 @@ pub async fn run() -> anyhow::Result<()> {
                 .tx
                 .send(Command::CalculateGas(CalculateGasCommand {
                     chain_id,
-                    signer_address,
-                    output_token,
+                    from,
+                    to,
+                    token,
                     from_block,
                     to_block,
-                    router_type,
                     responder: responder_tx,
                 }))
                 .await?;

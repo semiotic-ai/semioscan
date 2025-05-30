@@ -1,176 +1,79 @@
-use alloy_chains::NamedChain;
 use alloy_network::Ethereum;
 use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{network::eip2718::Typed2718, Provider};
 use alloy_rpc_types::{Filter, Log, TransactionTrait};
 use alloy_sol_types::SolEvent;
 use axum::{extract::Query, extract::State, Json};
-use odos_sdk::{
-    OdosChain,
-    OdosV2Router::{Swap, SwapMulti},
-};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CalculateGasCommand, GasCostCalculator, GasCostResult, SemioscanHandle, MAX_BLOCK_RANGE,
-    MULTI_SWAP_SIGNATURE, SINGLE_SWAP_SIGNATURE,
+    CalculateGasCommand, GasCostCalculator, GasCostResult, SemioscanHandle, Transfer,
+    MAX_BLOCK_RANGE,
 };
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
-use crate::{Command, RouterType};
+use crate::Command;
 
 impl GasCostCalculator<Ethereum> {
-    async fn process_swap_event(
-        &self,
-        log: &Log,
-        event: &SwapMulti,
-        signer_address: Address,
-        output_token: Address,
-    ) -> anyhow::Result<Option<(U256, U256)>> {
-        if event.sender != signer_address {
-            debug!("Skipping swap not initiated by the specified signer address");
-            return Ok(None);
-        }
+    async fn process_transfer_event(&self, log: &Log) -> anyhow::Result<Option<(U256, U256)>> {
+        if let Some(tx_hash) = log.transaction_hash {
+            if let Some(transaction) = self.provider.get_transaction_by_hash(tx_hash).await? {
+                let receipt = self
+                    .provider
+                    .get_transaction_receipt(tx_hash)
+                    .await?
+                    .unwrap();
 
-        info!(
-            event = ?event,
-            "Processing SwapMulti event for gas cost"
-        );
+                let gas_used = U256::from(receipt.gas_used);
 
-        // Check if the specified output token is in the output tokens
-        if event.tokensOut.contains(&output_token) {
-            if let Some(tx_hash) = log.transaction_hash {
-                if let Some(transaction) = self.provider.get_transaction_by_hash(tx_hash).await? {
-                    let receipt = self
-                        .provider
-                        .get_transaction_receipt(tx_hash)
-                        .await?
-                        .unwrap();
+                // Get the effective gas price based on transaction type
+                let effective_gas_price = if transaction.is_legacy_gas() {
+                    // For legacy transactions, use gas_price directly
+                    U256::from(transaction.gas_price().unwrap_or_default())
+                } else {
+                    // For EIP-1559 and EIP-4844, use the effective_gas_price from receipt
+                    info!("EIP-1559 or EIP-4844 transaction");
+                    U256::from(receipt.effective_gas_price)
+                };
 
-                    let gas_used = U256::from(receipt.gas_used);
+                info!(
+                    gas_used = ?gas_used,
+                    effective_gas_price = ?effective_gas_price,
+                    "Transaction details for gas calculation"
+                );
 
-                    // Get the effective gas price based on transaction type
-                    let effective_gas_price = if transaction.is_legacy_gas() {
-                        // For legacy transactions, use gas_price directly
-                        U256::from(transaction.gas_price().unwrap_or_default())
-                    } else {
-                        // For EIP-1559 and EIP-4844, use the effective_gas_price from receipt
-                        info!("EIP-1559 or EIP-4844 transaction");
-                        U256::from(receipt.effective_gas_price)
-                    };
+                // Calculate regular gas cost (gas_used * effective_gas_price)
+                let regular_gas_cost = gas_used.saturating_mul(effective_gas_price);
 
-                    info!(
-                        gas_used = ?gas_used,
-                        effective_gas_price = ?effective_gas_price,
-                        "Transaction details for gas calculation"
+                // For EIP-4844 transactions, we need to add blob gas costs
+                let total_gas_cost = if transaction.is_eip4844() {
+                    // EIP-4844 transaction
+                    let blob_gas_used = U256::from(
+                        transaction
+                            .blob_versioned_hashes()
+                            .map(|hashes| hashes.len() * 131072) // Each blob is 131072 gas
+                            .unwrap_or_default(),
                     );
 
-                    // Calculate regular gas cost (gas_used * effective_gas_price)
-                    let regular_gas_cost = gas_used.saturating_mul(effective_gas_price);
+                    let blob_gas_price =
+                        U256::from(transaction.max_fee_per_blob_gas().unwrap_or_default());
+                    let blob_cost = blob_gas_used.saturating_mul(blob_gas_price);
 
-                    // For EIP-4844 transactions, we need to add blob gas costs
-                    let total_gas_cost = if transaction.is_eip4844() {
-                        // EIP-4844 transaction
-                        let blob_gas_used = U256::from(
-                            transaction
-                                .blob_versioned_hashes()
-                                .map(|hashes| hashes.len() * 131072) // Each blob is 131072 gas
-                                .unwrap_or_default(),
-                        );
+                    // Regular gas cost + blob gas cost
+                    regular_gas_cost.saturating_add(blob_cost)
+                } else {
+                    // Regular gas cost for other transaction types
+                    info!("Regular gas cost for other transaction types");
+                    regular_gas_cost
+                };
 
-                        let blob_gas_price =
-                            U256::from(transaction.max_fee_per_blob_gas().unwrap_or_default());
-                        let blob_cost = blob_gas_used.saturating_mul(blob_gas_price);
+                info!(
+                    regular_gas_cost = ?regular_gas_cost,
+                    total_gas_cost = ?total_gas_cost,
+                    "Calculated gas costs"
+                );
 
-                        // Regular gas cost + blob gas cost
-                        regular_gas_cost.saturating_add(blob_cost)
-                    } else {
-                        // Regular gas cost for other transaction types
-                        info!("Regular gas cost for other transaction types");
-                        regular_gas_cost
-                    };
-
-                    info!(
-                        regular_gas_cost = ?regular_gas_cost,
-                        total_gas_cost = ?total_gas_cost,
-                        "Calculated gas costs"
-                    );
-
-                    return Ok(Some((gas_used, effective_gas_price)));
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    async fn process_single_swap_event(
-        &self,
-        log: &Log,
-        event: &Swap,
-        signer_address: Address,
-        output_token: Address,
-    ) -> anyhow::Result<Option<(U256, U256)>> {
-        if event.sender != signer_address {
-            debug!("Skipping single swap not initiated by the specified signer address");
-            return Ok(None);
-        }
-
-        info!(
-            event = ?event,
-            "Processing single Swap event for gas cost"
-        );
-
-        // Check if the specified output token is in the output tokens
-        if event.outputToken == output_token {
-            if let Some(tx_hash) = log.transaction_hash {
-                if let Some(transaction) = self.provider.get_transaction_by_hash(tx_hash).await? {
-                    let gas_used = U256::from(
-                        self.provider
-                            .get_transaction_receipt(tx_hash)
-                            .await?
-                            .unwrap()
-                            .gas_used,
-                    );
-
-                    // Get the effective gas price based on transaction type
-                    let effective_gas_price = if transaction.is_legacy_gas() {
-                        // For legacy transactions, use gas_price directly
-                        U256::from(transaction.gas_price().unwrap_or_default())
-                    } else {
-                        // For EIP-1559 and EIP-4844, use effective_gas_price
-                        U256::from(transaction.effective_gas_price.unwrap_or_default())
-                    };
-
-                    info!(
-                        effective_gas_price = ?effective_gas_price,
-                        "Effective gas price"
-                    );
-
-                    // For EIP-4844 transactions, we need to add blob gas costs
-                    let total_gas_cost = if transaction.ty() == 3 {
-                        // EIP-4844 transaction
-                        let blob_gas_used = U256::from(
-                            transaction
-                                .blob_versioned_hashes()
-                                .map(|hashes| hashes.len() * 131072) // Each blob is 131072 gas
-                                .unwrap_or_default(),
-                        );
-
-                        let blob_gas_price =
-                            U256::from(transaction.max_fee_per_blob_gas().unwrap_or_default());
-                        let blob_cost = blob_gas_used.saturating_mul(blob_gas_price);
-
-                        // Regular gas cost + blob gas cost
-                        gas_used
-                            .saturating_mul(effective_gas_price)
-                            .saturating_add(blob_cost)
-                    } else {
-                        // Regular gas cost for other transaction types
-                        gas_used.saturating_mul(effective_gas_price)
-                    };
-
-                    return Ok(Some((gas_used, total_gas_cost)));
-                }
+                return Ok(Some((gas_used, effective_gas_price)));
             }
         }
         Ok(None)
@@ -179,77 +82,50 @@ impl GasCostCalculator<Ethereum> {
     async fn process_logs_in_range(
         &self,
         chain_id: u64,
-        signer_address: Address,
-        output_token: Address,
-        start_block: u64,
-        end_block: u64,
+        from: Address,
+        to: Address,
+        token: Address,
+        from_block: u64,
+        to_block: u64,
     ) -> anyhow::Result<GasCostResult> {
-        let mut result = GasCostResult::new(chain_id, signer_address);
-        let mut current_block = start_block;
+        let mut result = GasCostResult::new(chain_id, from, to);
+        let mut current_block = from_block;
 
-        let chain = NamedChain::try_from(chain_id)
-            .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
+        let transfer_signature = "Transfer(address,address,uint256)";
+        let transfer_topic = B256::from_slice(&*keccak256(transfer_signature.as_bytes()));
 
-        let router_address = chain.v2_router_address();
-
-        // Precompute event topics to avoid repeated calculations
-        let multi_swap_topic = B256::from_slice(&*keccak256(MULTI_SWAP_SIGNATURE.as_bytes()));
-        let single_swap_topic = B256::from_slice(&*keccak256(SINGLE_SWAP_SIGNATURE.as_bytes()));
-
-        while current_block <= end_block {
-            let to_block = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, end_block);
+        while current_block <= to_block {
+            let to_block = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, to_block);
 
             // Create a filter for all swap events at the router address
             let filter = Filter::new()
                 .from_block(current_block)
                 .to_block(to_block)
-                .address(router_address)
-                .event_signature(vec![multi_swap_topic, single_swap_topic]);
+                .address(token)
+                .event_signature(vec![transfer_topic])
+                .topic1(from)
+                .topic2(to);
 
-            match self.provider.get_logs(&filter).await {
-                Ok(logs) => {
-                    info!(
-                        logs_count = logs.len(),
-                        current_block, to_block, "Fetched logs for gas cost calculation"
-                    );
+            let logs = self.provider.get_logs(&filter).await?;
 
-                    for log in logs {
-                        if let Some(topics) = log.topics().into() {
-                            if topics.is_empty() {
-                                continue;
-                            }
+            info!(
+                logs_count = logs.len(),
+                current_block, to_block, "Fetched logs for gas cost calculation"
+            );
 
-                            let topic = topics[0];
+            for log in &logs {
+                match Transfer::decode_log(&log.inner) {
+                    Ok(event) => {
+                        info!(
+                            event = ?event,
+                            "Processing Transfer event for gas cost"
+                        );
 
-                            if topic == multi_swap_topic {
-                                info!("Processing multi swap log");
-                                self.handle_multi_swap_log(
-                                    &log,
-                                    signer_address,
-                                    output_token,
-                                    &mut result,
-                                )
-                                .await?;
-                            } else if topic == single_swap_topic {
-                                info!("Processing single swap log");
-                                self.handle_single_swap_log(
-                                    &log,
-                                    signer_address,
-                                    output_token,
-                                    &mut result,
-                                )
-                                .await?;
-                            }
-                        }
+                        self.handle_log(log, &mut result).await?;
                     }
-                }
-                Err(e) => {
-                    error!(
-                        error = ?e,
-                        current_block,
-                        to_block,
-                        "Error fetching logs for gas cost block range"
-                    );
+                    Err(e) => {
+                        error!(error = ?e, "Failed to decode Transfer log for gas");
+                    }
                 }
             }
             current_block = to_block + 1;
@@ -258,59 +134,16 @@ impl GasCostCalculator<Ethereum> {
         Ok(result)
     }
 
-    async fn handle_multi_swap_log(
-        &self,
-        log: &Log,
-        signer_address: Address,
-        output_token: Address,
-        result: &mut GasCostResult,
-    ) -> anyhow::Result<()> {
-        match SwapMulti::decode_log(&log.inner) {
-            Ok(event) => {
-                match self
-                    .process_swap_event(log, &event, signer_address, output_token)
-                    .await
-                {
-                    Ok(Some((gas_used, effective_gas_price))) => {
-                        result.add_transaction(gas_used, effective_gas_price);
-                    }
-                    Ok(None) => {} // Not our signer or doesn't output the specified token
-                    Err(e) => {
-                        error!(error = ?e, "Error processing SwapMulti event for gas");
-                    }
-                }
+    async fn handle_log(&self, log: &Log, result: &mut GasCostResult) -> anyhow::Result<()> {
+        match self.process_transfer_event(log).await {
+            Ok(Some((gas_used, effective_gas_price))) => {
+                result.add_transaction(gas_used, effective_gas_price);
+            }
+            Ok(None) => {
+                info!("No transfer event found");
             }
             Err(e) => {
-                error!(error = ?e, "Failed to decode SwapMulti log for gas");
-            }
-        }
-        Ok(())
-    }
-
-    async fn handle_single_swap_log(
-        &self,
-        log: &Log,
-        signer_address: Address,
-        output_token: Address,
-        result: &mut GasCostResult,
-    ) -> anyhow::Result<()> {
-        match Swap::decode_log(&log.inner) {
-            Ok(event) => {
-                match self
-                    .process_single_swap_event(log, &event, signer_address, output_token)
-                    .await
-                {
-                    Ok(Some((gas_used, effective_gas_price))) => {
-                        result.add_transaction(gas_used, effective_gas_price);
-                    }
-                    Ok(None) => {} // Not our signer or doesn't output the specified token
-                    Err(e) => {
-                        error!(error = ?e, "Error processing Swap event for gas");
-                    }
-                }
-            }
-            Err(e) => {
-                error!(error = ?e, "Failed to decode Swap log for gas");
+                error!(error = ?e, "Error processing SwapMulti event for gas");
             }
         }
         Ok(())
@@ -319,27 +152,34 @@ impl GasCostCalculator<Ethereum> {
     pub async fn calculate_gas_cost_between_blocks(
         &self,
         chain_id: u64,
-        signer_address: Address,
-        output_token: Address,
+        from: Address,
+        to: Address,
+        token: Address,
         start_block: u64,
         end_block: u64,
     ) -> anyhow::Result<GasCostResult> {
         info!(
-            ?signer_address,
-            start_block, end_block, "Starting gas cost calculation"
+            chain_id,
+            ?from,
+            ?to,
+            start_block,
+            end_block,
+            "Starting gas cost calculation"
         );
 
         // Check cache and calculate gaps that need to be filled
         let (cached_result, gaps) = {
             let cache = self.gas_cache.lock().await;
-            cache.calculate_gaps(chain_id, signer_address, start_block, end_block)
+            cache.calculate_gaps(chain_id, from, to, start_block, end_block)
         };
 
         // If there are no gaps, we can return the cached result
         if let Some(result) = cached_result.clone() {
             if gaps.is_empty() {
                 info!(
-                    ?signer_address,
+                    chain_id,
+                    ?from,
+                    ?to,
                     "Using complete cached result for gas cost block range"
                 );
                 return Ok(result);
@@ -347,24 +187,27 @@ impl GasCostCalculator<Ethereum> {
         }
 
         // Initialize with any cached data or create new result
-        let mut gas_data =
-            cached_result.unwrap_or_else(|| GasCostResult::new(chain_id, signer_address));
+        let mut gas_data = cached_result.unwrap_or_else(|| GasCostResult::new(chain_id, from, to));
 
         // Process each gap
         for (gap_start, gap_end) in gaps {
             info!(
-                ?signer_address,
-                gap_start, gap_end, "Processing uncached block range for gas cost"
+                chain_id,
+                ?from,
+                ?to,
+                gap_start,
+                gap_end,
+                "Processing uncached block range for gas cost"
             );
 
             let gap_result = self
-                .process_logs_in_range(chain_id, signer_address, output_token, gap_start, gap_end)
+                .process_logs_in_range(chain_id, from, to, token, gap_start, gap_end)
                 .await?;
 
             // Cache the gap result
             {
                 let mut cache = self.gas_cache.lock().await;
-                cache.insert(signer_address, gap_start, gap_end, gap_result.clone());
+                cache.insert(from, to, gap_start, gap_end, gap_result.clone());
             }
 
             // Merge the gap result with our main result
@@ -374,11 +217,13 @@ impl GasCostCalculator<Ethereum> {
         // Cache the complete result
         {
             let mut cache = self.gas_cache.lock().await;
-            cache.insert(signer_address, start_block, end_block, gas_data.clone());
+            cache.insert(from, to, start_block, end_block, gas_data.clone());
         }
 
         info!(
-            ?signer_address,
+            chain_id,
+            ?from,
+            ?to,
             total_gas_cost = ?gas_data.total_gas_cost,
             transaction_count = gas_data.transaction_count,
             "Finished gas cost calculation"
@@ -392,8 +237,9 @@ impl GasCostCalculator<Ethereum> {
 #[derive(Debug, Deserialize)]
 pub struct GasQuery {
     pub chain_id: u64,
-    pub signer_address: Address,
-    pub output_token: Address,
+    pub from: Address,
+    pub to: Address,
+    pub token: Address,
     pub from_block: u64,
     pub to_block: u64,
 }
@@ -403,7 +249,8 @@ pub struct GasQuery {
 pub struct GasResponse {
     pub total_gas_cost: String,
     pub transaction_count: usize,
-    pub signer_address: String,
+    pub from: String,
+    pub to: String,
 }
 
 /// Handler for the gas cost endpoint.
@@ -418,9 +265,9 @@ pub async fn get_gas_cost(
     gas_job
         .tx
         .send(Command::CalculateGas(CalculateGasCommand {
-            router_type: RouterType::V2,
-            signer_address: params.signer_address,
-            output_token: params.output_token,
+            from: params.from,
+            to: params.to,
+            token: params.token,
             from_block: params.from_block,
             to_block: params.to_block,
             chain_id: params.chain_id,
@@ -433,7 +280,8 @@ pub async fn get_gas_cost(
         Ok(Ok(result)) => Ok(Json(GasResponse {
             total_gas_cost: result.total_gas_cost.to_string(),
             transaction_count: result.transaction_count,
-            signer_address: result.signer_address.to_string(),
+            from: result.from.to_string(),
+            to: result.to.to_string(),
         })),
         Ok(Err(err)) => Err(err),
         Err(_) => Err("Failed to receive gas cost response".to_string()),

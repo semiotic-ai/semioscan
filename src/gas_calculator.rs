@@ -11,15 +11,17 @@ use crate::GasCache;
 #[derive(Default, Debug, Clone, Serialize)]
 pub struct GasCostResult {
     pub chain_id: u64,
-    pub signer_address: Address,
+    pub from: Address,
+    pub to: Address,
     pub total_gas_cost: U256,
     pub transaction_count: usize,
 }
 
 impl GasCostResult {
-    pub fn new(chain_id: u64, signer_address: Address) -> Self {
+    pub fn new(chain_id: u64, from: Address, to: Address) -> Self {
         Self {
-            signer_address,
+            from,
+            to,
             chain_id,
             total_gas_cost: U256::ZERO,
             transaction_count: 0,
@@ -60,14 +62,8 @@ impl GasCostResult {
     }
 }
 
-// Event signatures as constants
-pub(crate) const MULTI_SWAP_SIGNATURE: &str =
-    "SwapMulti(address,uint256[],address[],uint256[],address[],uint32)";
-pub(crate) const SINGLE_SWAP_SIGNATURE: &str =
-    "Swap(address,uint256,address,uint256,address,int256,uint32)";
-
 // Maximum number of blocks to query in a single request
-pub(crate) const MAX_BLOCK_RANGE: u64 = 2_000;
+pub(crate) const MAX_BLOCK_RANGE: u64 = 500;
 
 pub struct GasCostCalculator<N: Network> {
     pub(crate) provider: RootProvider<N>,

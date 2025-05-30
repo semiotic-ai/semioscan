@@ -51,8 +51,9 @@ impl CommandHandler {
                         let result = job
                             .handle_calculate_gas(
                                 cmd.chain_id,
-                                cmd.signer_address,
-                                cmd.output_token,
+                                cmd.from,
+                                cmd.to,
+                                cmd.token,
                                 cmd.from_block,
                                 cmd.to_block,
                             )
@@ -138,8 +139,9 @@ impl CommandHandler {
     async fn handle_calculate_gas(
         &mut self,
         chain_id: u64,
-        signer_address: Address,
-        output_token: Address,
+        from: Address,
+        to: Address,
+        token: Address,
         from_block: u64,
         to_block: u64,
     ) -> anyhow::Result<GasCostResult> {
@@ -151,13 +153,7 @@ impl CommandHandler {
         let calculator = GasCostCalculator::new(provider);
 
         calculator
-            .calculate_gas_cost_between_blocks(
-                chain_id,
-                signer_address,
-                output_token,
-                from_block,
-                to_block,
-            )
+            .calculate_gas_cost_between_blocks(chain_id, from, to, token, from_block, to_block)
             .await
     }
 
@@ -208,32 +204,12 @@ pub struct CalculatePriceCommand {
 
 pub struct CalculateGasCommand {
     pub chain_id: u64,
-    pub signer_address: Address,
-    pub output_token: Address,
-    pub from_block: u64,
-    pub to_block: u64,
-    pub router_type: RouterType,
-    pub responder: Responder<GasCostResult>,
-}
-
-pub struct CalculateBridgeAmountCommand {
-    pub chain_id: u64,
-    pub to: Address,
-    pub token: Address,
-    pub from_block: u64,
-    pub to_block: u64,
-    pub responder: Responder<AmountResult>,
-}
-
-pub struct CalculateSwapMultiAmountCommand {
-    pub chain_id: u64,
     pub from: Address,
-    pub router: Address,
     pub to: Address,
     pub token: Address,
     pub from_block: u64,
     pub to_block: u64,
-    pub responder: Responder<AmountResult>,
+    pub responder: Responder<GasCostResult>,
 }
 
 pub struct CalculateTransferAmountCommand {
