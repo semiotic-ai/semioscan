@@ -83,7 +83,6 @@ impl AmountCalculator {
 
             // Add a small delay to avoid hitting rate limits on Sonic Alchemy endpoint
             if chain_id.eq(&146) && current_block <= to_block {
-                // Only sleep if there are more iterations
                 sleep(Duration::from_millis(250)).await;
             }
         }
