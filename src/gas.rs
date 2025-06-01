@@ -188,6 +188,7 @@ where
     }
 
     /// Process logs in a given block range
+    #[allow(clippy::too_many_arguments)]
     async fn process_logs_in_range<A: ReceiptAdapter<N>>(
         &self,
         chain_id: u64,
@@ -265,6 +266,7 @@ where
     }
 
     /// Calculate gas costs between blocks using the provided adapter
+    #[allow(clippy::too_many_arguments)]
     async fn calculate_gas_cost_with_adapter<A: ReceiptAdapter<N>>(
         &self,
         chain_id: u64,
@@ -362,17 +364,16 @@ impl GasCostCalculator<Ethereum> {
         end_block: u64,
     ) -> anyhow::Result<GasCostResult> {
         let adapter = EthereumReceiptAdapter;
-        Ok(self
-            .calculate_gas_cost_with_adapter(
-                chain_id,
-                from,
-                to,
-                token,
-                start_block,
-                end_block,
-                &adapter,
-            )
-            .await?)
+        self.calculate_gas_cost_with_adapter(
+            chain_id,
+            from,
+            to,
+            token,
+            start_block,
+            end_block,
+            &adapter,
+        )
+        .await
     }
 }
 
@@ -387,17 +388,16 @@ impl GasCostCalculator<Optimism> {
         end_block: u64,
     ) -> anyhow::Result<GasCostResult> {
         let adapter = OptimismReceiptAdapter;
-        Ok(self
-            .calculate_gas_cost_with_adapter(
-                chain_id,
-                from,
-                to,
-                token,
-                start_block,
-                end_block,
-                &adapter,
-            )
-            .await?)
+        self.calculate_gas_cost_with_adapter(
+            chain_id,
+            from,
+            to,
+            token,
+            start_block,
+            end_block,
+            &adapter,
+        )
+        .await
     }
 }
 
