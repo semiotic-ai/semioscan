@@ -40,6 +40,14 @@ RUST_LOG=info cargo run --bin semioscan -- gas --chain-id 137 --from 0x4E3288c9c
 
 You should be able to see the [details of that transaction on polygonscan](https://polygonscan.com/tx/0xa8eccf2546db7d440e0639734053dbbcc68b7928852f63ad6815ea5cf7bbea3d).
 
+Calculations for gas costs that should include L1 data fees will be done on OP Stack chains like Base and Optimism:
+
+```bash
+RUST_LOG=info cargo run --bin semioscan -- gas --chain-id 8453 --from 0x0000000000000000000000000000000000000000 --to 0xa7471690db0c93a7F827D1894c78Df7379be11c0 --token 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 --from-block 30991400 --to-block 30991400
+```
+
+Details for that transaction on Base can be found [on BaseScan](https://basescan.org/tx/0x534b7efe2cb97417fdbbd7c7cff9f69c85504cec88d9d6ae0b7b2db92ff87607).
+
 ## Calculate Liqudation Amount
 
 ```bash

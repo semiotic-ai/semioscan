@@ -8,6 +8,56 @@ use tokio::sync::Mutex;
 
 use crate::GasCache;
 
+#[derive(Debug, Clone)]
+pub enum GasForTx {
+    L1(L1Gas),
+    L2(L2Gas),
+}
+
+impl From<(U256, U256)> for GasForTx {
+    fn from((gas_used, effective_gas_price): (U256, U256)) -> Self {
+        Self::L1(L1Gas::from((gas_used, effective_gas_price)))
+    }
+}
+
+impl From<(U256, U256, U256)> for GasForTx {
+    fn from((gas_used, effective_gas_price, l1_data_fee): (U256, U256, U256)) -> Self {
+        Self::L2(L2Gas::from((gas_used, effective_gas_price, l1_data_fee)))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct L1Gas {
+    pub gas_used: U256,
+    pub effective_gas_price: U256,
+}
+
+impl From<(U256, U256)> for L1Gas {
+    fn from((gas_used, effective_gas_price): (U256, U256)) -> Self {
+        Self {
+            gas_used,
+            effective_gas_price,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct L2Gas {
+    pub gas_used: U256,
+    pub effective_gas_price: U256,
+    pub l1_data_fee: U256,
+}
+
+impl From<(U256, U256, U256)> for L2Gas {
+    fn from((gas_used, effective_gas_price, l1_data_fee): (U256, U256, U256)) -> Self {
+        Self {
+            gas_used,
+            effective_gas_price,
+            l1_data_fee,
+        }
+    }
+}
+
 #[derive(Default, Debug, Clone, Serialize)]
 pub struct GasCostResult {
     pub chain_id: u64,
@@ -28,10 +78,34 @@ impl GasCostResult {
         }
     }
 
-    pub fn add_transaction(&mut self, gas_used: U256, effective_gas_price: U256) {
-        let gas_cost = gas_used.saturating_mul(effective_gas_price);
-        self.total_gas_cost = self.total_gas_cost.saturating_add(gas_cost);
-        self.transaction_count += 1;
+    pub fn add_l1_fee(&mut self, l1_fee: U256) {
+        self.total_gas_cost = self.total_gas_cost.saturating_add(l1_fee);
+    }
+
+    /// Add a transaction to the gas cost result
+    ///
+    /// This will add the gas cost for the transaction to the total gas cost
+    /// and increment the transaction count.
+    ///
+    /// If the transaction is an L2 transaction, it will add the L1 data fee to the total gas cost.
+    ///
+    /// If the transaction is an L1 transaction, it will add the gas cost for the transaction to the total gas cost
+    /// and increment the transaction count.
+    pub fn add_transaction(&mut self, gas: GasForTx) {
+        match gas {
+            GasForTx::L1(gas) => {
+                let gas_cost = gas.gas_used.saturating_mul(gas.effective_gas_price);
+                self.total_gas_cost = self.total_gas_cost.saturating_add(gas_cost);
+                self.transaction_count += 1;
+            }
+            GasForTx::L2(gas) => {
+                let l2_gas_cost = gas.gas_used.saturating_mul(gas.effective_gas_price);
+                let l1_data_fee = gas.l1_data_fee;
+                let total_gas_cost = l2_gas_cost.saturating_add(l1_data_fee);
+                self.total_gas_cost = self.total_gas_cost.saturating_add(total_gas_cost);
+                self.transaction_count += 1;
+            }
+        }
     }
 
     /// Merge another gas cost result into this one

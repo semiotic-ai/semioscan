@@ -1,6 +1,6 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::Address;
-use common::create_l1_read_provider;
+use common::{create_l1_read_provider, create_op_stack_read_provider};
 use odos_sdk::OdosChain;
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
@@ -9,7 +9,7 @@ use usdshe::Usdc;
 
 use crate::{
     price::{PriceCalculator, TokenPriceResult},
-    AmountCalculator, AmountResult, GasCostCalculator, GasCostResult, RouterType,
+    AmountCalculator, AmountResult, GasCostCalculator, GasCostResult, RouterType, L2,
 };
 
 type Responder<T> = oneshot::Sender<Result<T, String>>;
@@ -148,13 +148,21 @@ impl CommandHandler {
         let chain = NamedChain::try_from(chain_id)
             .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
 
-        let provider = create_l1_read_provider(chain)?;
+        if chain.has_l1_fees() {
+            let provider = create_op_stack_read_provider(chain)?;
+            let calculator = GasCostCalculator::new(provider);
 
-        let calculator = GasCostCalculator::new(provider);
+            calculator
+                .calculate_gas_cost_between_blocks(chain_id, from, to, token, from_block, to_block)
+                .await
+        } else {
+            let provider = create_l1_read_provider(chain)?;
+            let calculator = GasCostCalculator::new(provider);
 
-        calculator
-            .calculate_gas_cost_between_blocks(chain_id, from, to, token, from_block, to_block)
-            .await
+            calculator
+                .calculate_gas_cost_between_blocks(chain_id, from, to, token, from_block, to_block)
+                .await
+        }
     }
 
     async fn handle_calculate_transfer_amount(
