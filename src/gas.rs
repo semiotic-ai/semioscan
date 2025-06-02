@@ -12,7 +12,7 @@ use crate::{
     CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx, SemioscanHandle, Transfer,
     MAX_BLOCK_RANGE,
 };
-use tracing::{error, info, instrument, Level};
+use tracing::{error, info, instrument, trace, Level};
 
 use crate::Command;
 
@@ -216,7 +216,7 @@ where
 
             let logs = self.provider.get_logs(&filter).await?;
 
-            info!(
+            trace!(
                 logs_count = logs.len(),
                 current_block,
                 to_block = chunk_end,
@@ -226,7 +226,10 @@ where
             for log in &logs {
                 match Transfer::decode_log(&log.inner) {
                     Ok(event) => {
-                        info!(?event, "Processing Transfer event for gas cost");
+                        info!(
+                            ?event,
+                            current_block, "Processing Transfer event for gas cost"
+                        );
                         self.handle_log(log, &mut result, adapter).await?;
                     }
                     Err(e) => {
