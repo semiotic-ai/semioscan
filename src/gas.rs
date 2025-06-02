@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 
 use crate::{
+    adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter},
     CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx, SemioscanHandle, Transfer,
     MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
 };
@@ -18,47 +19,6 @@ use crate::Command;
 
 // Constants for gas calculations
 const BLOB_GAS_PER_BLOB: u64 = 131_072;
-
-/// Trait for network-specific receipt handling
-trait ReceiptAdapter<N: Network> {
-    fn gas_used(&self, receipt: &N::ReceiptResponse) -> U256;
-    fn effective_gas_price(&self, receipt: &N::ReceiptResponse) -> U256;
-    fn l1_data_fee(&self, receipt: &N::ReceiptResponse) -> Option<U256>;
-}
-
-/// Ethereum receipt adapter
-struct EthereumReceiptAdapter;
-
-impl ReceiptAdapter<Ethereum> for EthereumReceiptAdapter {
-    fn gas_used(&self, receipt: &<Ethereum as Network>::ReceiptResponse) -> U256 {
-        U256::from(receipt.gas_used)
-    }
-
-    fn effective_gas_price(&self, receipt: &<Ethereum as Network>::ReceiptResponse) -> U256 {
-        U256::from(receipt.effective_gas_price)
-    }
-
-    fn l1_data_fee(&self, _receipt: &<Ethereum as Network>::ReceiptResponse) -> Option<U256> {
-        None // Ethereum L1 doesn't have L1 data fees
-    }
-}
-
-/// Optimism receipt adapter
-struct OptimismReceiptAdapter;
-
-impl ReceiptAdapter<Optimism> for OptimismReceiptAdapter {
-    fn gas_used(&self, receipt: &<Optimism as Network>::ReceiptResponse) -> U256 {
-        U256::from(receipt.inner.gas_used)
-    }
-
-    fn effective_gas_price(&self, receipt: &<Optimism as Network>::ReceiptResponse) -> U256 {
-        U256::from(receipt.inner.effective_gas_price)
-    }
-
-    fn l1_data_fee(&self, receipt: &<Optimism as Network>::ReceiptResponse) -> Option<U256> {
-        Some(U256::from(receipt.l1_block_info.l1_fee.unwrap_or_default()))
-    }
-}
 
 /// Core gas calculation logic, extracted from network-specific implementations
 struct GasCalculationCore;

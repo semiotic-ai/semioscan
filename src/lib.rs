@@ -1,3 +1,4 @@
+mod adapter;
 mod api;
 pub mod bootstrap;
 mod command;
@@ -11,6 +12,7 @@ mod price_cache;
 mod tokens_to;
 mod transfer;
 
+pub use adapter::*;
 pub use api::*;
 pub use command::*;
 pub use event::*;
