@@ -1,6 +1,12 @@
+//! This module contains the canonical Transfer event definition.
+//! It is used to decode Transfer events from the blockchain.
+
 use std::fmt::Debug;
 
 use alloy_sol_types::sol;
+
+/// The canonical Transfer event signature
+pub const TRANSFER_EVENT_SIGNATURE: &str = "Transfer(address,address,uint256)";
 
 sol! {
     event Transfer(address indexed from, address indexed to, uint256 value);

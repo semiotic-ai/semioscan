@@ -5,7 +5,7 @@ use alloy_sol_types::SolEvent;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info};
 
-use crate::Transfer;
+use crate::{Transfer, TRANSFER_EVENT_SIGNATURE};
 
 pub struct AmountResult {
     pub chain_id: u64,
@@ -41,8 +41,7 @@ impl AmountCalculator {
 
         let contract_address = token;
 
-        let transfer_signature = "Transfer(address,address,uint256)";
-        let transfer_topic = B256::from_slice(&*keccak256(transfer_signature.as_bytes()));
+        let transfer_topic = B256::from_slice(&*keccak256(TRANSFER_EVENT_SIGNATURE.as_bytes()));
 
         let mut current_block = from_block;
 

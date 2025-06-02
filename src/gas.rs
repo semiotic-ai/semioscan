@@ -10,7 +10,7 @@ use tokio::time::{sleep, Duration};
 
 use crate::{
     CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx, SemioscanHandle, Transfer,
-    MAX_BLOCK_RANGE,
+    MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
 };
 use tracing::{error, info, instrument, trace, Level};
 
@@ -18,7 +18,6 @@ use crate::Command;
 
 // Constants for gas calculations
 const BLOB_GAS_PER_BLOB: u64 = 131_072;
-const TRANSFER_EVENT_SIGNATURE: &str = "Transfer(address,address,uint256)";
 
 /// Trait for network-specific receipt handling
 trait ReceiptAdapter<N: Network> {
