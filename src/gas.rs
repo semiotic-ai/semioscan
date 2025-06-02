@@ -81,7 +81,7 @@ where
 {
     /// Process a transfer event and extract gas information
     #[instrument(skip(self, log, adapter), ret(level = Level::INFO))]
-    async fn process_transfer_event<A: ReceiptAdapter<N>>(
+    async fn process_event_log<A: ReceiptAdapter<N>>(
         &self,
         log: &Log,
         adapter: &A,
@@ -218,7 +218,7 @@ where
         result: &mut GasCostResult,
         adapter: &A,
     ) -> anyhow::Result<()> {
-        match self.process_transfer_event(log, adapter).await {
+        match self.process_event_log(log, adapter).await {
             Ok(Some(gas)) => {
                 result.add_transaction(gas);
             }
