@@ -1,6 +1,7 @@
 mod adapter;
 mod api;
 pub mod bootstrap;
+mod combined_retriever;
 mod command;
 mod event;
 mod gas;
@@ -14,6 +15,7 @@ mod transfer;
 
 pub use adapter::*;
 pub use api::*;
+pub use combined_retriever::*;
 pub use command::*;
 pub use event::*;
 pub use gas::*;

@@ -9,7 +9,8 @@ use usdshe::Usdc;
 
 use crate::{
     price::{PriceCalculator, TokenPriceResult},
-    AmountCalculator, AmountResult, GasCostCalculator, GasCostResult, RouterType, L2,
+    AmountCalculator, AmountResult, CombinedCalculator, CombinedDataResult, GasCostCalculator,
+    GasCostResult, RouterType, L2,
 };
 
 type Responder<T> = oneshot::Sender<Result<T, String>>;
@@ -78,6 +79,22 @@ impl CommandHandler {
                             .map_err(|e| e.to_string());
                         if cmd.responder.send(result).is_err() {
                             error!("Failed to send amount response");
+                        }
+                    }
+                    Command::CalculateCombinedData(cmd) => {
+                        let result = job
+                            .handle_calculate_combined_data(
+                                cmd.chain_id,
+                                cmd.from,
+                                cmd.to,
+                                cmd.token,
+                                cmd.from_block,
+                                cmd.to_block,
+                            )
+                            .await
+                            .map_err(|e| e.to_string());
+                        if cmd.responder.send(result).is_err() {
+                            error!("Failed to send combined data response");
                         }
                     }
                 }
@@ -187,6 +204,35 @@ impl CommandHandler {
             )
             .await
     }
+
+    async fn handle_calculate_combined_data(
+        &mut self,
+        chain_id: u64,
+        from: Address,
+        to: Address,
+        token: Address,
+        from_block: u64,
+        to_block: u64,
+    ) -> anyhow::Result<CombinedDataResult> {
+        let chain = NamedChain::try_from(chain_id)
+            .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
+
+        if chain.has_l1_fees() {
+            let provider = create_op_stack_read_provider(chain)?;
+            let calculator = CombinedCalculator::new(provider);
+
+            calculator
+                .calculate_combined_data_optimism(chain_id, from, to, token, from_block, to_block)
+                .await
+        } else {
+            let provider = create_l1_read_provider(chain)?;
+            let calculator = CombinedCalculator::new(provider);
+
+            calculator
+                .calculate_combined_data_ethereum(chain_id, from, to, token, from_block, to_block)
+                .await
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -199,6 +245,7 @@ pub enum Command {
     CalculatePrice(CalculatePriceCommand),
     CalculateGas(CalculateGasCommand),
     CalculateTransferAmount(CalculateTransferAmountCommand),
+    CalculateCombinedData(CalculateCombinedDataCommand),
 }
 
 pub struct CalculatePriceCommand {
@@ -228,4 +275,14 @@ pub struct CalculateTransferAmountCommand {
     pub from_block: u64,
     pub to_block: u64,
     pub responder: Responder<AmountResult>,
+}
+
+pub struct CalculateCombinedDataCommand {
+    pub chain_id: u64,
+    pub from: Address,
+    pub to: Address,
+    pub token: Address,
+    pub from_block: u64,
+    pub to_block: u64,
+    pub responder: Responder<CombinedDataResult>,
 }

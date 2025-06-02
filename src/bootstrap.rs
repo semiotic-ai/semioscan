@@ -4,8 +4,8 @@ use dotenvy::dotenv;
 use tokio::net::TcpListener;
 
 use crate::{
-    serve_api, CalculateGasCommand, CalculatePriceCommand, CalculateTransferAmountCommand, Command,
-    CommandHandler, RouterType,
+    serve_api, CalculateCombinedDataCommand, CalculateGasCommand, CalculatePriceCommand,
+    CalculateTransferAmountCommand, Command, CommandHandler, RouterType,
 };
 
 #[derive(Parser)]
@@ -73,6 +73,27 @@ enum Commands {
         #[arg(long)]
         router: Address,
         /// Recipient address
+        #[arg(long)]
+        to: Address,
+        /// Token address
+        #[arg(long)]
+        token: Address,
+        /// Starting block number
+        #[arg(long)]
+        from_block: u64,
+        /// Ending block number
+        #[arg(long)]
+        to_block: u64,
+    },
+    /// Calculate the combined gas and transfer amount data for a given block range
+    Combined {
+        /// Chain ID to query
+        #[arg(long)]
+        chain_id: u64,
+        /// From address
+        #[arg(long)]
+        from: Address,
+        /// To address
         #[arg(long)]
         to: Address,
         /// Token address
@@ -215,6 +236,41 @@ pub async fn run() -> anyhow::Result<()> {
                 }
                 Err(e) => {
                     eprintln!("Error calculating amount: {}", e);
+                }
+            }
+        }
+        Commands::Combined {
+            chain_id,
+            from,
+            to,
+            token,
+            from_block,
+            to_block,
+        } => {
+            let price_job_handle = CommandHandler::init();
+            let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
+
+            price_job_handle
+                .tx
+                .send(Command::CalculateCombinedData(
+                    CalculateCombinedDataCommand {
+                        chain_id,
+                        from,
+                        to,
+                        token,
+                        from_block,
+                        to_block,
+                        responder: responder_tx,
+                    },
+                ))
+                .await?;
+
+            match responder_rx.await? {
+                Ok(result) => {
+                    println!("Combined data: {:?}", result);
+                }
+                Err(e) => {
+                    eprintln!("Error calculating combined data: {}", e);
                 }
             }
         }
