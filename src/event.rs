@@ -21,3 +21,20 @@ impl Debug for Transfer {
         )
     }
 }
+
+/// The canonical Approval event signature
+pub const APPROVAL_EVENT_SIGNATURE: &str = "Approval(address,address,uint256)";
+
+sol! {
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+}
+
+impl Debug for Approval {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Approval(owner: {}, spender: {}, value: {})",
+            self.owner, self.spender, self.value
+        )
+    }
+}

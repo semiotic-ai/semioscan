@@ -10,6 +10,7 @@ use tokio::time::{sleep, Duration};
 
 use crate::{
     adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter},
+    bootstrap::SupportedEvent,
     CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx, SemioscanHandle, Transfer,
     MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
 };
@@ -149,7 +150,7 @@ where
 
     /// Process logs in a given block range
     #[allow(clippy::too_many_arguments)]
-    async fn process_logs_in_range<A: ReceiptAdapter<N>>(
+    async fn process_logs_for_transfers_in_range<A: ReceiptAdapter<N>>(
         &self,
         chain_id: u64,
         from: Address,
@@ -235,7 +236,7 @@ where
 
     /// Calculate gas costs between blocks using the provided adapter
     #[allow(clippy::too_many_arguments)]
-    async fn calculate_gas_cost_with_adapter<A: ReceiptAdapter<N>>(
+    async fn calculate_gas_cost_for_transfers_with_adapter<A: ReceiptAdapter<N>>(
         &self,
         chain_id: u64,
         from: Address,
@@ -288,7 +289,9 @@ where
             );
 
             let gap_result = self
-                .process_logs_in_range(chain_id, from, to, token, gap_start, gap_end, adapter)
+                .process_logs_for_transfers_in_range(
+                    chain_id, from, to, token, gap_start, gap_end, adapter,
+                )
                 .await?;
 
             // Cache the gap result
@@ -322,7 +325,7 @@ where
 
 // Network-specific implementations using the adapters
 impl GasCostCalculator<Ethereum> {
-    pub async fn calculate_gas_cost_between_blocks(
+    pub async fn calculate_gas_cost_for_transfers_between_blocks(
         &self,
         chain_id: u64,
         from: Address,
@@ -332,7 +335,7 @@ impl GasCostCalculator<Ethereum> {
         end_block: u64,
     ) -> anyhow::Result<GasCostResult> {
         let adapter = EthereumReceiptAdapter;
-        self.calculate_gas_cost_with_adapter(
+        self.calculate_gas_cost_for_transfers_with_adapter(
             chain_id,
             from,
             to,
@@ -346,7 +349,7 @@ impl GasCostCalculator<Ethereum> {
 }
 
 impl GasCostCalculator<Optimism> {
-    pub async fn calculate_gas_cost_between_blocks(
+    pub async fn calculate_gas_cost_for_transfers_between_blocks(
         &self,
         chain_id: u64,
         from: Address,
@@ -356,7 +359,7 @@ impl GasCostCalculator<Optimism> {
         end_block: u64,
     ) -> anyhow::Result<GasCostResult> {
         let adapter = OptimismReceiptAdapter;
-        self.calculate_gas_cost_with_adapter(
+        self.calculate_gas_cost_for_transfers_with_adapter(
             chain_id,
             from,
             to,
@@ -378,6 +381,7 @@ pub struct GasQuery {
     pub token: Address,
     pub from_block: u64,
     pub to_block: u64,
+    pub event: SupportedEvent,
 }
 
 /// Response for the gas cost endpoint.
@@ -403,6 +407,7 @@ pub async fn get_gas_cost(
         .send(Command::CalculateGas(CalculateGasCommand {
             from: params.from,
             to: params.to,
+            event: params.event,
             token: params.token,
             from_block: params.from_block,
             to_block: params.to_block,

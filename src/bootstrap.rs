@@ -1,12 +1,20 @@
 use alloy_primitives::Address;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use dotenvy::dotenv;
+use serde::Deserialize;
 use tokio::net::TcpListener;
 
 use crate::{
     serve_api, CalculateCombinedDataCommand, CalculateGasCommand, CalculatePriceCommand,
     CalculateTransferAmountCommand, Command, CommandHandler, RouterType,
 };
+
+// Supported event types
+#[derive(ValueEnum, Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
+pub enum SupportedEvent {
+    Transfer,
+    Approval,
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -62,6 +70,9 @@ enum Commands {
         /// Ending block number
         #[arg(long)]
         to_block: u64,
+        /// Event type to filter for (e.g., transfer, approval)
+        #[arg(long, value_enum)]
+        event: SupportedEvent,
     },
     /// Calculate the amount of a token transferred to a recipient
     /// for a given block range
@@ -177,6 +188,7 @@ pub async fn run() -> anyhow::Result<()> {
             token,
             from_block,
             to_block,
+            event,
         } => {
             let price_job_handle = CommandHandler::init();
             let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
@@ -190,6 +202,7 @@ pub async fn run() -> anyhow::Result<()> {
                     token,
                     from_block,
                     to_block,
+                    event,
                     responder: responder_tx,
                 }))
                 .await?;

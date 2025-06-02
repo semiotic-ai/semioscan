@@ -8,6 +8,7 @@ use tracing::{error, info};
 use usdshe::Usdc;
 
 use crate::{
+    bootstrap::SupportedEvent,
     price::{PriceCalculator, TokenPriceResult},
     AmountCalculator, AmountResult, CombinedCalculator, CombinedDataResult, GasCostCalculator,
     GasCostResult, RouterType, L2,
@@ -52,6 +53,7 @@ impl CommandHandler {
                         let result = job
                             .handle_calculate_gas(
                                 cmd.chain_id,
+                                cmd.event,
                                 cmd.from,
                                 cmd.to,
                                 cmd.token,
@@ -153,9 +155,11 @@ impl CommandHandler {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_calculate_gas(
         &mut self,
         chain_id: u64,
+        event: SupportedEvent,
         from: Address,
         to: Address,
         token: Address,
@@ -169,16 +173,44 @@ impl CommandHandler {
             let provider = create_op_stack_read_provider(chain)?;
             let calculator = GasCostCalculator::new(provider);
 
-            calculator
-                .calculate_gas_cost_between_blocks(chain_id, from, to, token, from_block, to_block)
-                .await
+            match event {
+                SupportedEvent::Transfer => {
+                    calculator
+                        .calculate_gas_cost_for_transfers_between_blocks(
+                            chain_id, from, to, token, from_block, to_block,
+                        )
+                        .await
+                }
+                SupportedEvent::Approval => {
+                    todo!()
+                    // calculator
+                    //     .calculate_gas_cost_for_approvals_between_blocks(
+                    //         chain_id, from, to, token, from_block, to_block,
+                    //     )
+                    //     .await
+                }
+            }
         } else {
             let provider = create_l1_read_provider(chain)?;
             let calculator = GasCostCalculator::new(provider);
 
-            calculator
-                .calculate_gas_cost_between_blocks(chain_id, from, to, token, from_block, to_block)
-                .await
+            match event {
+                SupportedEvent::Transfer => {
+                    calculator
+                        .calculate_gas_cost_for_transfers_between_blocks(
+                            chain_id, from, to, token, from_block, to_block,
+                        )
+                        .await
+                }
+                SupportedEvent::Approval => {
+                    todo!()
+                    // calculator
+                    //     .calculate_gas_cost_for_approvals_between_blocks(
+                    //         chain_id, from, to, token, from_block, to_block,
+                    //     )
+                    //     .await
+                }
+            }
         }
     }
 
@@ -259,6 +291,7 @@ pub struct CalculatePriceCommand {
 
 pub struct CalculateGasCommand {
     pub chain_id: u64,
+    pub event: SupportedEvent,
     pub from: Address,
     pub to: Address,
     pub token: Address,
