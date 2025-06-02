@@ -6,6 +6,7 @@ use alloy_sol_types::SolEvent;
 use axum::{extract::Query, extract::State, Json};
 use op_alloy_network::Optimism;
 use serde::{Deserialize, Serialize};
+use tokio::time::{sleep, Duration};
 
 use crate::{
     CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx, SemioscanHandle, Transfer,
@@ -238,6 +239,11 @@ where
                 }
             }
             current_block = chunk_end + 1;
+
+            // Add a small delay to avoid hitting rate limits on Sonic Alchemy endpoint
+            if chain_id.eq(&146) && current_block <= to_block {
+                sleep(Duration::from_millis(250)).await;
+            }
         }
 
         Ok(result)
