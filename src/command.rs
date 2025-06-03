@@ -71,7 +71,7 @@ impl CommandHandler {
                         let result = job
                             .handle_calculate_transfer_amount(
                                 cmd.chain_id,
-                                cmd.router,
+                                cmd.from,
                                 cmd.to,
                                 cmd.token,
                                 cmd.from_block,
@@ -217,7 +217,7 @@ impl CommandHandler {
     async fn handle_calculate_transfer_amount(
         &mut self,
         chain_id: u64,
-        router: Address,
+        from: Address,
         to: Address,
         token: Address,
         from_block: u64,
@@ -232,7 +232,7 @@ impl CommandHandler {
 
         calculator
             .calculate_transfer_amount_between_blocks(
-                chain_id, router, to, token, from_block, to_block,
+                chain_id, from, to, token, from_block, to_block,
             )
             .await
     }
@@ -302,7 +302,7 @@ pub struct CalculateGasCommand {
 
 pub struct CalculateTransferAmountCommand {
     pub chain_id: u64,
-    pub router: Address,
+    pub from: Address,
     pub to: Address,
     pub token: Address,
     pub from_block: u64,

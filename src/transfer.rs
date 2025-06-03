@@ -26,7 +26,7 @@ impl AmountCalculator {
     pub async fn calculate_transfer_amount_between_blocks(
         &self,
         chain_id: u64,
-        router: Address,
+        from: Address,
         to: Address,
         token: Address,
         from_block: u64,
@@ -53,7 +53,7 @@ impl AmountCalculator {
                 .to_block(end_chunk_block)
                 .address(contract_address)
                 .event_signature(vec![transfer_topic])
-                .topic1(router)
+                .topic1(from)
                 .topic2(to);
 
             let logs = self.provider.get_logs(&filter).await?;
