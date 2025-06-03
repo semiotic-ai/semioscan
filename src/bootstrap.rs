@@ -55,8 +55,8 @@ enum Commands {
         /// Chain ID to query
         #[arg(long)]
         chain_id: u64,
-        /// From address to query
-        #[arg(long)]
+        /// From address to query. (The alias '--router' is deprecated, please use '--from')
+        #[arg(long, alias = "router")]
         from: Address,
         /// To address to query
         #[arg(long)]
