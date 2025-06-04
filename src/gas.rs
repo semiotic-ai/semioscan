@@ -11,8 +11,8 @@ use tokio::time::{sleep, Duration};
 use crate::{
     adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter},
     bootstrap::SupportedEvent,
-    CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx, SemioscanHandle, Transfer,
-    MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
+    Approval, CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx, SemioscanHandle,
+    Transfer, APPROVAL_EVENT_SIGNATURE, MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
 };
 use tracing::{error, info, instrument, trace, Level};
 
@@ -72,6 +72,25 @@ impl GasCalculationCore {
             .event_signature(vec![transfer_topic])
             .topic1(from)
             .topic2(to)
+    }
+
+    /// Create the approval event filter for the given parameters
+    fn create_approval_filter(
+        current_block: u64,
+        to_block: u64,
+        token: Address,
+        owner: Address,
+        spender: Address,
+    ) -> Filter {
+        let approval_topic = B256::from_slice(&*keccak256(APPROVAL_EVENT_SIGNATURE.as_bytes()));
+
+        Filter::new()
+            .from_block(current_block)
+            .to_block(to_block)
+            .address(token)
+            .event_signature(vec![approval_topic])
+            .topic1(owner)
+            .topic2(spender)
     }
 }
 
@@ -212,6 +231,70 @@ where
         Ok(result)
     }
 
+    /// Process logs in a given block range
+    #[allow(clippy::too_many_arguments)]
+    async fn process_logs_for_approvals_in_range<A: ReceiptAdapter<N>>(
+        &self,
+        chain_id: u64,
+        owner: Address,
+        spender: Address,
+        token: Address,
+        from_block: u64,
+        to_block: u64,
+        adapter: &A,
+    ) -> anyhow::Result<GasCostResult> {
+        let mut result = GasCostResult::new(chain_id, owner, spender);
+        let mut current_block = from_block;
+
+        while current_block <= to_block {
+            let chunk_end = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, to_block);
+
+            let filter = GasCalculationCore::create_approval_filter(
+                current_block,
+                chunk_end,
+                token,
+                owner,
+                spender,
+            );
+
+            let logs = self.provider.get_logs(&filter).await?;
+
+            trace!(
+                logs_count = logs.len(),
+                current_block,
+                to_block = chunk_end,
+                "Fetched logs for gas cost calculation"
+            );
+
+            for log in &logs {
+                match Approval::decode_log(&log.inner) {
+                    Ok(event) => {
+                        info!(
+                            ?event,
+                            current_block, "Processing Transfer event for gas cost"
+                        );
+                        self.handle_log(log, &mut result, adapter).await?;
+                    }
+                    Err(e) => {
+                        error!(error = ?e, "Failed to decode Transfer log for gas");
+                        return Err(anyhow::anyhow!(
+                            "Failed to decode Transfer log for gas: {:?}",
+                            e
+                        ));
+                    }
+                }
+            }
+            current_block = chunk_end + 1;
+
+            // Add a small delay to avoid hitting rate limits on Sonic Alchemy endpoint
+            if chain_id.eq(&146) && current_block <= to_block {
+                sleep(Duration::from_millis(250)).await;
+            }
+        }
+
+        Ok(result)
+    }
+
     /// Handle a single log and update the result
     async fn handle_log<A: ReceiptAdapter<N>>(
         &self,
@@ -321,6 +404,95 @@ where
 
         Ok(gas_data)
     }
+
+    /// Calculate gas costs between blocks using the provided adapter
+    #[allow(clippy::too_many_arguments)]
+    async fn calculate_gas_cost_for_approvals_with_adapter<A: ReceiptAdapter<N>>(
+        &self,
+        chain_id: u64,
+        owner: Address,
+        spender: Address,
+        token: Address,
+        start_block: u64,
+        end_block: u64,
+        adapter: &A,
+    ) -> anyhow::Result<GasCostResult> {
+        info!(
+            chain_id,
+            ?owner,
+            ?spender,
+            start_block,
+            end_block,
+            "Starting gas cost calculation"
+        );
+
+        // Check cache and calculate gaps that need to be filled
+        let (cached_result, gaps) = {
+            let cache = self.gas_cache.lock().await;
+            cache.calculate_gaps(chain_id, owner, spender, start_block, end_block)
+        };
+
+        // If there are no gaps, we can return the cached result
+        if let Some(result) = cached_result.clone() {
+            if gaps.is_empty() {
+                info!(
+                    chain_id,
+                    ?owner,
+                    ?spender,
+                    "Using complete cached result for gas cost block range"
+                );
+                return Ok(result);
+            }
+        }
+
+        // Initialize with any cached data or create new result
+        let mut gas_data =
+            cached_result.unwrap_or_else(|| GasCostResult::new(chain_id, owner, spender));
+
+        // Process each gap
+        for (gap_start, gap_end) in gaps {
+            info!(
+                chain_id,
+                ?owner,
+                ?spender,
+                gap_start,
+                gap_end,
+                "Processing uncached block range for gas cost"
+            );
+
+            let gap_result = self
+                .process_logs_for_approvals_in_range(
+                    chain_id, owner, spender, token, gap_start, gap_end, adapter,
+                )
+                .await?;
+
+            // Cache the gap result
+            {
+                let mut cache = self.gas_cache.lock().await;
+                cache.insert(owner, spender, gap_start, gap_end, gap_result.clone());
+            }
+
+            // Merge the gap result with our main result
+            gas_data.merge(&gap_result);
+        }
+
+        // Cache the complete result
+        {
+            let mut cache = self.gas_cache.lock().await;
+            cache.insert(owner, spender, start_block, end_block, gas_data.clone());
+        }
+
+        info!(
+            chain_id,
+            ?owner,
+            ?spender,
+            total_gas_cost = ?gas_data.total_gas_cost,
+            transaction_count = gas_data.transaction_count,
+            "Finished gas cost calculation"
+        );
+
+        Ok(gas_data)
+    }
 }
 
 // Network-specific implementations using the adapters
@@ -363,6 +535,55 @@ impl GasCostCalculator<Optimism> {
             chain_id,
             from,
             to,
+            token,
+            start_block,
+            end_block,
+            &adapter,
+        )
+        .await
+    }
+}
+
+// Network-specific implementations using the adapters
+impl GasCostCalculator<Ethereum> {
+    pub async fn calculate_gas_cost_for_approvals_between_blocks(
+        &self,
+        chain_id: u64,
+        owner: Address,
+        spender: Address,
+        token: Address,
+        start_block: u64,
+        end_block: u64,
+    ) -> anyhow::Result<GasCostResult> {
+        let adapter = EthereumReceiptAdapter;
+        self.calculate_gas_cost_for_approvals_with_adapter(
+            chain_id,
+            owner,
+            spender,
+            token,
+            start_block,
+            end_block,
+            &adapter,
+        )
+        .await
+    }
+}
+
+impl GasCostCalculator<Optimism> {
+    pub async fn calculate_gas_cost_for_approvals_between_blocks(
+        &self,
+        chain_id: u64,
+        owner: Address,
+        spender: Address,
+        token: Address,
+        start_block: u64,
+        end_block: u64,
+    ) -> anyhow::Result<GasCostResult> {
+        let adapter = OptimismReceiptAdapter;
+        self.calculate_gas_cost_for_approvals_with_adapter(
+            chain_id,
+            owner,
+            spender,
             token,
             start_block,
             end_block,

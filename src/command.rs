@@ -182,12 +182,11 @@ impl CommandHandler {
                         .await
                 }
                 SupportedEvent::Approval => {
-                    todo!()
-                    // calculator
-                    //     .calculate_gas_cost_for_approvals_between_blocks(
-                    //         chain_id, from, to, token, from_block, to_block,
-                    //     )
-                    //     .await
+                    calculator
+                        .calculate_gas_cost_for_approvals_between_blocks(
+                            chain_id, from, to, token, from_block, to_block,
+                        )
+                        .await
                 }
             }
         } else {
@@ -203,12 +202,11 @@ impl CommandHandler {
                         .await
                 }
                 SupportedEvent::Approval => {
-                    todo!()
-                    // calculator
-                    //     .calculate_gas_cost_for_approvals_between_blocks(
-                    //         chain_id, from, to, token, from_block, to_block,
-                    //     )
-                    //     .await
+                    calculator
+                        .calculate_gas_cost_for_approvals_between_blocks(
+                            chain_id, from, to, token, from_block, to_block,
+                        )
+                        .await
                 }
             }
         }
