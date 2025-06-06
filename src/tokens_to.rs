@@ -11,6 +11,8 @@ use tracing::{debug, error, info};
 use crate::Transfer;
 
 /// Extract tokens from a router contract.
+///
+/// Used for extracting router contract token balances by Likwid.
 pub async fn extract_transferred_to_tokens<T: Provider>(
     provider: &T,
     chain: NamedChain,
