@@ -176,7 +176,7 @@ pub async fn run() -> anyhow::Result<()> {
                     println!("Transaction count: {}", result.transaction_count());
                 }
                 Err(e) => {
-                    eprintln!("Error calculating price: {}", e);
+                    eprintln!("Error calculating price: {e}");
                     return Err(anyhow::anyhow!(e));
                 }
             }
@@ -213,7 +213,7 @@ pub async fn run() -> anyhow::Result<()> {
                     println!("Transaction count: {}", result.transaction_count);
                 }
                 Err(e) => {
-                    eprintln!("Error calculating gas cost: {}", e);
+                    eprintln!("Error calculating gas cost: {e}");
                 }
             }
         }
@@ -248,7 +248,7 @@ pub async fn run() -> anyhow::Result<()> {
                     println!("Amount: {}", result.amount);
                 }
                 Err(e) => {
-                    eprintln!("Error calculating amount: {}", e);
+                    eprintln!("Error calculating amount: {e}");
                 }
             }
         }
@@ -280,10 +280,10 @@ pub async fn run() -> anyhow::Result<()> {
 
             match responder_rx.await? {
                 Ok(result) => {
-                    println!("Combined data: {:?}", result);
+                    println!("Combined data: {result:?}");
                 }
                 Err(e) => {
-                    eprintln!("Error calculating combined data: {}", e);
+                    eprintln!("Error calculating combined data: {e}");
                 }
             }
         }
