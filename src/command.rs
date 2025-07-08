@@ -123,7 +123,7 @@ impl CommandHandler {
             let provider = create_l1_read_provider(chain)?;
 
             // Get chain-specific addresses
-            let router_address = chain.v2_router_address();
+            let router_address = chain.v2_router_address()?;
             let usdc_address = chain.usdc_address()?;
 
             // Create and insert calculator
