@@ -1,6 +1,6 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::Address;
-use common::{create_l1_read_provider, create_op_stack_read_provider};
+use common::{create_l1_read_provider, create_op_stack_read_provider, L2};
 use odos_sdk::OdosChain;
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
@@ -11,7 +11,7 @@ use crate::{
     bootstrap::SupportedEvent,
     price::{PriceCalculator, TokenPriceResult},
     AmountCalculator, AmountResult, CombinedCalculator, CombinedDataResult, GasCostCalculator,
-    GasCostResult, RouterType, L2,
+    GasCostResult, RouterType,
 };
 
 type Responder<T> = oneshot::Sender<Result<T, String>>;
