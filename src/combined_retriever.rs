@@ -248,7 +248,7 @@ where
         }))
     }
 
-    #[instrument(skip(self, adapter), level = "info")]
+    #[instrument(skip(self, adapter))]
     #[allow(clippy::too_many_arguments)]
     async fn process_block_range_for_combined_data<A: ReceiptAdapter<N> + Send + Sync>(
         &self,
