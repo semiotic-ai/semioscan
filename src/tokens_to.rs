@@ -21,6 +21,7 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
     end_block: u64,
 ) -> anyhow::Result<BTreeSet<Address>> {
     info!(
+        chain = %chain,
         router = %router,
         start_block = start_block,
         end_block = end_block,
