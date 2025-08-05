@@ -3,7 +3,7 @@ use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
 use tokio::time::{sleep, Duration};
-use tracing::{error, info};
+use tracing::{info, warn};
 
 use crate::{Transfer, TRANSFER_EVENT_SIGNATURE};
 
@@ -73,7 +73,7 @@ impl AmountCalculator {
                         result.amount = result.amount.saturating_add(event.value);
                     }
                     Err(e) => {
-                        error!(error = ?e, "Failed to decode Transfer log");
+                        warn!(error = ?e, "Failed to decode Transfer log");
                     }
                 }
             }

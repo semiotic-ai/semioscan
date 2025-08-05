@@ -6,7 +6,7 @@ use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
 use tokio::time::{sleep, Duration};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::Transfer;
 
@@ -54,7 +54,8 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
                             transferred_to_tokens.insert(token_address);
                         }
                         Err(e) => {
-                            error!(?e, "Failed to decode Transfer log");
+                            // This happens more for some chains than others, so we don't want to error out.
+                            warn!(error = ?e, "Failed to decode Transfer log");
                             continue;
                         }
                         _ => {}
