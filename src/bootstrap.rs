@@ -1,12 +1,15 @@
 use alloy_primitives::Address;
+use alloy_provider::ProviderBuilder;
+use chrono::NaiveDate;
 use clap::{Parser, Subcommand, ValueEnum};
 use dotenvy::dotenv;
 use serde::Deserialize;
+use std::env;
 use tokio::net::TcpListener;
 
 use crate::{
-    serve_api, CalculateCombinedDataCommand, CalculateGasCommand, CalculatePriceCommand,
-    CalculateTransferAmountCommand, Command, CommandHandler, RouterType,
+    serve_api, BlockWindowCalculator, CalculateCombinedDataCommand, CalculateGasCommand,
+    CalculatePriceCommand, CalculateTransferAmountCommand, Command, CommandHandler, RouterType,
 };
 
 // Supported event types
@@ -116,6 +119,21 @@ enum Commands {
         /// Ending block number
         #[arg(long)]
         to_block: u64,
+        /// Output format: json or debug (default)
+        #[arg(long, default_value = "debug")]
+        format: String,
+    },
+    /// Calculate the block range for a given date (UTC)
+    BlockWindow {
+        /// Date to query (format: YYYY-MM-DD)
+        #[arg(long)]
+        date: String,
+        /// Optional cache file path (defaults to block_windows.json)
+        #[arg(long)]
+        cache_path: Option<String>,
+        /// Output format: plain (just block numbers), json, or human-readable (default)
+        #[arg(long, default_value = "human")]
+        format: String,
     },
 }
 
@@ -259,6 +277,7 @@ pub async fn run() -> anyhow::Result<()> {
             token,
             from_block,
             to_block,
+            format,
         } => {
             let price_job_handle = CommandHandler::init();
             let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
@@ -280,10 +299,93 @@ pub async fn run() -> anyhow::Result<()> {
 
             match responder_rx.await? {
                 Ok(result) => {
-                    println!("Combined data: {result:?}");
+                    match format.to_lowercase().as_str() {
+                        "json" => {
+                            // Output as JSON
+                            println!("{}", serde_json::to_string_pretty(&result)?);
+                        }
+                        "debug" => {
+                            // Debug format (default)
+                            println!("Combined data: {result:?}");
+                        }
+                        _ => {
+                            return Err(anyhow::anyhow!(
+                                "Invalid format: {format}. Use 'json' or 'debug'"
+                            ));
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("Error calculating combined data: {e}");
+                }
+            }
+        }
+        Commands::BlockWindow {
+            date,
+            cache_path,
+            format,
+        } => {
+            // Parse the date
+            let date = NaiveDate::parse_from_str(&date, "%Y-%m-%d").map_err(|e| {
+                anyhow::anyhow!("Failed to parse date (expected format: YYYY-MM-DD): {e}")
+            })?;
+
+            // Get RPC URL and API key from environment
+            let rpc_url = env::var("RPC_URL")
+                .map_err(|_| anyhow::anyhow!("RPC_URL environment variable not set"))?;
+            let api_key = env::var("API_KEY")
+                .map_err(|_| anyhow::anyhow!("API_KEY environment variable not set"))?;
+
+            // Combine RPC URL with API key (trailing slash is important for Pinax endpoint)
+            let full_rpc_url = format!("{rpc_url}{api_key}/");
+
+            // Create provider
+            let provider = ProviderBuilder::new().connect_http(
+                full_rpc_url
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("Failed to parse RPC URL: {e}"))?,
+            );
+
+            // Use provided cache path or default
+            let cache_path = cache_path.unwrap_or_else(|| "block_windows.json".to_string());
+
+            // Create calculator and get daily window
+            let calculator = BlockWindowCalculator::new(provider, cache_path);
+            let window = calculator.get_daily_window(date).await?;
+
+            // Output based on format
+            match format.to_lowercase().as_str() {
+                "plain" => {
+                    // Just output the block range for easy piping
+                    println!("{} {}", window.start_block, window.end_block);
+                }
+                "json" => {
+                    // Output as JSON
+                    println!("{}", serde_json::to_string_pretty(&window)?);
+                }
+                "human" => {
+                    // Human-readable output
+                    println!("Date: {date}");
+                    println!(
+                        "Block range: [{}, {}] (inclusive)",
+                        window.start_block, window.end_block
+                    );
+                    println!("Block count: {}", window.block_count());
+                    println!(
+                        "UTC start: {} ({})",
+                        window.start_ts,
+                        chrono::DateTime::from_timestamp(window.start_ts.0, 0).unwrap()
+                    );
+                    println!(
+                        "UTC end (exclusive): {} ({})",
+                        window.end_ts_exclusive,
+                        chrono::DateTime::from_timestamp(window.end_ts_exclusive.0, 0).unwrap()
+                    );
+                }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Invalid format: {format}. Use 'plain', 'json', or 'human'"
+                    ));
                 }
             }
         }
