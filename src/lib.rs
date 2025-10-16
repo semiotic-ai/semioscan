@@ -1,5 +1,6 @@
 mod adapter;
 mod api;
+mod block_window;
 pub mod bootstrap;
 mod combined_retriever;
 mod command;
@@ -14,6 +15,7 @@ mod transfer;
 
 pub use adapter::*;
 pub use api::*;
+pub use block_window::*;
 pub use combined_retriever::*;
 pub use command::*;
 pub use event::*;
