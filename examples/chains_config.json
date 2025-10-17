@@ -1,0 +1,172 @@
+{
+  "chains": [
+    {
+      "name": "Base",
+      "chain_id": "8453",
+      "token_symbol": "USDC",
+      "token_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      "rpc_env_var": "BASE_RPC_URL",
+      "routers": {
+        "v2": {
+          "router_address": "0x19ceead7105607cd444f5ad10dd51356436095a1",
+          "recipient_addresses": [
+            "0xa7471690db0c93a7f827d1894c78df7379be11c0",
+            "0x498292dc123f19bdbc109081f6cf1d0e849a9daf"
+          ]
+        },
+        "v3": {
+          "router_address": "0x0d05a7d3448512b78fa8a9e46c4872c88c4a0d05",
+          "recipient_addresses": [
+            "0x498292dc123f19bdbc109081f6cf1d0e849a9daf"
+          ]
+        },
+        "lo": {
+          "router_address": "0xedeafdef0901ef74ee28c207be8424d3b353d97a",
+          "recipient_addresses": [
+            "0x498292dc123f19bdbc109081f6cf1d0e849a9daf"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Arbitrum",
+      "chain_id": "42161",
+      "token_symbol": "USDC",
+      "token_address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "rpc_env_var": "ARBITRUM_RPC_URL",
+      "routers": {
+        "v2": {
+          "router_address": "0xa669e7a0d4b3e4fa48af2de86bd4cd7126be4e13",
+          "recipient_addresses": [
+            "0x498020622CA0d5De103b7E78E3eFe5819D0d28AB",
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        },
+        "v3": {
+          "router_address": "0x0d05a7d3448512b78fa8a9e46c4872c88c4a0d05",
+          "recipient_addresses": [
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        },
+        "lo": {
+          "router_address": "0x7432657cDda02226ac2aAc9d8f552Ee9613B064e",
+          "recipient_addresses": [
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Optimism",
+      "chain_id": "10",
+      "token_symbol": "USDC",
+      "token_address": "0x0b2c639c533813f4aa9d7837caf62653d097ff85",
+      "rpc_env_var": "OPTIMISM_RPC_URL",
+      "routers": {
+        "v2": {
+          "router_address": "0xca423977156bb05b13a2ba3b76bc5419e2fe9680",
+          "recipient_addresses": [
+            "0x498020622CA0d5De103b7E78E3eFe5819D0d28AB",
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        },
+        "v3": {
+          "router_address": "0x0d05a7d3448512b78fa8a9e46c4872c88c4a0d05",
+          "recipient_addresses": [
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        },
+        "lo": {
+          "router_address": "0xcbf3822a63b7867cd602317fb4ae3ca864826ef8",
+          "recipient_addresses": [
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Polygon",
+      "chain_id": "137",
+      "token_symbol": "USDC",
+      "token_address": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+      "rpc_env_var": "POLYGON_RPC_URL",
+      "routers": {
+        "v2": {
+          "router_address": "0x4e3288c9ca110bcc82bf38f09a7b425c095d92bf",
+          "recipient_addresses": [
+            "0x498020622CA0d5De103b7E78E3eFe5819D0d28AB",
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        },
+        "v3": {
+          "router_address": "0x0d05a7d3448512b78fa8a9e46c4872c88c4a0d05",
+          "recipient_addresses": [
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        },
+        "lo": {
+          "router_address": "0x93052961c75c92Fd5d6362655936C239EF2D5336",
+          "recipient_addresses": [
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Avalanche",
+      "chain_id": "43114",
+      "token_symbol": "USDC",
+      "token_address": "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",
+      "rpc_env_var": "AVALANCHE_RPC_URL",
+      "routers": {
+        "v2": {
+          "router_address": "0x88de50b233052e4fb783d4f6db78cc34fea3e9fc",
+          "recipient_addresses": [
+            "0x498020622CA0d5De103b7E78E3eFe5819D0d28AB",
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        },
+        "v3": {
+          "router_address": "0x0d05a7d3448512b78fa8a9e46c4872c88c4a0d05",
+          "recipient_addresses": [
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        },
+        "lo": {
+          "router_address": "0xcc0126349d1bd892d1c53381e68dbf0c8f0e045e",
+          "recipient_addresses": [
+            "0x9aA30b2289020f9de59D39fBd7Bd5f3BE661a2a6"
+          ]
+        }
+      }
+    },
+    {
+      "name": "BNB Chain",
+      "chain_id": "56",
+      "token_symbol": "USDC",
+      "token_address": "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d",
+      "rpc_env_var": "BNB_RPC_URL",
+      "routers": {
+        "v2": {
+          "router_address": "0x89b8aa89fdd0507a99d334cbe3c808fafc7d850e",
+          "recipient_addresses": [
+            "0xb13d1210dedd20f974457a73eaa8ac3d6f04cd28",
+            "0x498292dc123f19bdbc109081f6cf1d0e849a9daf"
+          ]
+        },
+        "v3": {
+          "router_address": "0x0d05a7d3448512b78fa8a9e46c4872c88c4a0d05",
+          "recipient_addresses": [
+            "0x498292dc123f19bdbc109081f6cf1d0e849a9daf"
+          ]
+        },
+        "lo": {
+          "router_address": "0x0D4aB12E62D17f037D43F018Da18FF623e1AF3B2",
+          "recipient_addresses": [
+            "0x498292dc123f19bdbc109081f6cf1d0e849a9daf"
+          ]
+        }
+      }
+    }
+  ]
+}
