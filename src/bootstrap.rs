@@ -125,6 +125,9 @@ enum Commands {
     },
     /// Calculate the block range for a given date (UTC)
     BlockWindow {
+        /// Chain ID to query
+        #[arg(long)]
+        chain_id: u64,
         /// Date to query (format: YYYY-MM-DD)
         #[arg(long)]
         date: String,
@@ -301,8 +304,20 @@ pub async fn run() -> anyhow::Result<()> {
                 Ok(result) => {
                     match format.to_lowercase().as_str() {
                         "json" => {
-                            // Output as JSON
-                            println!("{}", serde_json::to_string_pretty(&result)?);
+                            // Output as JSON with human-readable values
+                            // Query token decimals on-chain
+                            use alloy_chains::NamedChain;
+                            use common::create_l1_read_provider;
+                            use erc20_rs::Erc20;
+
+                            let chain = NamedChain::try_from(chain_id)
+                                .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
+                            let provider = create_l1_read_provider(chain)?;
+                            let token_contract = Erc20::new(token, provider);
+                            let decimals = token_contract.decimals().await?;
+
+                            let display = result.to_display(decimals);
+                            println!("{}", serde_json::to_string_pretty(&display)?);
                         }
                         "debug" => {
                             // Debug format (default)
@@ -321,6 +336,7 @@ pub async fn run() -> anyhow::Result<()> {
             }
         }
         Commands::BlockWindow {
+            chain_id,
             date,
             cache_path,
             format,
@@ -351,7 +367,7 @@ pub async fn run() -> anyhow::Result<()> {
 
             // Create calculator and get daily window
             let calculator = BlockWindowCalculator::new(provider, cache_path);
-            let window = calculator.get_daily_window(date).await?;
+            let window = calculator.get_daily_window(chain_id, date).await?;
 
             // Output based on format
             match format.to_lowercase().as_str() {

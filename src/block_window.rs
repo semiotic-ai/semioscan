@@ -260,18 +260,18 @@ impl<P: Provider> BlockWindowCalculator<P> {
     /// 3. Saves the result to the cache for future use
     ///
     /// # Arguments
+    /// * `chain_id` - The chain ID (passed explicitly instead of querying from provider)
     /// * `date` - The UTC date for which to calculate the block window
     ///
     /// # Returns
     /// A `DailyBlockWindow` containing the start/end blocks and timestamps
-    #[instrument(skip(self), fields(date = %date))]
-    pub async fn get_daily_window(&self, date: NaiveDate) -> Result<DailyBlockWindow> {
-        let chain_id = ChainId(
-            self.provider
-                .get_chain_id()
-                .await
-                .context("Failed to get chain ID")?,
-        );
+    #[instrument(skip(self), fields(chain_id = %chain_id, date = %date))]
+    pub async fn get_daily_window(
+        &self,
+        chain_id: u64,
+        date: NaiveDate,
+    ) -> Result<DailyBlockWindow> {
+        let chain_id = ChainId(chain_id);
 
         let mut cache = BlockWindowCache::load(&self.cache_path).await?;
         let key = CacheKey::new(chain_id, date);

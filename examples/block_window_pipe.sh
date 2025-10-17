@@ -36,7 +36,7 @@ echo "Querying block range for ${DATE}..."
 
 # Get block range using block-window command
 # Disable logging with RUST_LOG=off to get clean output
-BLOCKS=$(RUST_LOG=off cargo run --package semioscan block-window --date ${DATE} --format plain)
+BLOCKS=$(RUST_LOG=off cargo run --package semioscan block-window --chain-id ${CHAIN_ID} --date ${DATE} --format plain)
 
 # Parse the block numbers
 FROM_BLOCK=$(echo $BLOCKS | cut -d' ' -f1)

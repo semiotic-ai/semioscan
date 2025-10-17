@@ -88,6 +88,24 @@ impl GasAndAmountForTx {
         let total_cost = l2_execution_cost.saturating_add(self.blob_gas_cost);
         total_cost.saturating_add(self.l1_fee.unwrap_or_default())
     }
+
+    /// Convert to display format with custom token decimals
+    pub fn to_display(&self, token_decimals: u8) -> GasAndAmountDisplay {
+        let l2_execution_cost = self.gas_used.saturating_mul(self.effective_gas_price);
+        let total_cost = l2_execution_cost
+            .saturating_add(self.blob_gas_cost)
+            .saturating_add(self.l1_fee.unwrap_or_default());
+
+        GasAndAmountDisplay {
+            tx_hash: format!("{:#x}", self.tx_hash),
+            gas_used: self.gas_used.to_string(),
+            effective_gas_price_gwei: format_wei_to_gwei(self.effective_gas_price),
+            l1_fee_eth: self.l1_fee.map(format_wei_to_eth),
+            blob_gas_cost_eth: format_wei_to_eth(self.blob_gas_cost),
+            total_gas_cost_eth: format_wei_to_eth(total_cost),
+            transferred_amount_usdc: format_token_amount(self.transferred_amount, token_decimals),
+        }
+    }
 }
 
 /// Aggregated result for combined data retrieval over a block range.
@@ -104,6 +122,140 @@ pub struct CombinedDataResult {
     pub total_amount_transferred: U256,
     pub transaction_count: usize,
     pub transactions_data: Vec<GasAndAmountForTx>,
+}
+
+/// Human-readable version of CombinedDataResult with formatted values
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CombinedDataDisplay {
+    pub chain_id: u64,
+    pub from_address: String,
+    pub to_address: String,
+    pub token_address: String,
+    pub total_l2_execution_cost_eth: String,
+    pub total_blob_gas_cost_eth: String,
+    pub total_l1_fee_eth: String,
+    pub overall_total_gas_cost_eth: String,
+    pub total_amount_transferred_usdc: String,
+    pub transaction_count: usize,
+    pub transactions_data: Vec<GasAndAmountDisplay>,
+}
+
+/// Human-readable version of GasAndAmountForTx
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GasAndAmountDisplay {
+    pub tx_hash: String,
+    pub gas_used: String,
+    pub effective_gas_price_gwei: String,
+    pub l1_fee_eth: Option<String>,
+    pub blob_gas_cost_eth: String,
+    pub total_gas_cost_eth: String,
+    pub transferred_amount_usdc: String,
+}
+
+impl From<&CombinedDataResult> for CombinedDataDisplay {
+    fn from(result: &CombinedDataResult) -> Self {
+        CombinedDataDisplay {
+            chain_id: result.chain_id,
+            from_address: format!("{:#x}", result.from_address),
+            to_address: format!("{:#x}", result.to_address),
+            token_address: format!("{:#x}", result.token_address),
+            total_l2_execution_cost_eth: format_wei_to_eth(result.total_l2_execution_cost),
+            total_blob_gas_cost_eth: format_wei_to_eth(result.total_blob_gas_cost),
+            total_l1_fee_eth: format_wei_to_eth(result.total_l1_fee),
+            overall_total_gas_cost_eth: format_wei_to_eth(result.overall_total_gas_cost),
+            total_amount_transferred_usdc: format_usdc(result.total_amount_transferred),
+            transaction_count: result.transaction_count,
+            transactions_data: result
+                .transactions_data
+                .iter()
+                .map(GasAndAmountDisplay::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<&GasAndAmountForTx> for GasAndAmountDisplay {
+    fn from(tx: &GasAndAmountForTx) -> Self {
+        let l2_execution_cost = tx.gas_used.saturating_mul(tx.effective_gas_price);
+        let total_cost = l2_execution_cost
+            .saturating_add(tx.blob_gas_cost)
+            .saturating_add(tx.l1_fee.unwrap_or_default());
+
+        GasAndAmountDisplay {
+            tx_hash: format!("{:#x}", tx.tx_hash),
+            gas_used: tx.gas_used.to_string(),
+            effective_gas_price_gwei: format_wei_to_gwei(tx.effective_gas_price),
+            l1_fee_eth: tx.l1_fee.map(format_wei_to_eth),
+            blob_gas_cost_eth: format_wei_to_eth(tx.blob_gas_cost),
+            total_gas_cost_eth: format_wei_to_eth(total_cost),
+            transferred_amount_usdc: format_usdc(tx.transferred_amount),
+        }
+    }
+}
+
+/// Convert wei (U256) to ETH string with 18 decimals
+fn format_wei_to_eth(wei: U256) -> String {
+    // ETH has 18 decimals
+    let eth_divisor = U256::from(1_000_000_000_000_000_000u128); // 10^18
+    let eth_whole = wei / eth_divisor;
+    let eth_fractional = wei % eth_divisor;
+
+    // Format with 18 decimal places, removing trailing zeros
+    let fractional_str = format!("{:018}", eth_fractional);
+    let trimmed = fractional_str.trim_end_matches('0');
+
+    if trimmed.is_empty() {
+        format!("{}", eth_whole)
+    } else {
+        // Always use decimal notation, never scientific notation
+        format!("{}.{}", eth_whole, trimmed)
+    }
+}
+
+/// Convert wei (U256) to Gwei string
+fn format_wei_to_gwei(wei: U256) -> String {
+    // Gwei has 9 decimals (10^9 wei = 1 Gwei)
+    let gwei_divisor = U256::from(1_000_000_000u64); // 10^9
+    let gwei_whole = wei / gwei_divisor;
+    let gwei_fractional = wei % gwei_divisor;
+
+    // Format with 9 decimal places, removing trailing zeros
+    let fractional_str = format!("{:09}", gwei_fractional);
+    let trimmed = fractional_str.trim_end_matches('0');
+
+    if trimmed.is_empty() {
+        format!("{}", gwei_whole)
+    } else {
+        format!("{}.{}", gwei_whole, trimmed)
+    }
+}
+
+/// Convert token raw amount (U256) to string with specified decimals
+/// Most chains use 6 decimals for USDC, but BNB Chain uses 18 decimals
+fn format_token_amount(raw_amount: U256, decimals: u8) -> String {
+    if decimals == 0 {
+        return raw_amount.to_string();
+    }
+
+    // Calculate divisor: 10^decimals
+    let divisor = U256::from(10u64).pow(U256::from(decimals));
+    let whole = raw_amount / divisor;
+    let fractional = raw_amount % divisor;
+
+    // Format with correct decimal places, removing trailing zeros
+    let fractional_str = format!("{:0width$}", fractional, width = decimals as usize);
+    let trimmed = fractional_str.trim_end_matches('0');
+
+    if trimmed.is_empty() {
+        format!("{}", whole)
+    } else {
+        format!("{}.{}", whole, trimmed)
+    }
+}
+
+/// Convert USDC raw amount (U256) to USDC string with 6 decimals (default)
+fn format_usdc(raw_amount: U256) -> String {
+    format_token_amount(raw_amount, 6)
 }
 
 impl CombinedDataResult {
@@ -125,6 +277,30 @@ impl CombinedDataResult {
             total_amount_transferred: U256::ZERO,
             transaction_count: 0,
             transactions_data: Vec::new(),
+        }
+    }
+
+    /// Convert to display format with custom token decimals
+    pub fn to_display(&self, token_decimals: u8) -> CombinedDataDisplay {
+        CombinedDataDisplay {
+            chain_id: self.chain_id,
+            from_address: format!("{:#x}", self.from_address),
+            to_address: format!("{:#x}", self.to_address),
+            token_address: format!("{:#x}", self.token_address),
+            total_l2_execution_cost_eth: format_wei_to_eth(self.total_l2_execution_cost),
+            total_blob_gas_cost_eth: format_wei_to_eth(self.total_blob_gas_cost),
+            total_l1_fee_eth: format_wei_to_eth(self.total_l1_fee),
+            overall_total_gas_cost_eth: format_wei_to_eth(self.overall_total_gas_cost),
+            total_amount_transferred_usdc: format_token_amount(
+                self.total_amount_transferred,
+                token_decimals,
+            ),
+            transaction_count: self.transaction_count,
+            transactions_data: self
+                .transactions_data
+                .iter()
+                .map(|tx| tx.to_display(token_decimals))
+                .collect(),
         }
     }
 

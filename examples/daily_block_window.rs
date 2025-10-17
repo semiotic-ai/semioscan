@@ -1,4 +1,3 @@
-use alloy_chains::NamedChain;
 /// Example demonstrating how to calculate daily block windows for blockchain queries
 ///
 /// This example shows how to:
@@ -9,13 +8,17 @@ use alloy_chains::NamedChain;
 ///
 /// Run with:
 /// ```bash
+/// CHAIN_ID=42161 \
 /// RPC_URL=https://arb1.arbitrum.io/rpc/ \
 /// API_KEY=your_api_key \
 /// DAY=2025-10-10 \
 /// CACHE_PATH=block_windows.json \
 /// cargo run --package semioscan --example daily_block_window
 /// ```
-use alloy_provider::{Provider, ProviderBuilder};
+///
+/// Note: CHAIN_ID must be provided as config because some chains (e.g., Avalanche)
+/// don't support the get_chain_id() RPC method.
+use alloy_provider::ProviderBuilder;
 use anyhow::{Context, Result};
 use chrono::NaiveDate;
 use semioscan::BlockWindowCalculator;
@@ -37,7 +40,12 @@ async fn main() -> Result<()> {
     // Read configuration from environment
     let rpc_url = env::var("RPC_URL").context("RPC_URL environment variable not set")?;
     let api_key = env::var("API_KEY").context("API_KEY environment variable not set")?;
-    let day_str = env::var("DAY").unwrap_or_else(|_| "2025-10-15".to_string());
+    let chain_id_str = env::var("CHAIN_ID")
+        .context("CHAIN_ID environment variable not set (e.g., 42161 for Arbitrum)")?;
+    let chain_id: u64 = chain_id_str
+        .parse()
+        .context("CHAIN_ID must be a valid number")?;
+    let day_str = env::var("DAY").unwrap_or_else(|_| "2025-10-16".to_string());
     let cache_path = env::var("CACHE_PATH").unwrap_or_else(|_| "block_windows.json".to_string());
 
     // Combine RPC URL with API key (trailing slash is important for Pinax endpoint)
@@ -56,8 +64,10 @@ async fn main() -> Result<()> {
     let calculator = BlockWindowCalculator::new(provider.clone(), cache_path.clone());
 
     // Calculate daily window
-    info!(date = %date, "Calculating daily block window");
-    let window = calculator.get_daily_window(date).await?;
+    // Note: Chain ID is injected from config rather than queried from provider
+    // because some chains (e.g., Avalanche) don't support get_chain_id()
+    info!(chain_id, date = %date, "Calculating daily block window");
+    let window = calculator.get_daily_window(chain_id, date).await?;
 
     info!(
         date = %date,
@@ -69,12 +79,7 @@ async fn main() -> Result<()> {
         "Daily block window calculated"
     );
 
-    let chain_id = provider.get_chain_id().await?;
-
-    let chain = NamedChain::try_from(chain_id)?;
-
     println!("\n=== Daily Block Window ===");
-    println!("Chain: {}", chain);
     println!("Date: {date}");
     println!(
         "Block range: [{}, {}] (inclusive)",
