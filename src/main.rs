@@ -4,7 +4,7 @@ use semioscan::bootstrap::run;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
-async fn main() -> ExitCode {
+async fn main() -> Result<ExitCode, ExitCode> {
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(fmt::layer().with_target(true).json().with_ansi(true))
@@ -12,7 +12,7 @@ async fn main() -> ExitCode {
 
     if let Err(e) = run().await {
         tracing::error!("Semioscan error: {e}");
-        return ExitCode::from(1);
+        return Err(ExitCode::from(1));
     }
-    ExitCode::SUCCESS
+    Ok(ExitCode::SUCCESS)
 }
