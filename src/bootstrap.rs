@@ -307,8 +307,8 @@ pub async fn run() -> anyhow::Result<()> {
                             // Output as JSON with human-readable values
                             // Query token decimals on-chain
                             use alloy_chains::NamedChain;
-                            use common::create_l1_read_provider;
                             use erc20_rs::Erc20;
+                            use likwid_core::create_l1_read_provider;
 
                             let chain = NamedChain::try_from(chain_id)
                                 .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
