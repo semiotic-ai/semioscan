@@ -3,8 +3,10 @@ use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Filter, Log as RpcLog, TransactionTrait};
 use alloy_sol_types::SolEvent;
+use bigdecimal::BigDecimal;
 use op_alloy_network::Optimism;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info, instrument, trace, warn, Level};
@@ -256,6 +258,52 @@ fn format_token_amount(raw_amount: U256, decimals: u8) -> String {
 /// Convert USDC raw amount (U256) to USDC string with 6 decimals (default)
 fn format_usdc(raw_amount: U256) -> String {
     format_token_amount(raw_amount, 6)
+}
+
+/// Decimal precision for blockchain values
+#[derive(Debug, Clone, Copy)]
+pub enum DecimalPrecision {
+    /// USDC and most stablecoins use 6 decimals
+    Usdc = 6,
+    /// Native tokens (ETH, BNB, MATIC, etc.) and gas costs use 18 decimals
+    NativeToken = 18,
+}
+
+/// Convert U256 to BigDecimal with decimal scaling for database storage.
+/// This function properly handles large decimal places (like 18 for ETH) without overflow.
+///
+/// # Arguments
+/// * `value` - The raw U256 value (e.g., wei for ETH, smallest unit for tokens)
+/// * `precision` - The decimal precision (Usdc = 6 decimals, NativeToken = 18 decimals)
+///
+/// # Returns
+/// A BigDecimal representing the human-readable value
+///
+/// # Example
+/// ```ignore
+/// let wei = U256::from(1_000_000_000_000_000_000u128); // 1 ETH in wei
+/// let eth = u256_to_bigdecimal(wei, DecimalPrecision::NativeToken); // Returns BigDecimal "1.0"
+/// ```
+pub fn u256_to_bigdecimal(value: U256, precision: DecimalPrecision) -> BigDecimal {
+    // Use U256 divisor to avoid i64 overflow for large exponents
+    let divisor = match precision {
+        DecimalPrecision::Usdc => U256::from(1_000_000u64), // 10^6
+        DecimalPrecision::NativeToken => U256::from(1_000_000_000_000_000_000u128), // 10^18
+    };
+
+    // Perform division in U256 space to get whole and fractional parts
+    let whole = value / divisor;
+    let fractional = value % divisor;
+
+    // Convert to BigDecimal
+    let whole_decimal =
+        BigDecimal::from_str(&whole.to_string()).unwrap_or_else(|_| BigDecimal::from(0));
+    let fractional_decimal =
+        BigDecimal::from_str(&fractional.to_string()).unwrap_or_else(|_| BigDecimal::from(0));
+    let divisor_decimal =
+        BigDecimal::from_str(&divisor.to_string()).unwrap_or_else(|_| BigDecimal::from(1));
+
+    whole_decimal + (fractional_decimal / divisor_decimal)
 }
 
 impl CombinedDataResult {
