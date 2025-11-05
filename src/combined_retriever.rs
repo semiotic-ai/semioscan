@@ -1,5 +1,6 @@
+use alloy_chains::NamedChain;
 use alloy_network::{eip2718::Typed2718, Ethereum, Network};
-use alloy_primitives::{keccak256, Address, B256, U256};
+use alloy_primitives::{address, keccak256, Address, B256, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Filter, Log as RpcLog, TransactionTrait};
 use alloy_sol_types::SolEvent;
@@ -261,12 +262,53 @@ fn format_usdc(raw_amount: U256) -> String {
 }
 
 /// Decimal precision for blockchain values
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DecimalPrecision {
     /// USDC and most stablecoins use 6 decimals
-    Usdc = 6,
+    Usdc,
+    /// BSC Binance-Peg USDC uses 18 decimals (non-standard)
+    BinancePegUsdc,
     /// Native tokens (ETH, BNB, MATIC, etc.) and gas costs use 18 decimals
-    NativeToken = 18,
+    NativeToken,
+}
+
+impl DecimalPrecision {
+    /// Get the number of decimals as a u8
+    pub fn decimals(self) -> u8 {
+        match self {
+            DecimalPrecision::Usdc => 6,
+            DecimalPrecision::BinancePegUsdc => 18,
+            DecimalPrecision::NativeToken => 18,
+        }
+    }
+}
+
+/// Get the decimal precision for a specific token on a specific chain.
+/// Native tokens (Address::ZERO) use 18 decimals.
+/// Most USDC tokens use 6 decimals, but BSC Binance-Peg USDC uses 18 decimals.
+///
+/// # Arguments
+/// * `chain` - The named chain
+/// * `token_address` - The token contract address (Address::ZERO for native token)
+///
+/// # Returns
+/// The appropriate DecimalPrecision for this token
+pub fn get_token_decimal_precision(chain: NamedChain, token_address: Address) -> DecimalPrecision {
+    // Native token (ETH, BNB, MATIC, etc.) uses 18 decimals
+    if token_address == Address::ZERO {
+        return DecimalPrecision::NativeToken;
+    }
+
+    // BSC Binance-Peg USDC has 18 decimals instead of 6
+    const BSC_BINANCE_PEG_USDC: Address = address!("8ac76a51cc950d9822d68b83fe1ad97b32cd580d");
+
+    if matches!(chain, NamedChain::BinanceSmartChain)
+        && matches!(token_address, BSC_BINANCE_PEG_USDC)
+    {
+        DecimalPrecision::BinancePegUsdc // 18 decimals
+    } else {
+        DecimalPrecision::Usdc // 6 decimals
+    }
 }
 
 /// Convert U256 to BigDecimal with decimal scaling for database storage.
@@ -274,7 +316,7 @@ pub enum DecimalPrecision {
 ///
 /// # Arguments
 /// * `value` - The raw U256 value (e.g., wei for ETH, smallest unit for tokens)
-/// * `precision` - The decimal precision (Usdc = 6 decimals, NativeToken = 18 decimals)
+/// * `precision` - The decimal precision (Usdc = 6, BinancePegUsdc = 18, NativeToken = 18)
 ///
 /// # Returns
 /// A BigDecimal representing the human-readable value
@@ -288,7 +330,9 @@ pub fn u256_to_bigdecimal(value: U256, precision: DecimalPrecision) -> BigDecima
     // Use U256 divisor to avoid i64 overflow for large exponents
     let divisor = match precision {
         DecimalPrecision::Usdc => U256::from(1_000_000u64), // 10^6
-        DecimalPrecision::NativeToken => U256::from(1_000_000_000_000_000_000u128), // 10^18
+        DecimalPrecision::BinancePegUsdc | DecimalPrecision::NativeToken => {
+            U256::from(1_000_000_000_000_000_000u128) // 10^18
+        }
     };
 
     // Perform division in U256 space to get whole and fractional parts
