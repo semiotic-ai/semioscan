@@ -1,3 +1,4 @@
+use alloy_chains::NamedChain;
 use alloy_primitives::BlockNumber;
 use alloy_provider::Provider;
 use anyhow::{Context, Result};
@@ -265,13 +266,13 @@ impl<P: Provider> BlockWindowCalculator<P> {
     ///
     /// # Returns
     /// A `DailyBlockWindow` containing the start/end blocks and timestamps
-    #[instrument(skip(self), fields(chain_id = %chain_id, date = %date))]
+    #[instrument(skip(self), fields(chain = ?chain, date = %date))]
     pub async fn get_daily_window(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         date: NaiveDate,
     ) -> Result<DailyBlockWindow> {
-        let chain_id = ChainId(chain_id);
+        let chain_id = ChainId(chain as u64);
 
         let mut cache = BlockWindowCache::load(&self.cache_path).await?;
         let key = CacheKey::new(chain_id, date);

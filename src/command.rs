@@ -36,7 +36,7 @@ impl CommandHandler {
                     Command::CalculatePrice(cmd) => {
                         let result = job
                             .handle_calculate_price(
-                                cmd.chain_id,
+                                cmd.chain,
                                 cmd.router_type,
                                 cmd.token_address,
                                 cmd.from_block,
@@ -52,7 +52,7 @@ impl CommandHandler {
                     Command::CalculateGas(cmd) => {
                         let result = job
                             .handle_calculate_gas(
-                                cmd.chain_id,
+                                cmd.chain,
                                 cmd.event,
                                 cmd.from,
                                 cmd.to,
@@ -70,7 +70,7 @@ impl CommandHandler {
                     Command::CalculateTransferAmount(cmd) => {
                         let result = job
                             .handle_calculate_transfer_amount(
-                                cmd.chain_id,
+                                cmd.chain,
                                 cmd.from,
                                 cmd.to,
                                 cmd.token,
@@ -86,7 +86,7 @@ impl CommandHandler {
                     Command::CalculateCombinedData(cmd) => {
                         let result = job
                             .handle_calculate_combined_data(
-                                cmd.chain_id,
+                                cmd.chain,
                                 cmd.from,
                                 cmd.to,
                                 cmd.token,
@@ -109,15 +109,12 @@ impl CommandHandler {
     /// Get or create a PriceCalculator for the specified chain
     async fn get_or_create_calculator(
         &mut self,
-        chain_id: u64,
+        chain: NamedChain,
         router_type: RouterType,
     ) -> anyhow::Result<&mut PriceCalculator> {
-        if let std::collections::hash_map::Entry::Vacant(e) = self.calculators.entry(chain_id) {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.calculators.entry(chain as u64) {
             // Create a new calculator for this chain
-            info!(chain_id = chain_id, "Creating new PriceCalculator");
-
-            let chain = NamedChain::try_from(chain_id)
-                .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
+            info!(chain = ?chain, "Creating new PriceCalculator");
 
             // Create provider for this chain
             let provider = create_l1_read_provider(chain)?;
@@ -136,19 +133,24 @@ impl CommandHandler {
             e.insert(calculator);
         }
 
-        Ok(self.calculators.get_mut(&chain_id).unwrap())
+        Ok(self
+            .calculators
+            .get_mut(&(chain as u64))
+            .unwrap_or_else(|| {
+                panic!("PriceCalculator not found for chain: {}", chain);
+            }))
     }
 
     /// Handle the `CalculatePrice` command by invoking the `PriceCalculator`.
     async fn handle_calculate_price(
         &mut self,
-        chain_id: u64,
+        chain: NamedChain,
         router_type: RouterType,
         token_address: Address,
         from_block: u64,
         to_block: u64,
     ) -> anyhow::Result<TokenPriceResult> {
-        let calculator = self.get_or_create_calculator(chain_id, router_type).await?;
+        let calculator = self.get_or_create_calculator(chain, router_type).await?;
 
         calculator
             .calculate_price_between_blocks(token_address, from_block, to_block)
@@ -158,7 +160,7 @@ impl CommandHandler {
     #[allow(clippy::too_many_arguments)]
     async fn handle_calculate_gas(
         &mut self,
-        chain_id: u64,
+        chain: NamedChain,
         event: SupportedEvent,
         from: Address,
         to: Address,
@@ -166,9 +168,6 @@ impl CommandHandler {
         from_block: u64,
         to_block: u64,
     ) -> anyhow::Result<GasCostResult> {
-        let chain = NamedChain::try_from(chain_id)
-            .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
-
         if chain.has_l1_fees() {
             let provider = create_op_stack_read_provider(chain)?;
             let calculator = GasCostCalculator::new(provider);
@@ -177,14 +176,24 @@ impl CommandHandler {
                 SupportedEvent::Transfer => {
                     calculator
                         .calculate_gas_cost_for_transfers_between_blocks(
-                            chain_id, from, to, token, from_block, to_block,
+                            chain as u64,
+                            from,
+                            to,
+                            token,
+                            from_block,
+                            to_block,
                         )
                         .await
                 }
                 SupportedEvent::Approval => {
                     calculator
                         .calculate_gas_cost_for_approvals_between_blocks(
-                            chain_id, from, to, token, from_block, to_block,
+                            chain as u64,
+                            from,
+                            to,
+                            token,
+                            from_block,
+                            to_block,
                         )
                         .await
                 }
@@ -197,14 +206,24 @@ impl CommandHandler {
                 SupportedEvent::Transfer => {
                     calculator
                         .calculate_gas_cost_for_transfers_between_blocks(
-                            chain_id, from, to, token, from_block, to_block,
+                            chain as u64,
+                            from,
+                            to,
+                            token,
+                            from_block,
+                            to_block,
                         )
                         .await
                 }
                 SupportedEvent::Approval => {
                     calculator
                         .calculate_gas_cost_for_approvals_between_blocks(
-                            chain_id, from, to, token, from_block, to_block,
+                            chain as u64,
+                            from,
+                            to,
+                            token,
+                            from_block,
+                            to_block,
                         )
                         .await
                 }
@@ -214,52 +233,51 @@ impl CommandHandler {
 
     async fn handle_calculate_transfer_amount(
         &mut self,
-        chain_id: u64,
+        chain: NamedChain,
         from: Address,
         to: Address,
         token: Address,
         from_block: u64,
         to_block: u64,
     ) -> anyhow::Result<AmountResult> {
-        let chain = NamedChain::try_from(chain_id)
-            .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
-
         let provider = create_l1_read_provider(chain)?;
 
         let calculator = AmountCalculator::new(provider);
 
         calculator
             .calculate_transfer_amount_between_blocks(
-                chain_id, from, to, token, from_block, to_block,
+                chain as u64,
+                from,
+                to,
+                token,
+                from_block,
+                to_block,
             )
             .await
     }
 
     async fn handle_calculate_combined_data(
         &mut self,
-        chain_id: u64,
+        chain: NamedChain,
         from: Address,
         to: Address,
         token: Address,
         from_block: u64,
         to_block: u64,
     ) -> anyhow::Result<CombinedDataResult> {
-        let chain = NamedChain::try_from(chain_id)
-            .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
-
         if chain.has_l1_fees() {
             let provider = create_op_stack_read_provider(chain)?;
             let calculator = CombinedCalculator::new(provider);
 
             calculator
-                .calculate_combined_data_optimism(chain_id, from, to, token, from_block, to_block)
+                .calculate_combined_data_optimism(chain, from, to, token, from_block, to_block)
                 .await
         } else {
             let provider = create_l1_read_provider(chain)?;
             let calculator = CombinedCalculator::new(provider);
 
             calculator
-                .calculate_combined_data_ethereum(chain_id, from, to, token, from_block, to_block)
+                .calculate_combined_data_ethereum(chain, from, to, token, from_block, to_block)
                 .await
         }
     }
@@ -279,7 +297,7 @@ pub enum Command {
 }
 
 pub struct CalculatePriceCommand {
-    pub chain_id: u64,
+    pub chain: NamedChain,
     pub router_type: RouterType,
     pub token_address: Address,
     pub from_block: u64,
@@ -288,7 +306,7 @@ pub struct CalculatePriceCommand {
 }
 
 pub struct CalculateGasCommand {
-    pub chain_id: u64,
+    pub chain: NamedChain,
     pub event: SupportedEvent,
     pub from: Address,
     pub to: Address,
@@ -299,7 +317,7 @@ pub struct CalculateGasCommand {
 }
 
 pub struct CalculateTransferAmountCommand {
-    pub chain_id: u64,
+    pub chain: NamedChain,
     pub from: Address,
     pub to: Address,
     pub token: Address,
@@ -309,7 +327,7 @@ pub struct CalculateTransferAmountCommand {
 }
 
 pub struct CalculateCombinedDataCommand {
-    pub chain_id: u64,
+    pub chain: NamedChain,
     pub from: Address,
     pub to: Address,
     pub token: Address,

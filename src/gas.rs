@@ -1,3 +1,4 @@
+use alloy_chains::NamedChain;
 use alloy_network::{Ethereum, Network};
 use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{network::eip2718::Typed2718, Provider};
@@ -596,7 +597,7 @@ impl GasCostCalculator<Optimism> {
 /// Query parameters for the gas cost endpoint.
 #[derive(Debug, Deserialize)]
 pub struct GasQuery {
-    pub chain_id: u64,
+    pub chain: NamedChain,
     pub from: Address,
     pub to: Address,
     pub token: Address,
@@ -632,7 +633,7 @@ pub async fn get_gas_cost(
             token: params.token,
             from_block: params.from_block,
             to_block: params.to_block,
-            chain_id: params.chain_id,
+            chain: params.chain,
             responder: responder_tx,
         }))
         .await
