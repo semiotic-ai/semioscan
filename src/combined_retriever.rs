@@ -114,7 +114,7 @@ impl GasAndAmountForTx {
 /// Aggregated result for combined data retrieval over a block range.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CombinedDataResult {
-    pub chain_id: u64,
+    pub chain: NamedChain,
     pub from_address: Address,
     pub to_address: Address,
     pub token_address: Address,
@@ -130,7 +130,7 @@ pub struct CombinedDataResult {
 /// Human-readable version of CombinedDataResult with formatted values
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CombinedDataDisplay {
-    pub chain_id: u64,
+    pub chain: NamedChain,
     pub from_address: String,
     pub to_address: String,
     pub token_address: String,
@@ -158,7 +158,7 @@ pub struct GasAndAmountDisplay {
 impl From<&CombinedDataResult> for CombinedDataDisplay {
     fn from(result: &CombinedDataResult) -> Self {
         CombinedDataDisplay {
-            chain_id: result.chain_id,
+            chain: result.chain,
             from_address: format!("{:#x}", result.from_address),
             to_address: format!("{:#x}", result.to_address),
             token_address: format!("{:#x}", result.token_address),
@@ -352,13 +352,13 @@ pub fn u256_to_bigdecimal(value: U256, precision: DecimalPrecision) -> BigDecima
 
 impl CombinedDataResult {
     pub fn new(
-        chain_id: u64,
+        chain: NamedChain,
         from_address: Address,
         to_address: Address,
         token_address: Address,
     ) -> Self {
         Self {
-            chain_id,
+            chain,
             from_address,
             to_address,
             token_address,
@@ -375,7 +375,7 @@ impl CombinedDataResult {
     /// Convert to display format with custom token decimals
     pub fn to_display(&self, token_decimals: u8) -> CombinedDataDisplay {
         CombinedDataDisplay {
-            chain_id: self.chain_id,
+            chain: self.chain,
             from_address: format!("{:#x}", self.from_address),
             to_address: format!("{:#x}", self.to_address),
             token_address: format!("{:#x}", self.token_address),
@@ -421,13 +421,13 @@ impl CombinedDataResult {
     }
 
     pub fn merge(&mut self, other: &CombinedDataResult) {
-        if self.chain_id != other.chain_id
+        if self.chain != other.chain
             || self.from_address != other.from_address
             || self.to_address != other.to_address
             || self.token_address != other.token_address
         {
-            error!(self_params = ?(self.chain_id, self.from_address, self.to_address, self.token_address),
-                   other_params = ?(other.chain_id, other.from_address, other.to_address, other.token_address),
+            error!(self_params = ?(self.chain, self.from_address, self.to_address, self.token_address),
+                   other_params = ?(other.chain, other.from_address, other.to_address, other.token_address),
                    "Attempted to merge CombinedDataResult with mismatched parameters.");
             return;
         }
@@ -520,7 +520,7 @@ where
     #[allow(clippy::too_many_arguments)]
     async fn process_block_range_for_combined_data<A: ReceiptAdapter<N> + Send + Sync>(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from_address: Address,
         to_address: Address,
         token_address: Address,
@@ -528,7 +528,7 @@ where
         to_block: u64,
         adapter: &A,
     ) -> anyhow::Result<CombinedDataResult> {
-        let mut result = CombinedDataResult::new(chain_id, from_address, to_address, token_address);
+        let mut result = CombinedDataResult::new(chain, from_address, to_address, token_address);
         let mut current_block = from_block;
 
         while current_block <= to_block {
@@ -555,7 +555,7 @@ where
                 match Transfer::decode_log(&rpc_log_entry.inner) {
                     Ok(transfer_event_data) => {
                         info!(
-                            chain_id, ?from_address, ?to_address, ?token_address,
+                            ?chain, ?from_address, ?to_address, ?token_address,
                             amount = ?transfer_event_data.value,
                             block = rpc_log_entry.block_number,
                             tx_hash = ?rpc_log_entry.transaction_hash,
@@ -591,12 +591,12 @@ where
             current_block = chunk_end + 1;
 
             // Delay for specific chains to avoid rate limiting
-            if chain_id.eq(&146) && current_block <= to_block {
-                trace!(chain_id, "Applying delay for chain 146");
+            if chain.eq(&NamedChain::Base) && current_block <= to_block {
+                trace!(?chain, "Applying delay for chain Base");
                 sleep(Duration::from_millis(250)).await;
             }
         }
-        info!(chain_id, %from_address, %to_address, %token_address, from_block, to_block, transactions_found = result.transaction_count, "Finished processing block range");
+        info!(?chain, %from_address, %to_address, %token_address, from_block, to_block, transactions_found = result.transaction_count, "Finished processing block range");
         Ok(result)
     }
 
@@ -606,21 +606,21 @@ where
     #[allow(clippy::too_many_arguments)]
     pub async fn calculate_combined_data_with_adapter<A: ReceiptAdapter<N> + Send + Sync>(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from_address: Address,
         to_address: Address,
         token_address: Address,
-        start_block: u64,
-        end_block: u64,
+        from_block: u64,
+        to_block: u64,
         adapter: &A,
     ) -> anyhow::Result<CombinedDataResult> {
         self.process_block_range_for_combined_data(
-            chain_id,
+            chain,
             from_address,
             to_address,
             token_address,
-            start_block,
-            end_block,
+            from_block,
+            to_block,
             adapter,
         )
         .await
@@ -638,21 +638,21 @@ where
     #[allow(clippy::too_many_arguments)]
     pub async fn calculate_combined_data_ethereum(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from_address: Address,
         to_address: Address,
         token_address: Address,
-        start_block: u64,
-        end_block: u64,
+        from_block: u64,
+        to_block: u64,
     ) -> anyhow::Result<CombinedDataResult> {
         let adapter = EthereumReceiptAdapter;
         self.calculate_combined_data_with_adapter(
-            chain_id,
+            chain,
             from_address,
             to_address,
             token_address,
-            start_block,
-            end_block,
+            from_block,
+            to_block,
             &adapter,
         )
         .await
@@ -668,21 +668,21 @@ where
     #[allow(clippy::too_many_arguments)]
     pub async fn calculate_combined_data_optimism(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from_address: Address,
         to_address: Address,
         token_address: Address,
-        start_block: u64,
-        end_block: u64,
+        from_block: u64,
+        to_block: u64,
     ) -> anyhow::Result<CombinedDataResult> {
         let adapter = OptimismReceiptAdapter;
         self.calculate_combined_data_with_adapter(
-            chain_id,
+            chain,
             from_address,
             to_address,
             token_address,
-            start_block,
-            end_block,
+            from_block,
+            to_block,
             &adapter,
         )
         .await

@@ -1,3 +1,4 @@
+use alloy_chains::NamedChain;
 use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
@@ -375,7 +376,7 @@ impl PriceCalculator {
 /// Query parameters for the price endpoints.
 #[derive(Debug, Deserialize)]
 pub struct PriceQuery {
-    chain_id: u64,
+    chain: NamedChain,
     token_address: Address,
     from_block: u64,
     to_block: u64,
@@ -397,7 +398,7 @@ pub async fn get_v2_price(
             token_address,
             from_block: params.from_block,
             to_block: params.to_block,
-            chain_id: params.chain_id,
+            chain: params.chain,
             router_type: RouterType::V2,
             responder: responder_tx,
         }))

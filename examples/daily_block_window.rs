@@ -1,3 +1,4 @@
+use alloy_chains::NamedChain;
 /// Example demonstrating how to calculate daily block windows for blockchain queries
 ///
 /// This example shows how to:
@@ -40,11 +41,6 @@ async fn main() -> Result<()> {
     // Read configuration from environment
     let rpc_url = env::var("RPC_URL").context("RPC_URL environment variable not set")?;
     let api_key = env::var("API_KEY").context("API_KEY environment variable not set")?;
-    let chain_id_str = env::var("CHAIN_ID")
-        .context("CHAIN_ID environment variable not set (e.g., 42161 for Arbitrum)")?;
-    let chain_id: u64 = chain_id_str
-        .parse()
-        .context("CHAIN_ID must be a valid number")?;
     let day_str = env::var("DAY").unwrap_or_else(|_| "2025-10-16".to_string());
     let cache_path = env::var("CACHE_PATH").unwrap_or_else(|_| "block_windows.json".to_string());
 
@@ -66,8 +62,10 @@ async fn main() -> Result<()> {
     // Calculate daily window
     // Note: Chain ID is injected from config rather than queried from provider
     // because some chains (e.g., Avalanche) don't support get_chain_id()
-    info!(chain_id, date = %date, "Calculating daily block window");
-    let window = calculator.get_daily_window(chain_id, date).await?;
+    info!(chain = ?NamedChain::Arbitrum, date = %date, "Calculating daily block window");
+    let window = calculator
+        .get_daily_window(NamedChain::Arbitrum, date)
+        .await?;
 
     info!(
         date = %date,

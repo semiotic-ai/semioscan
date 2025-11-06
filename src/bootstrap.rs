@@ -1,3 +1,4 @@
+use alloy_chains::NamedChain;
 use alloy_primitives::Address;
 use alloy_provider::ProviderBuilder;
 use chrono::NaiveDate;
@@ -39,7 +40,7 @@ enum Commands {
     Price {
         /// Chain ID to query
         #[arg(long)]
-        chain_id: u64,
+        chain: NamedChain,
         /// Token address to query
         #[arg(long)]
         token_address: Address,
@@ -57,7 +58,7 @@ enum Commands {
     Gas {
         /// Chain ID to query
         #[arg(long)]
-        chain_id: u64,
+        chain: NamedChain,
         /// From address to query. (The alias '--router' is deprecated, please use '--from')
         #[arg(long, alias = "router")]
         from: Address,
@@ -82,7 +83,7 @@ enum Commands {
     TransferAmount {
         /// Chain ID to query
         #[arg(long)]
-        chain_id: u64,
+        chain: NamedChain,
         /// From address to query. (The alias '--router' is deprecated, please use '--from')
         #[arg(long, alias = "router")]
         from: Address,
@@ -103,7 +104,7 @@ enum Commands {
     Combined {
         /// Chain ID to query
         #[arg(long)]
-        chain_id: u64,
+        chain: NamedChain,
         /// From address
         #[arg(long)]
         from: Address,
@@ -127,7 +128,7 @@ enum Commands {
     BlockWindow {
         /// Chain ID to query
         #[arg(long)]
-        chain_id: u64,
+        chain: NamedChain,
         /// Date to query (format: YYYY-MM-DD)
         #[arg(long)]
         date: String,
@@ -163,7 +164,7 @@ pub async fn run() -> anyhow::Result<()> {
             serve_api(listener, price_job_handle).await?;
         }
         Commands::Price {
-            chain_id,
+            chain,
             token_address,
             from_block,
             to_block,
@@ -179,7 +180,7 @@ pub async fn run() -> anyhow::Result<()> {
             price_job_handle
                 .tx
                 .send(Command::CalculatePrice(CalculatePriceCommand {
-                    chain_id,
+                    chain,
                     router_type,
                     token_address,
                     from_block,
@@ -203,7 +204,7 @@ pub async fn run() -> anyhow::Result<()> {
             }
         }
         Commands::Gas {
-            chain_id,
+            chain,
             from,
             to,
             token,
@@ -217,7 +218,7 @@ pub async fn run() -> anyhow::Result<()> {
             price_job_handle
                 .tx
                 .send(Command::CalculateGas(CalculateGasCommand {
-                    chain_id,
+                    chain,
                     from,
                     to,
                     token,
@@ -239,7 +240,7 @@ pub async fn run() -> anyhow::Result<()> {
             }
         }
         Commands::TransferAmount {
-            chain_id,
+            chain,
             from,
             to,
             token,
@@ -253,7 +254,7 @@ pub async fn run() -> anyhow::Result<()> {
                 .tx
                 .send(Command::CalculateTransferAmount(
                     CalculateTransferAmountCommand {
-                        chain_id,
+                        chain,
                         from,
                         to,
                         token,
@@ -274,7 +275,7 @@ pub async fn run() -> anyhow::Result<()> {
             }
         }
         Commands::Combined {
-            chain_id,
+            chain,
             from,
             to,
             token,
@@ -289,7 +290,7 @@ pub async fn run() -> anyhow::Result<()> {
                 .tx
                 .send(Command::CalculateCombinedData(
                     CalculateCombinedDataCommand {
-                        chain_id,
+                        chain,
                         from,
                         to,
                         token,
@@ -306,12 +307,9 @@ pub async fn run() -> anyhow::Result<()> {
                         "json" => {
                             // Output as JSON with human-readable values
                             // Query token decimals on-chain
-                            use alloy_chains::NamedChain;
                             use erc20_rs::Erc20;
                             use likwid_core::create_l1_read_provider;
 
-                            let chain = NamedChain::try_from(chain_id)
-                                .map_err(|_| anyhow::anyhow!("Invalid chain ID: {chain_id}"))?;
                             let provider = create_l1_read_provider(chain)?;
                             let token_contract = Erc20::new(token, provider);
                             let decimals = token_contract.decimals().await?;
@@ -336,7 +334,7 @@ pub async fn run() -> anyhow::Result<()> {
             }
         }
         Commands::BlockWindow {
-            chain_id,
+            chain,
             date,
             cache_path,
             format,
@@ -367,7 +365,7 @@ pub async fn run() -> anyhow::Result<()> {
 
             // Create calculator and get daily window
             let calculator = BlockWindowCalculator::new(provider, cache_path);
-            let window = calculator.get_daily_window(chain_id, date).await?;
+            let window = calculator.get_daily_window(chain, date).await?;
 
             // Output based on format
             match format.to_lowercase().as_str() {
