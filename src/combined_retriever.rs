@@ -77,6 +77,7 @@ impl GasCalculationCore {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GasAndAmountForTx {
     pub tx_hash: TxHash,
+    pub block_number: u64,
     pub gas_used: U256,            // L2 gas used
     pub effective_gas_price: U256, // L2 effective gas price
     pub l1_fee: Option<U256>,      // L1 data fee for L2s
@@ -123,7 +124,7 @@ pub struct CombinedDataResult {
     pub total_l1_fee: U256,
     pub overall_total_gas_cost: U256,
     pub total_amount_transferred: U256,
-    pub transaction_count: usize,
+    pub transaction_count: i32,
     pub transactions_data: Vec<GasAndAmountForTx>,
 }
 
@@ -139,7 +140,7 @@ pub struct CombinedDataDisplay {
     pub total_l1_fee_eth: String,
     pub overall_total_gas_cost_eth: String,
     pub total_amount_transferred_usdc: String,
-    pub transaction_count: usize,
+    pub transaction_count: i32,
     pub transactions_data: Vec<GasAndAmountDisplay>,
 }
 
@@ -508,8 +509,13 @@ where
 
         let blob_gas_cost = GasCalculationCore::calculate_blob_gas_cost::<N>(&transaction);
 
+        let block_number = rpc_log_entry.block_number.ok_or_else(|| {
+            anyhow::anyhow!("Block number not found for log: {:?}", rpc_log_entry)
+        })?;
+
         Ok(Some(GasAndAmountForTx {
             tx_hash,
+            block_number,
             gas_used,
             effective_gas_price,
             l1_fee,
