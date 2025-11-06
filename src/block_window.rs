@@ -5,7 +5,9 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
-use tracing::{debug, info, instrument};
+use tracing::{debug, info};
+
+use crate::spans;
 
 /// Chain ID as a distinct type to prevent mixing with other u64 values
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -177,8 +179,10 @@ impl<P: Provider> BlockWindowCalculator<P> {
     }
 
     /// Fetches the timestamp of a specific block
-    #[instrument(skip(self), fields(block_number = %block_number))]
     async fn get_block_timestamp(&self, block_number: BlockNumber) -> Result<u64> {
+        let span = spans::get_block_timestamp(block_number);
+        let _guard = span.enter();
+
         let block = self
             .provider
             .get_block_by_number(block_number.into())
@@ -192,12 +196,14 @@ impl<P: Provider> BlockWindowCalculator<P> {
     /// Binary search to find the first block at or after the target timestamp
     ///
     /// Returns the block number of the first block with timestamp >= target_ts
-    #[instrument(skip(self), fields(target_ts = %target_ts, latest_block = %latest_block))]
     async fn find_first_block_at_or_after(
         &self,
         target_ts: u64,
         latest_block: BlockNumber,
     ) -> Result<BlockNumber> {
+        let span = spans::find_first_block_at_or_after(target_ts, latest_block);
+        let _guard = span.enter();
+
         let mut lo = 0u64;
         let mut hi = latest_block;
         let mut result = latest_block;
@@ -224,12 +230,14 @@ impl<P: Provider> BlockWindowCalculator<P> {
     /// Binary search to find the last block at or before the target timestamp
     ///
     /// Returns the block number of the last block with timestamp <= target_ts
-    #[instrument(skip(self), fields(target_ts = %target_ts, latest_block = %latest_block))]
     async fn find_last_block_at_or_before(
         &self,
         target_ts: u64,
         latest_block: BlockNumber,
     ) -> Result<BlockNumber> {
+        let span = spans::find_last_block_at_or_before(target_ts, latest_block);
+        let _guard = span.enter();
+
         let mut lo = 0u64;
         let mut hi = latest_block;
         let mut result = 0u64;
@@ -266,12 +274,14 @@ impl<P: Provider> BlockWindowCalculator<P> {
     ///
     /// # Returns
     /// A `DailyBlockWindow` containing the start/end blocks and timestamps
-    #[instrument(skip(self), fields(chain = ?chain, date = %date))]
     pub async fn get_daily_window(
         &self,
         chain: NamedChain,
         date: NaiveDate,
     ) -> Result<DailyBlockWindow> {
+        let span = spans::get_daily_window(chain, date);
+        let _guard = span.enter();
+
         let chain_id = ChainId(chain as u64);
 
         let mut cache = BlockWindowCache::load(&self.cache_path).await?;

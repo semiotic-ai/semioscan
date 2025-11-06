@@ -1,6 +1,6 @@
 use alloy_chains::NamedChain;
 use alloy_network::{eip2718::Typed2718, Ethereum, Network};
-use alloy_primitives::{address, keccak256, Address, B256, U256};
+use alloy_primitives::{address, keccak256, Address, TxHash, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Filter, Log as RpcLog, TransactionTrait};
 use alloy_sol_types::SolEvent;
@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use tracing::{error, info, instrument, trace, warn, Level};
+use tracing::{error, info, trace, warn};
 
 use crate::{
-    EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter, Transfer,
+    spans, EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter, Transfer,
     TRANSFER_EVENT_SIGNATURE,
 };
 
@@ -76,7 +76,7 @@ impl GasCalculationCore {
 /// Data for a single transaction including gas and transferred amount.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GasAndAmountForTx {
-    pub tx_hash: B256,
+    pub tx_hash: TxHash,
     pub gas_used: U256,            // L2 gas used
     pub effective_gas_price: U256, // L2 effective gas price
     pub l1_fee: Option<U256>,      // L1 data fee for L2s
@@ -100,7 +100,7 @@ impl GasAndAmountForTx {
             .saturating_add(self.l1_fee.unwrap_or_default());
 
         GasAndAmountDisplay {
-            tx_hash: format!("{:#x}", self.tx_hash),
+            tx_hash: self.tx_hash.to_string(),
             gas_used: self.gas_used.to_string(),
             effective_gas_price_gwei: format_wei_to_gwei(self.effective_gas_price),
             l1_fee_eth: self.l1_fee.map(format_wei_to_eth),
@@ -474,7 +474,6 @@ where
         }
     }
 
-    #[instrument(skip(self, rpc_log_entry, adapter, transfer_event), fields(tx_hash = ?rpc_log_entry.transaction_hash), ret(level = Level::TRACE))]
     async fn process_log_for_combined_data<A: ReceiptAdapter<N> + Send + Sync>(
         &self,
         rpc_log_entry: &RpcLog,
@@ -484,6 +483,9 @@ where
         let tx_hash = rpc_log_entry.transaction_hash.ok_or_else(|| {
             anyhow::anyhow!("Transaction hash not found for log: {:?}", rpc_log_entry)
         })?;
+
+        let span = spans::process_log_for_combined_data(tx_hash);
+        let _guard = span.enter();
 
         let transaction_fut = self.provider.get_transaction_by_hash(tx_hash);
         let receipt_fut = self.provider.get_transaction_receipt(tx_hash);
@@ -516,7 +518,6 @@ where
         }))
     }
 
-    #[instrument(skip(self, adapter))]
     #[allow(clippy::too_many_arguments)]
     async fn process_block_range_for_combined_data<A: ReceiptAdapter<N> + Send + Sync>(
         &self,
@@ -528,6 +529,16 @@ where
         to_block: u64,
         adapter: &A,
     ) -> anyhow::Result<CombinedDataResult> {
+        let span = spans::process_block_range_for_combined_data(
+            chain,
+            from_address,
+            to_address,
+            token_address,
+            from_block,
+            to_block,
+        );
+        let _guard = span.enter();
+
         let mut result = CombinedDataResult::new(chain, from_address, to_address, token_address);
         let mut current_block = from_block;
 
@@ -602,7 +613,6 @@ where
 
     /// Calculates combined transfer amount and gas cost data.
     /// Caching is not implemented in this version but can be added by adapting GasCostCache logic.
-    #[instrument(skip(self, adapter), level = "info", ret(level = Level::INFO))]
     #[allow(clippy::too_many_arguments)]
     pub async fn calculate_combined_data_with_adapter<A: ReceiptAdapter<N> + Send + Sync>(
         &self,
@@ -614,16 +624,29 @@ where
         to_block: u64,
         adapter: &A,
     ) -> anyhow::Result<CombinedDataResult> {
-        self.process_block_range_for_combined_data(
+        let span = spans::calculate_combined_data_with_adapter(
             chain,
             from_address,
             to_address,
             token_address,
             from_block,
             to_block,
-            adapter,
-        )
-        .await
+        );
+        let _guard = span.enter();
+
+        let result = self
+            .process_block_range_for_combined_data(
+                chain,
+                from_address,
+                to_address,
+                token_address,
+                from_block,
+                to_block,
+                adapter,
+            )
+            .await?;
+
+        Ok(result)
     }
 }
 

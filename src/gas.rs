@@ -12,10 +12,10 @@ use tokio::time::{sleep, Duration};
 use crate::{
     adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter},
     bootstrap::SupportedEvent,
-    Approval, CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx, SemioscanHandle,
-    Transfer, APPROVAL_EVENT_SIGNATURE, MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
+    spans, Approval, CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx,
+    SemioscanHandle, Transfer, APPROVAL_EVENT_SIGNATURE, MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
 };
-use tracing::{error, info, instrument, trace, Level};
+use tracing::{error, info, trace};
 
 use crate::Command;
 
@@ -101,7 +101,6 @@ where
     N::TransactionResponse: TransactionTrait + Typed2718,
 {
     /// Process a transfer event and extract gas information
-    #[instrument(skip(self, log, adapter), ret(level = Level::INFO))]
     async fn process_event_log<A: ReceiptAdapter<N>>(
         &self,
         log: &Log,
@@ -110,6 +109,9 @@ where
         let tx_hash = log
             .transaction_hash
             .ok_or_else(|| anyhow::anyhow!("Transaction hash not found for log: {:?}", log))?;
+
+        let span = spans::process_event_log(tx_hash);
+        let _guard = span.enter();
 
         let transaction = self
             .provider
