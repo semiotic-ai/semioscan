@@ -1,14 +1,13 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::Address;
 use likwid_core::{create_l1_read_provider, create_op_stack_read_provider, L2};
-use odos_sdk::OdosChain;
+use odos_sdk::{LimitOrderV2, OdosChain, V2Router, V3Router};
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info};
 use usdshe::Usdc;
 
 use crate::{
-    api::RouterTypeLiquidatorExt,
     bootstrap::SupportedEvent,
     price::{PriceCalculator, TokenPriceResult},
     AmountCalculator, AmountResult, CombinedCalculator, CombinedDataResult, GasCostCalculator,
@@ -130,8 +129,24 @@ impl CommandHandler {
             // Get chain-specific USDC address
             let usdc_address = chain.usdc_address()?;
 
-            // Get liquidator address using extension trait
-            let liquidator_address = router_type.liquidator_address(chain);
+            // Get liquidator/owner address from router contract
+            // V2 routers only have owner(), LO and V3 have liquidator_address()
+            let liquidator_address = match router_type {
+                RouterType::V2 => {
+                    let router = V2Router::new(router_address, &provider);
+                    router.owner().await?
+                }
+                RouterType::LimitOrder => {
+                    let router = LimitOrderV2::new(router_address, &provider);
+                    router.liquidator_address().await?
+                }
+                RouterType::V3 => {
+                    let router = V3Router::new(router_address, &provider);
+                    router.liquidator_address().await?
+                }
+            };
+
+            info!(liquidator_address = ?liquidator_address, router_type = ?router_type, "Retrieved liquidator/owner address from router contract");
 
             // Create and insert calculator
             let calculator =
