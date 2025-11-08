@@ -27,3 +27,6 @@ pub use price::*;
 pub use price_cache::*;
 pub use tokens_to::*;
 pub use transfer::*;
+
+// Re-export RouterType from odos-sdk for convenience
+pub use odos_sdk::RouterType;

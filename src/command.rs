@@ -8,6 +8,7 @@ use tracing::{error, info};
 use usdshe::Usdc;
 
 use crate::{
+    api::RouterTypeLiquidatorExt,
     bootstrap::SupportedEvent,
     price::{PriceCalculator, TokenPriceResult},
     AmountCalculator, AmountResult, CombinedCalculator, CombinedDataResult, GasCostCalculator,
@@ -114,22 +115,27 @@ impl CommandHandler {
     ) -> anyhow::Result<&mut PriceCalculator> {
         if let std::collections::hash_map::Entry::Vacant(e) = self.calculators.entry(chain as u64) {
             // Create a new calculator for this chain
-            info!(chain = ?chain, "Creating new PriceCalculator");
+            info!(chain = ?chain, router_type = ?router_type, "Creating new PriceCalculator");
 
             // Create provider for this chain
             let provider = create_l1_read_provider(chain)?;
 
-            // Get chain-specific addresses
-            let router_address = chain.v2_router_address()?;
+            // Get router address based on router type using SDK's type-safe methods
+            let router_address = match router_type {
+                RouterType::LimitOrder => chain.lo_router_address()?,
+                RouterType::V2 => chain.v2_router_address()?,
+                RouterType::V3 => chain.v3_router_address()?,
+            };
+
+            // Get chain-specific USDC address
             let usdc_address = chain.usdc_address()?;
 
+            // Get liquidator address using extension trait
+            let liquidator_address = router_type.liquidator_address(chain);
+
             // Create and insert calculator
-            let calculator = PriceCalculator::new(
-                router_address,
-                usdc_address,
-                router_type.address(),
-                provider,
-            );
+            let calculator =
+                PriceCalculator::new(router_address, usdc_address, liquidator_address, provider);
             e.insert(calculator);
         }
 

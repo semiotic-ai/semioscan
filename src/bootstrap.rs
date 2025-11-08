@@ -141,12 +141,34 @@ enum Commands {
     },
 }
 
+/// Parse router type from string using type-safe mapping
 fn parse_router_type(s: &str) -> Result<RouterType, String> {
-    match s.to_lowercase().as_str() {
-        "v2" => Ok(RouterType::V2),
-        "lo" => Ok(RouterType::LimitOrder),
-        _ => Err("Router type must be either 'v2' or 'lo'".to_string()),
+    // Define all valid router type mappings
+    const ROUTER_TYPE_MAPPINGS: &[(RouterType, &[&str])] = &[
+        (RouterType::V2, &["v2"]),
+        (RouterType::LimitOrder, &["lo", "limitorder", "limit-order"]),
+        (RouterType::V3, &["v3"]),
+    ];
+
+    let input = s.to_lowercase();
+
+    // Find matching router type
+    for (router_type, aliases) in ROUTER_TYPE_MAPPINGS {
+        if aliases.iter().any(|&alias| alias == input) {
+            return Ok(*router_type);
+        }
     }
+
+    // Generate error message listing all valid options
+    let valid_options: Vec<String> = ROUTER_TYPE_MAPPINGS
+        .iter()
+        .flat_map(|(_, aliases)| aliases.iter().map(|s| format!("'{s}'")))
+        .collect();
+
+    Err(format!(
+        "Invalid router type '{s}'. Valid options: {}",
+        valid_options.join(", ")
+    ))
 }
 
 /// Main entry point for the application.
