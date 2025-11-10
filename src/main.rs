@@ -7,7 +7,13 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 async fn main() -> Result<ExitCode, ExitCode> {
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .with(fmt::layer().with_target(true).json().with_ansi(true))
+        .with(
+            fmt::layer()
+                .with_target(true)
+                .json()
+                .flatten_event(true)
+                .with_ansi(true),
+        )
         .init();
 
     if let Err(e) = run().await {
