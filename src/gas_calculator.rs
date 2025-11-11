@@ -1,3 +1,26 @@
+//! Gas cost calculation for blockchain transactions
+//!
+//! This module provides tools for calculating total gas costs for transactions between
+//! two addresses over a given block range. It handles both L1 (Ethereum) and L2 (Optimism Stack)
+//! chains correctly, including L1 data fees for L2 transactions.
+//!
+//! # Examples
+//!
+//! ```rust,ignore
+//! use semioscan::GasCalculator;
+//! use alloy_provider::ProviderBuilder;
+//!
+//! let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+//! let calculator = GasCalculator::new(provider.clone());
+//!
+//! let result = calculator
+//!     .get_gas_cost(chain_id, from_addr, to_addr, start_block, end_block)
+//!     .await?;
+//!
+//! println!("Total gas cost: {} wei", result.total_gas_cost);
+//! println!("Transactions: {}", result.transaction_count);
+//! ```
+
 use std::sync::Arc;
 
 use alloy_network::Network;
@@ -8,9 +31,15 @@ use tokio::sync::Mutex;
 
 use crate::{GasCache, SemioscanConfig};
 
+/// Gas data for a single transaction
+///
+/// This enum represents gas costs for either L1 or L2 transactions. L2 transactions
+/// include additional L1 data fees that are automatically included in calculations.
 #[derive(Debug, Clone)]
 pub enum GasForTx {
+    /// L1 (Ethereum) transaction gas data
     L1(L1Gas),
+    /// L2 (Optimism Stack) transaction gas data with L1 data fee
     L2(L2Gas),
 }
 
@@ -26,9 +55,15 @@ impl From<(U256, U256, U256)> for GasForTx {
     }
 }
 
+/// Gas data for L1 (Ethereum) transactions
+///
+/// L1 transactions have a simple gas cost calculation:
+/// `total_cost = gas_used * effective_gas_price`
 #[derive(Debug, Clone)]
 pub struct L1Gas {
+    /// Amount of gas consumed by the transaction
     pub gas_used: U256,
+    /// Effective gas price paid per unit of gas (in wei)
     pub effective_gas_price: U256,
 }
 
@@ -41,10 +76,19 @@ impl From<(U256, U256)> for L1Gas {
     }
 }
 
+/// Gas data for L2 (Optimism Stack) transactions
+///
+/// L2 transactions have an additional L1 data fee component:
+/// `total_cost = (gas_used * effective_gas_price) + l1_data_fee`
+///
+/// The L1 data fee covers the cost of posting transaction data to the L1 chain.
 #[derive(Debug, Clone)]
 pub struct L2Gas {
+    /// Amount of L2 gas consumed by the transaction
     pub gas_used: U256,
+    /// Effective L2 gas price paid per unit of gas (in wei)
     pub effective_gas_price: U256,
+    /// L1 data fee for posting transaction to L1 chain (in wei)
     pub l1_data_fee: U256,
 }
 
@@ -58,12 +102,30 @@ impl From<(U256, U256, U256)> for L2Gas {
     }
 }
 
+/// Result of gas cost calculation over a block range
+///
+/// Contains the total gas costs paid for all transactions from one address to another,
+/// along with the number of transactions processed.
+///
+/// # Units
+///
+/// All gas costs are in wei (the smallest unit of native chain currency).
+///
+/// # L2 Handling
+///
+/// For L2 chains (Arbitrum, Base, Optimism, etc.), the `total_gas_cost` automatically
+/// includes both L2 execution gas and L1 data fees.
 #[derive(Default, Debug, Clone, Serialize)]
 pub struct GasCostResult {
+    /// Chain ID where the transactions occurred
     pub chain_id: u64,
+    /// Address that sent the transactions
     pub from: Address,
+    /// Address that received the transactions
     pub to: Address,
+    /// Total gas cost in wei (includes L1 data fees for L2 chains)
     pub total_gas_cost: U256,
+    /// Number of transactions processed
     pub transaction_count: usize,
 }
 

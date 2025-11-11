@@ -1,3 +1,31 @@
+//! Block window calculation for mapping UTC dates to blockchain block ranges
+//!
+//! This module provides tools for calculating which blockchain blocks correspond to
+//! a specific UTC date. This is useful for analyzing blockchain data by date rather
+//! than by block number.
+//!
+//! # Caching
+//!
+//! Block windows are automatically cached to disk to avoid repeated RPC calls for
+//! the same date. The cache is stored as JSON and persists across program runs.
+//!
+//! # Examples
+//!
+//! ```rust,ignore
+//! use semioscan::BlockWindowCalculator;
+//! use alloy_provider::ProviderBuilder;
+//! use alloy_chains::NamedChain;
+//! use chrono::NaiveDate;
+//!
+//! let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+//! let calculator = BlockWindowCalculator::new(provider, "cache.json".to_string());
+//!
+//! let date = NaiveDate::from_ymd_opt(2025, 10, 15).unwrap();
+//! let window = calculator.get_daily_window(NamedChain::Arbitrum, date).await?;
+//!
+//! println!("Blocks for {}: [{}, {}]", date, window.start_block, window.end_block);
+//! ```
+
 use alloy_chains::NamedChain;
 use alloy_primitives::BlockNumber;
 use alloy_provider::Provider;
