@@ -1,6 +1,6 @@
+use crate::provider::{create_ethereum_provider, create_optimism_provider, ChainFeatures};
 use alloy_chains::NamedChain;
 use alloy_primitives::Address;
-use likwid_core::{create_l1_read_provider, create_op_stack_read_provider, L2};
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info};
@@ -133,7 +133,7 @@ impl CommandHandler {
             info!(chain = ?chain, router_type = ?router_type, "Creating new PriceCalculator");
 
             // Create provider for this chain
-            let provider = create_l1_read_provider(chain)?;
+            let provider = create_ethereum_provider(chain)?;
 
             // Get router address based on router type using SDK's type-safe methods
             let router_address = match router_type {
@@ -211,7 +211,7 @@ impl CommandHandler {
         to_block: u64,
     ) -> anyhow::Result<GasCostResult> {
         if chain.has_l1_fees() {
-            let provider = create_op_stack_read_provider(chain)?;
+            let provider = create_optimism_provider(chain)?;
             let calculator = GasCostCalculator::new(provider);
 
             match event {
@@ -241,7 +241,7 @@ impl CommandHandler {
                 }
             }
         } else {
-            let provider = create_l1_read_provider(chain)?;
+            let provider = create_ethereum_provider(chain)?;
             let calculator = GasCostCalculator::new(provider);
 
             match event {
@@ -283,7 +283,7 @@ impl CommandHandler {
         from_block: u64,
         to_block: u64,
     ) -> anyhow::Result<AmountResult> {
-        let provider = create_l1_read_provider(chain)?;
+        let provider = create_ethereum_provider(chain)?;
 
         let calculator = AmountCalculator::new(provider);
 
@@ -310,14 +310,14 @@ impl CommandHandler {
         to_block: u64,
     ) -> anyhow::Result<CombinedDataResult> {
         if chain.has_l1_fees() {
-            let provider = create_op_stack_read_provider(chain)?;
+            let provider = create_optimism_provider(chain)?;
             let calculator = CombinedCalculator::new(provider);
 
             calculator
                 .calculate_combined_data_optimism(chain, from, to, token, from_block, to_block)
                 .await
         } else {
-            let provider = create_l1_read_provider(chain)?;
+            let provider = create_ethereum_provider(chain)?;
             let calculator = CombinedCalculator::new(provider);
 
             calculator

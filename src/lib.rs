@@ -15,6 +15,7 @@ pub mod price; // New trait-based architecture
 mod price_cache; // Legacy price cache for Odos example
 #[cfg(feature = "odos-example")]
 mod price_calculator; // Generic price calculator using PriceSource trait
+pub mod provider; // Provider abstraction for blockchain access
 mod spans;
 mod tokens_to;
 mod transfer;

@@ -324,10 +324,10 @@ pub async fn run() -> anyhow::Result<()> {
                         "json" => {
                             // Output as JSON with human-readable values
                             // Query token decimals on-chain
+                            use crate::provider::create_ethereum_provider;
                             use erc20_rs::Erc20;
-                            use likwid_core::create_l1_read_provider;
 
-                            let provider = create_l1_read_provider(chain)?;
+                            let provider = create_ethereum_provider(chain)?;
                             let token_contract = Erc20::new(token, provider);
                             let decimals = token_contract.decimals().await?;
 

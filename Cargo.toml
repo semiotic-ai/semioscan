@@ -18,15 +18,18 @@ alloy-dyn-abi.workspace = true
 alloy-network.workspace = true
 alloy-primitives.workspace = true
 alloy-provider.workspace = true
+alloy-rpc-client.workspace = true
 alloy-rpc-types.workspace = true
 alloy-sol-types.workspace = true
 alloy-sol-type-parser.workspace = true
+alloy-transport-http.workspace = true
 anyhow.workspace = true
 bigdecimal.workspace = true
 chrono.workspace = true
 dotenvy.workspace = true
 erc20-rs.workspace = true
 op-alloy-network.workspace = true
+url.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -43,6 +46,3 @@ usdshe = { workspace = true, optional = true }
 
 # Optional: HTTP API server (feature: api-server)
 axum = { workspace = true, optional = true }
-
-# TODO: Remove in Phase 2.3 - temporary for backward compatibility
-likwid-core.workspace = true
