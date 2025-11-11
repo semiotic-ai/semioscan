@@ -4,7 +4,6 @@
 use std::fmt::Debug;
 
 use alloy_sol_types::sol;
-use serde::Deserialize;
 
 /// The canonical Transfer event signature
 pub const TRANSFER_EVENT_SIGNATURE: &str = "Transfer(address,address,uint256)";
@@ -38,20 +37,4 @@ impl Debug for Approval {
             self.owner, self.spender, self.value
         )
     }
-}
-
-/// Supported event types for blockchain analysis
-#[cfg(feature = "cli")]
-#[derive(clap::ValueEnum, Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
-pub enum SupportedEvent {
-    Transfer,
-    Approval,
-}
-
-/// Supported event types for API server (without clap dependency)
-#[cfg(all(feature = "api-server", not(feature = "cli")))]
-#[derive(Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
-pub enum SupportedEvent {
-    Transfer,
-    Approval,
 }

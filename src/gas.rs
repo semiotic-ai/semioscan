@@ -4,10 +4,7 @@ use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{network::eip2718::Typed2718, Provider};
 use alloy_rpc_types::{Filter, Log, TransactionTrait};
 use alloy_sol_types::SolEvent;
-#[cfg(feature = "api-server")]
-use axum::{extract::Query, extract::State, Json};
 use op_alloy_network::Optimism;
-use serde::{Deserialize, Serialize};
 use tokio::time::sleep;
 
 use crate::{
@@ -16,9 +13,6 @@ use crate::{
     APPROVAL_EVENT_SIGNATURE, TRANSFER_EVENT_SIGNATURE,
 };
 use tracing::{error, info, trace};
-
-#[cfg(feature = "cli")]
-use crate::{CalculateGasCommand, Command, SemioscanHandle, SupportedEvent};
 
 // Constants for gas calculations
 const BLOB_GAS_PER_BLOB: u64 = 131_072;
@@ -608,67 +602,5 @@ impl GasCostCalculator<Optimism> {
             &adapter,
         )
         .await
-    }
-}
-
-/// Query parameters for the gas cost endpoint.
-/// Requires CLI feature because it uses CalculateGasCommand which depends on the command system.
-#[cfg(feature = "cli")]
-#[derive(Debug, Deserialize)]
-pub struct GasQuery {
-    pub chain: NamedChain,
-    pub from: Address,
-    pub to: Address,
-    pub token: Address,
-    pub from_block: u64,
-    pub to_block: u64,
-    pub event: SupportedEvent,
-}
-
-/// Response for the gas cost endpoint.
-#[cfg(feature = "cli")]
-#[derive(Debug, Serialize)]
-pub struct GasResponse {
-    pub total_gas_cost: String,
-    pub transaction_count: usize,
-    pub from: String,
-    pub to: String,
-}
-
-/// Handler for the gas cost endpoint.
-/// Requires CLI feature because it uses CalculateGasCommand which depends on the command system.
-#[cfg(feature = "cli")]
-pub async fn get_gas_cost(
-    State(gas_job): State<SemioscanHandle>,
-    Query(params): Query<GasQuery>,
-) -> Result<Json<GasResponse>, String> {
-    info!(params = ?params, "Received gas cost request");
-
-    let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
-
-    gas_job
-        .tx
-        .send(Command::CalculateGas(CalculateGasCommand {
-            from: params.from,
-            to: params.to,
-            event: params.event,
-            token: params.token,
-            from_block: params.from_block,
-            to_block: params.to_block,
-            chain: params.chain,
-            responder: responder_tx,
-        }))
-        .await
-        .map_err(|_| "Failed to send gas calculation command".to_string())?;
-
-    match responder_rx.await {
-        Ok(Ok(result)) => Ok(Json(GasResponse {
-            total_gas_cost: result.total_gas_cost.to_string(),
-            transaction_count: result.transaction_count,
-            from: result.from.to_string(),
-            to: result.to.to_string(),
-        })),
-        Ok(Err(err)) => Err(err),
-        Err(_) => Err("Failed to receive gas cost response".to_string()),
     }
 }

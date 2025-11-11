@@ -4,11 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["core", "odos-example", "api-server", "cli"]
-core = []
+default = ["odos-example"]
 odos-example = ["dep:odos-sdk", "dep:usdshe"]
-api-server = ["dep:axum"]
-cli = ["dep:clap", "odos-example", "api-server"]        # CLI needs all features
 
 [dependencies]
 # Core blockchain dependencies (always required)
@@ -37,12 +34,6 @@ tokio = { workspace = true, features = ["fs"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
-# Optional: CLI with clap (feature: cli)
-clap = { workspace = true, optional = true }
-
 # Optional: Odos DEX price source example (feature: odos-example)
 odos-sdk = { workspace = true, optional = true }
 usdshe = { workspace = true, optional = true }
-
-# Optional: HTTP API server (feature: api-server)
-axum = { workspace = true, optional = true }
