@@ -12,13 +12,13 @@ use tokio::time::{sleep, Duration};
 
 use crate::{
     adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter},
-    bootstrap::SupportedEvent,
-    spans, Approval, CalculateGasCommand, GasCostCalculator, GasCostResult, GasForTx,
-    SemioscanHandle, Transfer, APPROVAL_EVENT_SIGNATURE, MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
+    spans, Approval, GasCostCalculator, GasCostResult, GasForTx, Transfer,
+    APPROVAL_EVENT_SIGNATURE, MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
 };
 use tracing::{error, info, trace};
 
-use crate::Command;
+#[cfg(feature = "cli")]
+use crate::{CalculateGasCommand, Command, SemioscanHandle, SupportedEvent};
 
 // Constants for gas calculations
 const BLOB_GAS_PER_BLOB: u64 = 131_072;
@@ -598,7 +598,8 @@ impl GasCostCalculator<Optimism> {
 }
 
 /// Query parameters for the gas cost endpoint.
-#[cfg(feature = "api-server")]
+/// Requires CLI feature because it uses CalculateGasCommand which depends on the command system.
+#[cfg(feature = "cli")]
 #[derive(Debug, Deserialize)]
 pub struct GasQuery {
     pub chain: NamedChain,
@@ -611,7 +612,7 @@ pub struct GasQuery {
 }
 
 /// Response for the gas cost endpoint.
-#[cfg(feature = "api-server")]
+#[cfg(feature = "cli")]
 #[derive(Debug, Serialize)]
 pub struct GasResponse {
     pub total_gas_cost: String,
@@ -621,7 +622,8 @@ pub struct GasResponse {
 }
 
 /// Handler for the gas cost endpoint.
-#[cfg(feature = "api-server")]
+/// Requires CLI feature because it uses CalculateGasCommand which depends on the command system.
+#[cfg(feature = "cli")]
 pub async fn get_gas_cost(
     State(gas_job): State<SemioscanHandle>,
     Query(params): Query<GasQuery>,

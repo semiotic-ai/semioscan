@@ -2,23 +2,16 @@ use alloy_chains::NamedChain;
 use alloy_primitives::Address;
 use alloy_provider::ProviderBuilder;
 use chrono::NaiveDate;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 use dotenvy::dotenv;
-use serde::Deserialize;
 use std::env;
 use tokio::net::TcpListener;
 
 use crate::{
     serve_api, BlockWindowCalculator, CalculateCombinedDataCommand, CalculateGasCommand,
     CalculatePriceCommand, CalculateTransferAmountCommand, Command, CommandHandler, RouterType,
+    SupportedEvent,
 };
-
-// Supported event types
-#[derive(ValueEnum, Copy, Clone, Debug, Deserialize, PartialEq, Eq)]
-pub enum SupportedEvent {
-    Transfer,
-    Approval,
-}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

@@ -11,7 +11,7 @@ use odos_sdk::{LimitOrderV2, OdosChain, RouterType, V2Router, V3Router};
 use usdshe::Usdc;
 
 #[cfg(feature = "cli")]
-use crate::bootstrap::SupportedEvent;
+use crate::SupportedEvent;
 
 #[cfg(feature = "odos-example")]
 use crate::price_legacy::{PriceCalculator, TokenPriceResult};

@@ -1,13 +1,14 @@
-#[cfg(feature = "api-server")]
+#[cfg(all(feature = "api-server", feature = "odos-example"))]
 use axum::{routing::get, Router};
-#[cfg(feature = "api-server")]
+#[cfg(all(feature = "api-server", feature = "odos-example"))]
 use tokio::net::TcpListener;
 
-#[cfg(feature = "api-server")]
+#[cfg(all(feature = "api-server", feature = "odos-example"))]
 use crate::{command::SemioscanHandle, get_lo_price, get_v2_price};
 
 /// Starts the API server.
-#[cfg(feature = "api-server")]
+/// Requires both api-server and odos-example features as it serves Odos price endpoints.
+#[cfg(all(feature = "api-server", feature = "odos-example"))]
 pub async fn serve_api(listener: TcpListener, price_job: SemioscanHandle) -> anyhow::Result<()> {
     let app = Router::new()
         // Original path for backward compatibility
