@@ -1,20 +1,24 @@
 use alloy_chains::NamedChain;
-use alloy_primitives::{keccak256, Address, B256, U256};
+use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
-use alloy_sol_types::SolEvent;
 use erc20_rs::Erc20;
-use odos_sdk::OdosV2Router::{Swap, SwapMulti};
-use odos_sdk::RouterType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tracing::{debug, error, info};
+use tracing::{error, info};
+
+use crate::price::{PriceSource, PriceSourceError};
+use crate::PriceCache;
 
 #[cfg(feature = "api-server")]
 use axum::{extract::State, Json};
 
-use crate::{CalculatePriceCommand, Command, PriceCache, SemioscanHandle};
+#[cfg(all(feature = "api-server", feature = "odos-example"))]
+use crate::{CalculatePriceCommand, Command, SemioscanHandle};
+
+#[cfg(all(feature = "api-server", feature = "odos-example"))]
+use odos_sdk::RouterType;
 
 // Price calculation result
 #[derive(Default, Debug, Clone, Serialize)]
@@ -72,25 +76,40 @@ impl TokenPriceResult {
 
 pub struct PriceCalculator {
     provider: RootProvider,
-    router_address: Address,
+    price_source: Box<dyn PriceSource>,
     usdc_address: Address,
-    liquidator_address: Address,
     token_decimals_cache: HashMap<Address, u8>,
     price_cache: Mutex<PriceCache>,
 }
 
 impl PriceCalculator {
+    /// Create a new PriceCalculator with a custom price source
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - Blockchain provider for querying logs and token data
+    /// * `usdc_address` - Address of the stablecoin to calculate prices against
+    /// * `price_source` - Implementation of PriceSource trait for extracting swap data
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use semioscan::price::odos::OdosPriceSource;
+    /// use semioscan::price_calculator::PriceCalculator;
+    ///
+    /// let price_source = OdosPriceSource::new(router_address)
+    ///     .with_liquidator_filter(liquidator_address);
+    /// let calculator = PriceCalculator::new(provider, usdc_address, Box::new(price_source));
+    /// ```
     pub fn new(
-        router_address: Address,
-        usdc_address: Address,
-        liquidator_address: Address,
         provider: RootProvider,
+        usdc_address: Address,
+        price_source: Box<dyn PriceSource>,
     ) -> Self {
         Self {
             provider,
-            router_address,
+            price_source,
             usdc_address,
-            liquidator_address,
             token_decimals_cache: HashMap::new(),
             price_cache: Default::default(),
         }
@@ -113,87 +132,41 @@ impl PriceCalculator {
         f64::from(amount) / f64::from(divisor)
     }
 
-    async fn process_swap_event(
+    /// Process a SwapData extracted by the PriceSource trait
+    ///
+    /// Checks if the swap involves our target token and USDC, then extracts
+    /// normalized amounts for price calculation.
+    ///
+    /// Returns Some((token_amount, usdc_amount)) if relevant, None otherwise.
+    async fn process_swap_data(
         &mut self,
-        event: &SwapMulti,
+        swap: &crate::price::SwapData,
         token_address: Address,
-        token_decimals: u8,
     ) -> anyhow::Result<Option<(f64, f64)>> {
-        if event.sender != self.liquidator_address {
-            debug!("Skipping swap not initiated by our liquidator address");
-            return Ok(None);
+        // Check if this swap involves our target token being sold for USDC
+        if swap.token_in == token_address && swap.token_out == self.usdc_address {
+            let token_decimals = self.get_token_decimals(token_address).await?;
+            let usdc_decimals = self.get_token_decimals(self.usdc_address).await?;
+
+            let token_amount = self.normalize_amount(swap.token_in_amount, token_decimals);
+            let usdc_amount = self.normalize_amount(swap.token_out_amount, usdc_decimals);
+
+            return Ok(Some((token_amount, usdc_amount)));
         }
 
-        info!(
-            event = ?event,
-            "Processing swap"
-        );
+        // Check if this swap involves USDC being sold for our target token (reverse direction)
+        // This provides price information too: if someone buys our token with USDC
+        if swap.token_in == self.usdc_address && swap.token_out == token_address {
+            let token_decimals = self.get_token_decimals(token_address).await?;
+            let usdc_decimals = self.get_token_decimals(self.usdc_address).await?;
 
-        let token_in_indices: Vec<usize> = event
-            .tokensIn
-            .iter()
-            .enumerate()
-            .filter_map(|(i, &addr)| if addr == token_address { Some(i) } else { None })
-            .collect();
+            let token_amount = self.normalize_amount(swap.token_out_amount, token_decimals);
+            let usdc_amount = self.normalize_amount(swap.token_in_amount, usdc_decimals);
 
-        if token_in_indices.is_empty() {
-            return Ok(None);
-        }
-
-        let mut stable_output = None;
-        for (i, &token_out) in event.tokensOut.iter().enumerate() {
-            if self.usdc_address == token_out {
-                let stablecoin_decimals = self.get_token_decimals(token_out).await?;
-                let amount_out = self.normalize_amount(event.amountsOut[i], stablecoin_decimals);
-                stable_output = Some(amount_out);
-                break;
-            }
-        }
-
-        if let Some(stable_amount) = stable_output {
-            let mut total_token_in = 0.0;
-            for &idx in &token_in_indices {
-                total_token_in += self.normalize_amount(event.amountsIn[idx], token_decimals);
-            }
-
-            return Ok(Some((total_token_in, stable_amount)));
+            return Ok(Some((token_amount, usdc_amount)));
         }
 
         Ok(None)
-    }
-
-    // Process the single Swap event
-    async fn process_single_swap_event(
-        &mut self,
-        event: &Swap,
-        token_address: Address,
-        token_decimals: u8,
-    ) -> anyhow::Result<Option<(f64, f64)>> {
-        if event.sender != self.liquidator_address {
-            debug!("Skipping swap not initiated by our liquidator address");
-            return Ok(None);
-        }
-
-        info!(
-            event = ?event,
-            "Processing single swap event"
-        );
-
-        // Check if the input token matches the token we're analyzing
-        if event.inputToken != token_address {
-            return Ok(None);
-        }
-
-        // Check if the output token is USDC
-        if event.outputToken != self.usdc_address {
-            return Ok(None);
-        }
-
-        let stablecoin_decimals = self.get_token_decimals(event.outputToken).await?;
-        let token_amount = self.normalize_amount(event.inputAmount, token_decimals);
-        let usdc_amount = self.normalize_amount(event.amountOut, stablecoin_decimals);
-
-        Ok(Some((token_amount, usdc_amount)))
     }
 
     pub async fn calculate_price_between_blocks(
@@ -228,7 +201,6 @@ impl PriceCalculator {
 
         // Initialize with any cached data or create new result
         let mut price_data = cached_result.unwrap_or_else(|| TokenPriceResult::new(token_address));
-        let token_decimals = self.get_token_decimals(token_address).await?;
 
         // Process each gap
         for (gap_start, gap_end) in gaps {
@@ -239,29 +211,24 @@ impl PriceCalculator {
                 "Processing uncached block range"
             );
 
-            // Process the gap using existing logic
+            // Process the gap using PriceSource trait
             let mut current_block = gap_start;
             const MAX_BLOCK_RANGE: u64 = 2_000;
 
-            // Event signatures
-            let multi_swap_signature =
-                "SwapMulti(address,uint256[],address[],uint256[],address[],uint32)";
-            let multi_swap_topic = B256::from_slice(&*keccak256(multi_swap_signature.as_bytes()));
-
-            let single_swap_signature =
-                "Swap(address,uint256,address,uint256,address,int256,uint32)";
-            let single_swap_topic = B256::from_slice(&*keccak256(single_swap_signature.as_bytes()));
+            // Get event topics from price source
+            let event_topics = self.price_source.event_topics();
 
             let mut gap_result = TokenPriceResult::new(token_address);
 
             while current_block <= gap_end {
                 let to_block = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, gap_end);
 
-                // Create a filter for all swap events
+                // Create a filter for swap events from the price source
                 let filter = Filter::new()
                     .from_block(current_block)
                     .to_block(to_block)
-                    .address(self.router_address);
+                    .address(self.price_source.router_address())
+                    .event_signature(event_topics.clone());
 
                 match self.provider.get_logs(&filter).await {
                     Ok(logs) => {
@@ -273,64 +240,35 @@ impl PriceCalculator {
                         );
 
                         for log in logs {
-                            // Process based on the event signature in the first topic
-                            if !log.topics().is_empty() {
-                                let topic = log.topics()[0];
+                            // Extract swap data using the price source
+                            match self.price_source.extract_swap_from_log(&log) {
+                                Ok(Some(swap_data)) => {
+                                    // Apply price source filtering
+                                    if !self.price_source.should_include_swap(&swap_data) {
+                                        continue;
+                                    }
 
-                                if topic == multi_swap_topic {
-                                    // Process SwapMulti event
-                                    match SwapMulti::decode_log(&log.into()) {
-                                        Ok(event) => {
-                                            match self
-                                                .process_swap_event(
-                                                    &event,
-                                                    token_address,
-                                                    token_decimals,
-                                                )
-                                                .await
-                                            {
-                                                Ok(Some((token_amount, usdc_amount))) => {
-                                                    gap_result.add_swap(token_amount, usdc_amount);
-                                                }
-                                                Ok(None) => {
-                                                    // Not relevant for our token
-                                                }
-                                                Err(e) => {
-                                                    error!(error = ?e, "Error processing SwapMulti event");
-                                                }
-                                            }
+                                    // Process the swap data
+                                    match self.process_swap_data(&swap_data, token_address).await {
+                                        Ok(Some((token_amount, usdc_amount))) => {
+                                            gap_result.add_swap(token_amount, usdc_amount);
+                                        }
+                                        Ok(None) => {
+                                            // Not relevant for our token
                                         }
                                         Err(e) => {
-                                            error!(error = ?e, "Failed to decode SwapMulti log");
+                                            error!(error = ?e, "Error processing swap data");
                                         }
                                     }
-                                } else if topic == single_swap_topic {
-                                    // Process Swap event
-                                    match Swap::decode_log(&log.into()) {
-                                        Ok(event) => {
-                                            match self
-                                                .process_single_swap_event(
-                                                    &event,
-                                                    token_address,
-                                                    token_decimals,
-                                                )
-                                                .await
-                                            {
-                                                Ok(Some((token_amount, usdc_amount))) => {
-                                                    gap_result.add_swap(token_amount, usdc_amount);
-                                                }
-                                                Ok(None) => {
-                                                    // Not relevant for our token
-                                                }
-                                                Err(e) => {
-                                                    error!(error = ?e, "Error processing Swap event");
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            error!(error = ?e, "Failed to decode Swap log");
-                                        }
-                                    }
+                                }
+                                Ok(None) => {
+                                    // Log is not a relevant swap event
+                                }
+                                Err(PriceSourceError::DecodeError(e)) => {
+                                    error!(error = ?e, "Failed to decode log");
+                                }
+                                Err(PriceSourceError::InvalidSwapData(e)) => {
+                                    error!(error = ?e, "Invalid swap data in log");
                                 }
                             }
                         }

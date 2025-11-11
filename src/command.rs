@@ -14,7 +14,9 @@ use usdshe::Usdc;
 use crate::SupportedEvent;
 
 #[cfg(feature = "odos-example")]
-use crate::price_legacy::{PriceCalculator, TokenPriceResult};
+use crate::price::odos::OdosPriceSource;
+#[cfg(feature = "odos-example")]
+use crate::price_calculator::{PriceCalculator, TokenPriceResult};
 
 use crate::{
     AmountCalculator, AmountResult, CombinedCalculator, CombinedDataResult, GasCostCalculator,
@@ -162,9 +164,12 @@ impl CommandHandler {
 
             info!(liquidator_address = ?liquidator_address, router_type = ?router_type, "Retrieved liquidator/owner address from router contract");
 
-            // Create and insert calculator
-            let calculator =
-                PriceCalculator::new(router_address, usdc_address, liquidator_address, provider);
+            // Create price source with liquidator filter
+            let price_source =
+                OdosPriceSource::new(router_address).with_liquidator_filter(liquidator_address);
+
+            // Create calculator with price source
+            let calculator = PriceCalculator::new(provider, usdc_address, Box::new(price_source));
             e.insert(calculator);
         }
 

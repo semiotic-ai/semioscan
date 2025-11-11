@@ -14,7 +14,7 @@ pub mod price; // New trait-based architecture
 #[cfg(feature = "odos-example")]
 mod price_cache; // Legacy price cache for Odos example
 #[cfg(feature = "odos-example")]
-mod price_legacy; // Legacy Odos-specific price calculator (will be replaced by trait-based system)
+mod price_calculator; // Generic price calculator using PriceSource trait
 mod spans;
 mod tokens_to;
 mod transfer;
@@ -32,7 +32,7 @@ pub use gas_calculator::*;
 #[cfg(feature = "odos-example")]
 pub use price_cache::*;
 #[cfg(feature = "odos-example")]
-pub use price_legacy::*; // Only available with odos-example feature
+pub use price_calculator::*; // Generic price calculator available with odos-example feature
 pub use tokens_to::*;
 pub use transfer::*;
 
