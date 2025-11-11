@@ -6,6 +6,7 @@ mod block_window;
 pub mod bootstrap; // CLI only
 mod combined_retriever;
 mod command;
+mod config;
 mod event;
 mod gas;
 mod gas_cache;
@@ -26,6 +27,7 @@ pub use api::*;
 pub use block_window::*;
 pub use combined_retriever::*;
 pub use command::*;
+pub use config::*;
 pub use event::*;
 pub use gas::*;
 pub use gas_cache::*;

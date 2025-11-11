@@ -5,10 +5,10 @@ use alloy_primitives::{keccak256, Address, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
-use tokio::time::{sleep, Duration};
+use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
-use crate::Transfer;
+use crate::{SemioscanConfig, Transfer};
 
 /// Extract tokens from a router contract.
 ///
@@ -20,6 +20,28 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
     start_block: u64,
     end_block: u64,
 ) -> anyhow::Result<BTreeSet<Address>> {
+    extract_transferred_to_tokens_with_config(
+        provider,
+        chain,
+        router,
+        start_block,
+        end_block,
+        &SemioscanConfig::default(),
+    )
+    .await
+}
+
+/// Extract tokens from a router contract with custom configuration.
+///
+/// Used for extracting router contract token balances by Likwid.
+pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
+    provider: &T,
+    chain: NamedChain,
+    router: Address,
+    start_block: u64,
+    end_block: u64,
+    config: &SemioscanConfig,
+) -> anyhow::Result<BTreeSet<Address>> {
     info!(
         chain = %chain,
         router = %router,
@@ -28,7 +50,8 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
         "Fetching Transfer logs"
     );
 
-    const MAX_BLOCK_RANGE: u64 = 500;
+    let max_block_range = config.get_max_block_range(chain);
+    let rate_limit = config.get_rate_limit_delay(chain);
 
     let mut current_block = start_block;
 
@@ -36,7 +59,7 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
     let mut transferred_to_tokens = BTreeSet::new();
 
     while current_block <= end_block {
-        let to_block = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, end_block);
+        let to_block = std::cmp::min(current_block + max_block_range - 1, end_block);
 
         let filter = Filter::new()
             .from_block(current_block)
@@ -69,9 +92,11 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
 
         current_block = to_block + 1;
 
-        // Add a small delay to avoid hitting rate limits on Sonic Alchemy endpoint
-        if let (NamedChain::Sonic, true) = (chain, current_block <= to_block) {
-            sleep(Duration::from_millis(250)).await;
+        // Apply rate limiting if configured for this chain
+        if let Some(delay) = rate_limit {
+            if current_block <= end_block {
+                sleep(delay).await;
+            }
         }
     }
 

@@ -8,12 +8,12 @@ use alloy_sol_types::SolEvent;
 use axum::{extract::Query, extract::State, Json};
 use op_alloy_network::Optimism;
 use serde::{Deserialize, Serialize};
-use tokio::time::{sleep, Duration};
+use tokio::time::sleep;
 
 use crate::{
     adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter},
     spans, Approval, GasCostCalculator, GasCostResult, GasForTx, Transfer,
-    APPROVAL_EVENT_SIGNATURE, MAX_BLOCK_RANGE, TRANSFER_EVENT_SIGNATURE,
+    APPROVAL_EVENT_SIGNATURE, TRANSFER_EVENT_SIGNATURE,
 };
 use tracing::{error, info, trace};
 
@@ -186,8 +186,13 @@ where
         let mut result = GasCostResult::new(chain_id, from, to);
         let mut current_block = from_block;
 
+        // Convert chain_id to NamedChain for config lookup
+        let chain = NamedChain::try_from(chain_id).unwrap_or(NamedChain::Mainnet); // Fallback to mainnet if unknown
+        let max_block_range = self.config.get_max_block_range(chain);
+        let rate_limit = self.config.get_rate_limit_delay(chain);
+
         while current_block <= to_block {
-            let chunk_end = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, to_block);
+            let chunk_end = std::cmp::min(current_block + max_block_range - 1, to_block);
 
             let filter = GasCalculationCore::create_transfer_filter(
                 current_block,
@@ -226,9 +231,11 @@ where
             }
             current_block = chunk_end + 1;
 
-            // Add a small delay to avoid hitting rate limits on Sonic Alchemy endpoint
-            if chain_id.eq(&146) && current_block <= to_block {
-                sleep(Duration::from_millis(250)).await;
+            // Apply rate limiting if configured for this chain
+            if let Some(delay) = rate_limit {
+                if current_block <= to_block {
+                    sleep(delay).await;
+                }
             }
         }
 
@@ -250,8 +257,13 @@ where
         let mut result = GasCostResult::new(chain_id, owner, spender);
         let mut current_block = from_block;
 
+        // Convert chain_id to NamedChain for config lookup
+        let chain = NamedChain::try_from(chain_id).unwrap_or(NamedChain::Mainnet); // Fallback to mainnet if unknown
+        let max_block_range = self.config.get_max_block_range(chain);
+        let rate_limit = self.config.get_rate_limit_delay(chain);
+
         while current_block <= to_block {
-            let chunk_end = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, to_block);
+            let chunk_end = std::cmp::min(current_block + max_block_range - 1, to_block);
 
             let filter = GasCalculationCore::create_approval_filter(
                 current_block,
@@ -290,9 +302,11 @@ where
             }
             current_block = chunk_end + 1;
 
-            // Add a small delay to avoid hitting rate limits on Sonic Alchemy endpoint
-            if chain_id.eq(&146) && current_block <= to_block {
-                sleep(Duration::from_millis(250)).await;
+            // Apply rate limiting if configured for this chain
+            if let Some(delay) = rate_limit {
+                if current_block <= to_block {
+                    sleep(delay).await;
+                }
             }
         }
 

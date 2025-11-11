@@ -78,8 +78,10 @@ pub struct PriceCalculator {
     provider: RootProvider,
     price_source: Box<dyn PriceSource>,
     usdc_address: Address,
+    chain: alloy_chains::NamedChain,
     token_decimals_cache: HashMap<Address, u8>,
     price_cache: Mutex<PriceCache>,
+    config: crate::SemioscanConfig,
 }
 
 impl PriceCalculator {
@@ -103,15 +105,43 @@ impl PriceCalculator {
     /// ```
     pub fn new(
         provider: RootProvider,
+        chain: alloy_chains::NamedChain,
         usdc_address: Address,
         price_source: Box<dyn PriceSource>,
+    ) -> Self {
+        Self::with_config(
+            provider,
+            chain,
+            usdc_address,
+            price_source,
+            crate::SemioscanConfig::default(),
+        )
+    }
+
+    /// Create a new PriceCalculator with custom configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - Blockchain provider for querying logs and token data
+    /// * `chain` - The blockchain network (used for config lookups)
+    /// * `usdc_address` - Address of the stablecoin to calculate prices against
+    /// * `price_source` - Implementation of PriceSource trait for extracting swap data
+    /// * `config` - Configuration for RPC behavior (block ranges, rate limiting)
+    pub fn with_config(
+        provider: RootProvider,
+        chain: alloy_chains::NamedChain,
+        usdc_address: Address,
+        price_source: Box<dyn PriceSource>,
+        config: crate::SemioscanConfig,
     ) -> Self {
         Self {
             provider,
             price_source,
             usdc_address,
+            chain,
             token_decimals_cache: HashMap::new(),
             price_cache: Default::default(),
+            config,
         }
     }
 
@@ -213,7 +243,8 @@ impl PriceCalculator {
 
             // Process the gap using PriceSource trait
             let mut current_block = gap_start;
-            const MAX_BLOCK_RANGE: u64 = 2_000;
+            let max_block_range = self.config.get_max_block_range(self.chain);
+            let rate_limit = self.config.get_rate_limit_delay(self.chain);
 
             // Get event topics from price source
             let event_topics = self.price_source.event_topics();
@@ -221,7 +252,7 @@ impl PriceCalculator {
             let mut gap_result = TokenPriceResult::new(token_address);
 
             while current_block <= gap_end {
-                let to_block = std::cmp::min(current_block + MAX_BLOCK_RANGE - 1, gap_end);
+                let to_block = std::cmp::min(current_block + max_block_range - 1, gap_end);
 
                 // Create a filter for swap events from the price source
                 let filter = Filter::new()
@@ -284,6 +315,13 @@ impl PriceCalculator {
                 }
 
                 current_block = to_block + 1;
+
+                // Apply rate limiting if configured for this chain
+                if let Some(delay) = rate_limit {
+                    if current_block <= gap_end {
+                        tokio::time::sleep(delay).await;
+                    }
+                }
             }
 
             // Cache the gap result

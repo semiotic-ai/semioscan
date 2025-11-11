@@ -6,7 +6,7 @@ use alloy_provider::RootProvider;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::GasCache;
+use crate::{GasCache, SemioscanConfig};
 
 #[derive(Debug, Clone)]
 pub enum GasForTx {
@@ -136,26 +136,51 @@ impl GasCostResult {
     }
 }
 
-// Maximum number of blocks to query in a single request
+// Maximum number of blocks to query in a single request (legacy default, now deprecated)
+// Replaced by SemioscanConfig.max_block_range - use config.get_max_block_range(chain) instead
+#[deprecated(
+    since = "0.2.0",
+    note = "Use SemioscanConfig.get_max_block_range(chain) instead"
+)]
+#[allow(dead_code)]
 pub(crate) const MAX_BLOCK_RANGE: u64 = 500;
 
 pub struct GasCostCalculator<N: Network> {
     pub(crate) provider: RootProvider<N>,
     pub(crate) gas_cache: Arc<Mutex<GasCache>>,
+    pub(crate) config: SemioscanConfig,
 }
 
 impl<N: Network> GasCostCalculator<N> {
+    /// Create a new gas cost calculator with default configuration
     pub fn new(provider: RootProvider<N>) -> Self {
+        Self::with_config(provider, SemioscanConfig::default())
+    }
+
+    /// Create a gas cost calculator with custom configuration
+    pub fn with_config(provider: RootProvider<N>, config: SemioscanConfig) -> Self {
         Self {
             provider,
             gas_cache: Arc::new(Mutex::new(GasCache::default())),
+            config,
         }
     }
 
-    pub fn with_cache(provider: RootProvider<N>, gas_cache: Arc<Mutex<GasCache>>) -> Self {
+    /// Create a gas cost calculator with custom cache and configuration
+    pub fn with_cache_and_config(
+        provider: RootProvider<N>,
+        gas_cache: Arc<Mutex<GasCache>>,
+        config: SemioscanConfig,
+    ) -> Self {
         Self {
             provider,
             gas_cache,
+            config,
         }
+    }
+
+    /// Create a gas cost calculator with custom cache (uses default config)
+    pub fn with_cache(provider: RootProvider<N>, gas_cache: Arc<Mutex<GasCache>>) -> Self {
+        Self::with_cache_and_config(provider, gas_cache, SemioscanConfig::default())
     }
 }

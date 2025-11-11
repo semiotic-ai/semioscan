@@ -169,7 +169,8 @@ impl CommandHandler {
                 OdosPriceSource::new(router_address).with_liquidator_filter(liquidator_address);
 
             // Create calculator with price source
-            let calculator = PriceCalculator::new(provider, usdc_address, Box::new(price_source));
+            let calculator =
+                PriceCalculator::new(provider, chain, usdc_address, Box::new(price_source));
             e.insert(calculator);
         }
 

@@ -9,16 +9,15 @@ use op_alloy_network::Optimism;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use tokio::time::sleep;
 use tracing::{error, info, trace, warn};
 
 use crate::{
-    spans, EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter, Transfer,
-    TRANSFER_EVENT_SIGNATURE,
+    spans, EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter, SemioscanConfig,
+    Transfer, TRANSFER_EVENT_SIGNATURE,
 };
 
 const BLOB_GAS_PER_BLOB: u64 = 131_072; // EIP-4844 blob gas per blob
-const MAX_BLOCK_RANGE: u64 = 499; // Max blocks to query in one go (0-499 = 500 blocks)
 
 /// Core gas calculation logic (adapted from gas.rs)
 pub struct GasCalculationCore;
@@ -459,6 +458,7 @@ where
     N::ReceiptResponse: Send + Sync + std::fmt::Debug + Clone,
 {
     provider: Arc<P>,
+    config: SemioscanConfig,
     network_marker: std::marker::PhantomData<N>,
 }
 
@@ -468,9 +468,16 @@ where
         TransactionTrait + alloy_provider::network::eip2718::Typed2718 + Send + Sync + Clone,
     N::ReceiptResponse: Send + Sync + std::fmt::Debug + Clone,
 {
+    /// Create a new combined calculator with default configuration
     pub fn new(provider: P) -> Self {
+        Self::with_config(provider, SemioscanConfig::default())
+    }
+
+    /// Create a new combined calculator with custom configuration
+    pub fn with_config(provider: P, config: SemioscanConfig) -> Self {
         Self {
             provider: Arc::new(provider),
+            config,
             network_marker: std::marker::PhantomData,
         }
     }
@@ -548,8 +555,12 @@ where
         let mut result = CombinedDataResult::new(chain, from_address, to_address, token_address);
         let mut current_block = from_block;
 
+        // Get config values for this chain
+        let max_block_range = self.config.get_max_block_range(chain);
+        let rate_limit = self.config.get_rate_limit_delay(chain);
+
         while current_block <= to_block {
-            let chunk_end = std::cmp::min(current_block + MAX_BLOCK_RANGE, to_block);
+            let chunk_end = std::cmp::min(current_block + max_block_range, to_block);
 
             let filter = GasCalculationCore::create_transfer_filter(
                 current_block,
@@ -607,10 +618,12 @@ where
             }
             current_block = chunk_end + 1;
 
-            // Delay for specific chains to avoid rate limiting
-            if chain.eq(&NamedChain::Base) && current_block <= to_block {
-                trace!(?chain, "Applying delay for chain Base");
-                sleep(Duration::from_millis(250)).await;
+            // Apply rate limiting if configured for this chain
+            if let Some(delay) = rate_limit {
+                if current_block <= to_block {
+                    trace!(?chain, ?delay, "Applying rate limit delay");
+                    sleep(delay).await;
+                }
             }
         }
         info!(?chain, %from_address, %to_address, %token_address, from_block, to_block, transactions_found = result.transaction_count, "Finished processing block range");
