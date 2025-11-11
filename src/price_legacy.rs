@@ -3,15 +3,18 @@ use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
-use axum::{extract::State, Json};
 use erc20_rs::Erc20;
 use odos_sdk::OdosV2Router::{Swap, SwapMulti};
+use odos_sdk::RouterType;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use tracing::{debug, error, info};
 
-use crate::{CalculatePriceCommand, Command, PriceCache, RouterType, SemioscanHandle};
+#[cfg(feature = "api-server")]
+use axum::{extract::State, Json};
+
+use crate::{CalculatePriceCommand, Command, PriceCache, SemioscanHandle};
 
 // Price calculation result
 #[derive(Default, Debug, Clone, Serialize)]
@@ -374,6 +377,7 @@ impl PriceCalculator {
 }
 
 /// Query parameters for the price endpoints.
+#[cfg(feature = "api-server")]
 #[derive(Debug, Deserialize)]
 pub struct PriceQuery {
     chain: NamedChain,
@@ -383,6 +387,7 @@ pub struct PriceQuery {
 }
 
 /// Handler for the v2 price endpoint.
+#[cfg(feature = "api-server")]
 pub async fn get_v2_price(
     State(price_job): State<SemioscanHandle>,
     axum::extract::Query(params): axum::extract::Query<PriceQuery>,
@@ -416,6 +421,7 @@ pub async fn get_v2_price(
 }
 
 /// Handler for the limit order price endpoint.
+#[cfg(feature = "api-server")]
 pub async fn get_lo_price(
     State(_price_job): State<SemioscanHandle>,
     axum::extract::Query(params): axum::extract::Query<PriceQuery>,

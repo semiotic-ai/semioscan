@@ -1,9 +1,13 @@
+#[cfg(feature = "api-server")]
 use axum::{routing::get, Router};
+#[cfg(feature = "api-server")]
 use tokio::net::TcpListener;
 
+#[cfg(feature = "api-server")]
 use crate::{command::SemioscanHandle, get_lo_price, get_v2_price};
 
 /// Starts the API server.
+#[cfg(feature = "api-server")]
 pub async fn serve_api(listener: TcpListener, price_job: SemioscanHandle) -> anyhow::Result<()> {
     let app = Router::new()
         // Original path for backward compatibility

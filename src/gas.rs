@@ -4,6 +4,7 @@ use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{network::eip2718::Typed2718, Provider};
 use alloy_rpc_types::{Filter, Log, TransactionTrait};
 use alloy_sol_types::SolEvent;
+#[cfg(feature = "api-server")]
 use axum::{extract::Query, extract::State, Json};
 use op_alloy_network::Optimism;
 use serde::{Deserialize, Serialize};
@@ -597,6 +598,7 @@ impl GasCostCalculator<Optimism> {
 }
 
 /// Query parameters for the gas cost endpoint.
+#[cfg(feature = "api-server")]
 #[derive(Debug, Deserialize)]
 pub struct GasQuery {
     pub chain: NamedChain,
@@ -609,6 +611,7 @@ pub struct GasQuery {
 }
 
 /// Response for the gas cost endpoint.
+#[cfg(feature = "api-server")]
 #[derive(Debug, Serialize)]
 pub struct GasResponse {
     pub total_gas_cost: String,
@@ -618,6 +621,7 @@ pub struct GasResponse {
 }
 
 /// Handler for the gas cost endpoint.
+#[cfg(feature = "api-server")]
 pub async fn get_gas_cost(
     State(gas_job): State<SemioscanHandle>,
     Query(params): Query<GasQuery>,

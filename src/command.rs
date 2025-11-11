@@ -1,22 +1,30 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::Address;
 use likwid_core::{create_l1_read_provider, create_op_stack_read_provider, L2};
-use odos_sdk::{LimitOrderV2, OdosChain, V2Router, V3Router};
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{error, info};
+
+#[cfg(feature = "odos-example")]
+use odos_sdk::{LimitOrderV2, OdosChain, RouterType, V2Router, V3Router};
+#[cfg(feature = "odos-example")]
 use usdshe::Usdc;
 
+#[cfg(feature = "cli")]
+use crate::bootstrap::SupportedEvent;
+
+#[cfg(feature = "odos-example")]
+use crate::price_legacy::{PriceCalculator, TokenPriceResult};
+
 use crate::{
-    bootstrap::SupportedEvent,
-    price::{PriceCalculator, TokenPriceResult},
     AmountCalculator, AmountResult, CombinedCalculator, CombinedDataResult, GasCostCalculator,
-    GasCostResult, RouterType,
+    GasCostResult,
 };
 
 type Responder<T> = oneshot::Sender<Result<T, String>>;
 
 pub struct CommandHandler {
+    #[cfg(feature = "odos-example")]
     calculators: HashMap<u64, PriceCalculator>,
 }
 
@@ -26,6 +34,7 @@ impl CommandHandler {
         let (tx, mut rx) = mpsc::channel(10);
 
         let job = CommandHandler {
+            #[cfg(feature = "odos-example")]
             calculators: HashMap::new(),
         };
 
@@ -33,6 +42,7 @@ impl CommandHandler {
             let mut job = job;
             while let Some(command) = rx.recv().await {
                 match command {
+                    #[cfg(feature = "odos-example")]
                     Command::CalculatePrice(cmd) => {
                         let result = job
                             .handle_calculate_price(
@@ -49,6 +59,7 @@ impl CommandHandler {
                             error!("Failed to send price calculation response");
                         }
                     }
+                    #[cfg(feature = "cli")]
                     Command::CalculateGas(cmd) => {
                         let result = job
                             .handle_calculate_gas(
@@ -67,6 +78,7 @@ impl CommandHandler {
                             error!("Failed to send gas cost response");
                         }
                     }
+                    #[cfg(feature = "cli")]
                     Command::CalculateTransferAmount(cmd) => {
                         let result = job
                             .handle_calculate_transfer_amount(
@@ -83,6 +95,7 @@ impl CommandHandler {
                             error!("Failed to send amount response");
                         }
                     }
+                    #[cfg(feature = "cli")]
                     Command::CalculateCombinedData(cmd) => {
                         let result = job
                             .handle_calculate_combined_data(
@@ -107,6 +120,7 @@ impl CommandHandler {
     }
 
     /// Get or create a PriceCalculator for the specified chain
+    #[cfg(feature = "odos-example")]
     async fn get_or_create_calculator(
         &mut self,
         chain: NamedChain,
@@ -163,6 +177,7 @@ impl CommandHandler {
     }
 
     /// Handle the `CalculatePrice` command by invoking the `PriceCalculator`.
+    #[cfg(feature = "odos-example")]
     async fn handle_calculate_price(
         &mut self,
         chain: NamedChain,
@@ -179,6 +194,7 @@ impl CommandHandler {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "cli")]
     async fn handle_calculate_gas(
         &mut self,
         chain: NamedChain,
@@ -252,6 +268,7 @@ impl CommandHandler {
         }
     }
 
+    #[cfg(feature = "cli")]
     async fn handle_calculate_transfer_amount(
         &mut self,
         chain: NamedChain,
@@ -277,6 +294,7 @@ impl CommandHandler {
             .await
     }
 
+    #[cfg(feature = "cli")]
     async fn handle_calculate_combined_data(
         &mut self,
         chain: NamedChain,
@@ -311,12 +329,17 @@ pub struct SemioscanHandle {
 
 /// Commands for the Semioscan `CommandHandler`
 pub enum Command {
+    #[cfg(feature = "odos-example")]
     CalculatePrice(CalculatePriceCommand),
+    #[cfg(feature = "cli")]
     CalculateGas(CalculateGasCommand),
+    #[cfg(feature = "cli")]
     CalculateTransferAmount(CalculateTransferAmountCommand),
+    #[cfg(feature = "cli")]
     CalculateCombinedData(CalculateCombinedDataCommand),
 }
 
+#[cfg(feature = "odos-example")]
 pub struct CalculatePriceCommand {
     pub chain: NamedChain,
     pub router_type: RouterType,
@@ -326,6 +349,7 @@ pub struct CalculatePriceCommand {
     pub responder: Responder<TokenPriceResult>,
 }
 
+#[cfg(feature = "cli")]
 pub struct CalculateGasCommand {
     pub chain: NamedChain,
     pub event: SupportedEvent,
@@ -337,6 +361,7 @@ pub struct CalculateGasCommand {
     pub responder: Responder<GasCostResult>,
 }
 
+#[cfg(feature = "cli")]
 pub struct CalculateTransferAmountCommand {
     pub chain: NamedChain,
     pub from: Address,
@@ -347,6 +372,7 @@ pub struct CalculateTransferAmountCommand {
     pub responder: Responder<AmountResult>,
 }
 
+#[cfg(feature = "cli")]
 pub struct CalculateCombinedDataCommand {
     pub chain: NamedChain,
     pub from: Address,

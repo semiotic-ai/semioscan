@@ -3,7 +3,15 @@ name = "semioscan"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["core", "odos-example", "api-server", "cli"]
+core = []
+odos-example = ["dep:odos-sdk", "dep:usdshe"]
+api-server = ["dep:axum"]
+cli = ["dep:clap", "odos-example", "api-server"]        # CLI needs all features
+
 [dependencies]
+# Core blockchain dependencies (always required)
 alloy-chains.workspace = true
 alloy-contract.workspace = true
 alloy-dyn-abi.workspace = true
@@ -13,19 +21,28 @@ alloy-provider.workspace = true
 alloy-rpc-types.workspace = true
 alloy-sol-types.workspace = true
 alloy-sol-type-parser.workspace = true
-axum.workspace = true
 anyhow.workspace = true
 bigdecimal.workspace = true
 chrono.workspace = true
-clap.workspace = true
-likwid-core.workspace = true
 dotenvy.workspace = true
 erc20-rs.workspace = true
-odos-sdk.workspace = true
 op-alloy-network.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 tokio = { workspace = true, features = ["fs"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
-usdshe.workspace = true
+
+# Optional: CLI with clap (feature: cli)
+clap = { workspace = true, optional = true }
+
+# Optional: Odos DEX price source example (feature: odos-example)
+odos-sdk = { workspace = true, optional = true }
+usdshe = { workspace = true, optional = true }
+
+# Optional: HTTP API server (feature: api-server)
+axum = { workspace = true, optional = true }
+
+# TODO: Remove in Phase 2.3 - temporary for backward compatibility
+likwid-core.workspace = true

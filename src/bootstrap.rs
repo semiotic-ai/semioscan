@@ -142,6 +142,8 @@ enum Commands {
 }
 
 /// Parse router type from string using type-safe mapping
+///
+/// Note: This requires the `odos-example` feature (automatically enabled with `cli`)
 fn parse_router_type(s: &str) -> Result<RouterType, String> {
     // Define all valid router type mappings
     const ROUTER_TYPE_MAPPINGS: &[(RouterType, &[&str])] = &[
