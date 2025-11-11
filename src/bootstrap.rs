@@ -10,14 +10,95 @@ use tokio::net::TcpListener;
 use crate::{
     serve_api, BlockWindowCalculator, CalculateCombinedDataCommand, CalculateGasCommand,
     CalculatePriceCommand, CalculateTransferAmountCommand, Command, CommandHandler, RouterType,
-    SupportedEvent,
+    SemioscanConfig, SemioscanConfigBuilder, SupportedEvent,
 };
+use std::time::Duration;
+
+/// Configuration preset options
+#[derive(Debug, Clone, Copy)]
+enum ConfigPreset {
+    /// Default configuration optimized for Alchemy/Infura
+    Default,
+    /// Minimal configuration with no rate limiting
+    Minimal,
+}
+
+/// Parse configuration preset from string
+fn parse_config_preset(s: &str) -> Result<ConfigPreset, String> {
+    match s.to_lowercase().as_str() {
+        "default" => Ok(ConfigPreset::Default),
+        "minimal" => Ok(ConfigPreset::Minimal),
+        _ => Err(format!(
+            "Invalid config preset '{s}'. Valid options: 'default', 'minimal'"
+        )),
+    }
+}
+
+/// Parse chain:blocks override from string (e.g., "base:1000")
+fn parse_chain_max_blocks(s: &str) -> Result<(NamedChain, u64), String> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 2 {
+        return Err(format!(
+            "Invalid format '{s}'. Expected 'chain_name:blocks' (e.g., 'base:1000')"
+        ));
+    }
+
+    let chain = parts[0]
+        .parse::<NamedChain>()
+        .map_err(|_| format!("Invalid chain name: '{}'", parts[0]))?;
+
+    let blocks = parts[1]
+        .parse::<u64>()
+        .map_err(|_| format!("Invalid block count: '{}'", parts[1]))?;
+
+    Ok((chain, blocks))
+}
+
+/// Parse chain:millis rate limit override from string (e.g., "base:250")
+fn parse_chain_rate_limit(s: &str) -> Result<(NamedChain, u64), String> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 2 {
+        return Err(format!(
+            "Invalid format '{s}'. Expected 'chain_name:millis' (e.g., 'base:250')"
+        ));
+    }
+
+    let chain = parts[0]
+        .parse::<NamedChain>()
+        .map_err(|_| format!("Invalid chain name: '{}'", parts[0]))?;
+
+    let millis = parts[1]
+        .parse::<u64>()
+        .map_err(|_| format!("Invalid milliseconds: '{}'", parts[1]))?;
+
+    Ok((chain, millis))
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+
+    /// Maximum number of blocks to query in a single RPC call (default: 500)
+    #[arg(long, global = true)]
+    max_block_range: Option<u64>,
+
+    /// Rate limit delay in milliseconds between RPC requests
+    #[arg(long, global = true)]
+    rate_limit_delay: Option<u64>,
+
+    /// Configuration preset: "default" (Alchemy/Infura optimized) or "minimal" (no rate limiting)
+    #[arg(long, global = true, value_parser = parse_config_preset)]
+    config_preset: Option<ConfigPreset>,
+
+    /// Per-chain max block range override (format: chain_name:blocks, e.g., "base:1000")
+    #[arg(long, global = true, value_parser = parse_chain_max_blocks)]
+    chain_max_blocks: Vec<(NamedChain, u64)>,
+
+    /// Per-chain rate limit override in milliseconds (format: chain_name:millis, e.g., "base:250")
+    #[arg(long, global = true, value_parser = parse_chain_rate_limit)]
+    chain_rate_limit: Vec<(NamedChain, u64)>,
 }
 
 /// Commands for the Semioscan CLI
@@ -134,6 +215,64 @@ enum Commands {
     },
 }
 
+/// Build SemioscanConfig from CLI arguments and environment variables
+///
+/// Priority order (highest to lowest):
+/// 1. CLI arguments
+/// 2. Environment variables
+/// 3. Preset (if specified via CLI or env)
+/// 4. Default preset
+fn build_semioscan_config(cli: &Cli) -> SemioscanConfig {
+    // Determine the base preset from CLI or environment
+    let preset = cli
+        .config_preset
+        .or_else(|| {
+            env::var("SEMIOSCAN_CONFIG_PRESET")
+                .ok()
+                .and_then(|s| parse_config_preset(&s).ok())
+        })
+        .unwrap_or(ConfigPreset::Default);
+
+    // Start with the preset
+    let mut builder = match preset {
+        ConfigPreset::Default => SemioscanConfigBuilder::with_defaults(),
+        ConfigPreset::Minimal => SemioscanConfigBuilder::new(),
+    };
+
+    // Apply environment variable overrides
+    if let Ok(max_blocks) = env::var("SEMIOSCAN_MAX_BLOCK_RANGE") {
+        if let Ok(max_blocks) = max_blocks.parse::<u64>() {
+            builder = builder.max_block_range(max_blocks);
+        }
+    }
+
+    if let Ok(delay_ms) = env::var("SEMIOSCAN_RATE_LIMIT_DELAY") {
+        if let Ok(delay_ms) = delay_ms.parse::<u64>() {
+            builder = builder.rate_limit_delay(Duration::from_millis(delay_ms));
+        }
+    }
+
+    // Apply CLI argument overrides (highest priority)
+    if let Some(max_blocks) = cli.max_block_range {
+        builder = builder.max_block_range(max_blocks);
+    }
+
+    if let Some(delay_ms) = cli.rate_limit_delay {
+        builder = builder.rate_limit_delay(Duration::from_millis(delay_ms));
+    }
+
+    // Apply per-chain overrides
+    for (chain, blocks) in &cli.chain_max_blocks {
+        builder = builder.chain_max_blocks(*chain, *blocks);
+    }
+
+    for (chain, millis) in &cli.chain_rate_limit {
+        builder = builder.chain_rate_limit(*chain, Duration::from_millis(*millis));
+    }
+
+    builder.build()
+}
+
 /// Parse router type from string using type-safe mapping
 ///
 /// Note: This requires the `odos-example` feature (automatically enabled with `cli`)
@@ -173,11 +312,14 @@ pub async fn run() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
+    // Build configuration from CLI args and environment variables
+    let config = build_semioscan_config(&cli);
+
     match cli.command {
         Commands::Api { port } => {
             // Start the API server
             let listener = TcpListener::bind(&format!("0.0.0.0:{port}")).await?;
-            let price_job_handle = CommandHandler::init();
+            let price_job_handle = CommandHandler::init(config);
             serve_api(listener, price_job_handle).await?;
         }
         Commands::Price {
@@ -188,7 +330,7 @@ pub async fn run() -> anyhow::Result<()> {
             router_type,
         } => {
             // Initialize price job for CLI usage
-            let price_job_handle = CommandHandler::init();
+            let price_job_handle = CommandHandler::init(config.clone());
 
             // Create a oneshot channel for the response
             let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
@@ -229,7 +371,7 @@ pub async fn run() -> anyhow::Result<()> {
             to_block,
             event,
         } => {
-            let price_job_handle = CommandHandler::init();
+            let price_job_handle = CommandHandler::init(config.clone());
             let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
 
             price_job_handle
@@ -264,7 +406,7 @@ pub async fn run() -> anyhow::Result<()> {
             from_block,
             to_block,
         } => {
-            let price_job_handle = CommandHandler::init();
+            let price_job_handle = CommandHandler::init(config.clone());
             let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
 
             price_job_handle
@@ -300,7 +442,7 @@ pub async fn run() -> anyhow::Result<()> {
             to_block,
             format,
         } => {
-            let price_job_handle = CommandHandler::init();
+            let price_job_handle = CommandHandler::init(config.clone());
             let (responder_tx, responder_rx) = tokio::sync::oneshot::channel();
 
             price_job_handle
@@ -423,4 +565,49 @@ pub async fn run() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_config_preset() {
+        assert!(matches!(
+            parse_config_preset("default"),
+            Ok(ConfigPreset::Default)
+        ));
+        assert!(matches!(
+            parse_config_preset("minimal"),
+            Ok(ConfigPreset::Minimal)
+        ));
+        assert!(parse_config_preset("invalid").is_err());
+    }
+
+    #[test]
+    fn test_parse_chain_max_blocks() {
+        let result = parse_chain_max_blocks("base:1000");
+        assert!(result.is_ok());
+        let (chain, blocks) = result.unwrap();
+        assert_eq!(chain, NamedChain::Base);
+        assert_eq!(blocks, 1000);
+
+        // Invalid formats
+        assert!(parse_chain_max_blocks("invalid").is_err());
+        assert!(parse_chain_max_blocks("base:abc").is_err());
+        assert!(parse_chain_max_blocks("invalidchain:1000").is_err());
+    }
+
+    #[test]
+    fn test_parse_chain_rate_limit() {
+        let result = parse_chain_rate_limit("arbitrum:250");
+        assert!(result.is_ok());
+        let (chain, millis) = result.unwrap();
+        assert_eq!(chain, NamedChain::Arbitrum);
+        assert_eq!(millis, 250);
+
+        // Invalid formats
+        assert!(parse_chain_rate_limit("invalid").is_err());
+        assert!(parse_chain_rate_limit("arbitrum:abc").is_err());
+    }
 }

@@ -20,7 +20,7 @@ use crate::price_calculator::{PriceCalculator, TokenPriceResult};
 
 use crate::{
     AmountCalculator, AmountResult, CombinedCalculator, CombinedDataResult, GasCostCalculator,
-    GasCostResult,
+    GasCostResult, SemioscanConfig,
 };
 
 type Responder<T> = oneshot::Sender<Result<T, String>>;
@@ -28,16 +28,18 @@ type Responder<T> = oneshot::Sender<Result<T, String>>;
 pub struct CommandHandler {
     #[cfg(feature = "odos-example")]
     calculators: HashMap<u64, PriceCalculator>,
+    config: SemioscanConfig,
 }
 
 impl CommandHandler {
     /// Initializes the `PriceJob` and returns a `PriceJobHandle`.
-    pub fn init() -> SemioscanHandle {
+    pub fn init(config: SemioscanConfig) -> SemioscanHandle {
         let (tx, mut rx) = mpsc::channel(10);
 
         let job = CommandHandler {
             #[cfg(feature = "odos-example")]
             calculators: HashMap::new(),
+            config,
         };
 
         tokio::spawn(async move {
@@ -168,9 +170,14 @@ impl CommandHandler {
             let price_source =
                 OdosPriceSource::new(router_address).with_liquidator_filter(liquidator_address);
 
-            // Create calculator with price source
-            let calculator =
-                PriceCalculator::new(provider, chain, usdc_address, Box::new(price_source));
+            // Create calculator with price source and config
+            let calculator = PriceCalculator::with_config(
+                provider,
+                chain,
+                usdc_address,
+                Box::new(price_source),
+                self.config.clone(),
+            );
             e.insert(calculator);
         }
 
@@ -213,7 +220,7 @@ impl CommandHandler {
     ) -> anyhow::Result<GasCostResult> {
         if chain.has_l1_fees() {
             let provider = create_optimism_provider(chain)?;
-            let calculator = GasCostCalculator::new(provider);
+            let calculator = GasCostCalculator::with_config(provider, self.config.clone());
 
             match event {
                 SupportedEvent::Transfer => {
@@ -243,7 +250,7 @@ impl CommandHandler {
             }
         } else {
             let provider = create_ethereum_provider(chain)?;
-            let calculator = GasCostCalculator::new(provider);
+            let calculator = GasCostCalculator::with_config(provider, self.config.clone());
 
             match event {
                 SupportedEvent::Transfer => {
@@ -312,14 +319,14 @@ impl CommandHandler {
     ) -> anyhow::Result<CombinedDataResult> {
         if chain.has_l1_fees() {
             let provider = create_optimism_provider(chain)?;
-            let calculator = CombinedCalculator::new(provider);
+            let calculator = CombinedCalculator::with_config(provider, self.config.clone());
 
             calculator
                 .calculate_combined_data_optimism(chain, from, to, token, from_block, to_block)
                 .await
         } else {
             let provider = create_ethereum_provider(chain)?;
-            let calculator = CombinedCalculator::new(provider);
+            let calculator = CombinedCalculator::with_config(provider, self.config.clone());
 
             calculator
                 .calculate_combined_data_ethereum(chain, from, to, token, from_block, to_block)
