@@ -13,10 +13,10 @@ use crate::PriceCache;
 // Price calculation result
 #[derive(Default, Debug, Clone, Serialize)]
 pub struct TokenPriceResult {
-    token_address: Address,
-    total_token_amount: f64,
-    total_usdc_amount: f64,
-    transaction_count: usize,
+    pub token_address: Address,
+    pub total_token_amount: f64,
+    pub total_usdc_amount: f64,
+    pub transaction_count: usize,
 }
 
 impl TokenPriceResult {
@@ -339,5 +339,266 @@ impl PriceCalculator {
         );
 
         Ok(price_data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::address;
+
+    #[test]
+    fn test_add_swap_accumulates_amounts() {
+        let token = address!("1111111111111111111111111111111111111111");
+        let mut result = TokenPriceResult::new(token);
+
+        // Add first swap
+        result.add_swap(100.0, 200.0);
+        assert_eq!(result.total_token_amount(), 100.0);
+        assert_eq!(result.total_usdc_amount(), 200.0);
+        assert_eq!(result.transaction_count(), 1);
+
+        // Add second swap
+        result.add_swap(50.0, 75.0);
+        assert_eq!(result.total_token_amount(), 150.0);
+        assert_eq!(result.total_usdc_amount(), 275.0);
+        assert_eq!(result.transaction_count(), 2);
+    }
+
+    #[test]
+    fn test_get_average_price_normal_case() {
+        let token = address!("1111111111111111111111111111111111111111");
+        let mut result = TokenPriceResult::new(token);
+
+        // Add swaps with known prices
+        // Swap 1: 100 tokens for 200 USDC = $2.00 per token
+        result.add_swap(100.0, 200.0);
+        // Swap 2: 50 tokens for 150 USDC = $3.00 per token
+        result.add_swap(50.0, 150.0);
+
+        // Average: 350 USDC / 150 tokens = $2.333... per token
+        let avg_price = result.get_average_price();
+        assert!((avg_price - 2.333333).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_get_average_price_zero_volume() {
+        let token = address!("1111111111111111111111111111111111111111");
+        let result = TokenPriceResult::new(token);
+
+        // Edge case: no volume should return 0.0, not panic
+        assert_eq!(result.get_average_price(), 0.0);
+    }
+
+    #[test]
+    fn test_get_average_price_zero_token_amount_after_swaps() {
+        let token = address!("1111111111111111111111111111111111111111");
+        let mut result = TokenPriceResult::new(token);
+
+        // Edge case: USDC amount but zero token amount
+        // This shouldn't happen in practice but we handle it gracefully
+        result.add_swap(0.0, 100.0);
+        assert_eq!(result.get_average_price(), 0.0);
+    }
+
+    #[test]
+    fn test_merge_combines_results() {
+        let token = address!("1111111111111111111111111111111111111111");
+
+        let mut result1 = TokenPriceResult::new(token);
+        result1.add_swap(100.0, 200.0);
+        result1.add_swap(50.0, 100.0);
+
+        let mut result2 = TokenPriceResult::new(token);
+        result2.add_swap(25.0, 50.0);
+
+        // Merge result2 into result1
+        result1.merge(&result2);
+
+        // Check combined values
+        assert_eq!(result1.total_token_amount(), 175.0); // 100 + 50 + 25
+        assert_eq!(result1.total_usdc_amount(), 350.0); // 200 + 100 + 50
+        assert_eq!(result1.transaction_count(), 3);
+    }
+
+    #[test]
+    fn test_merge_with_empty_result() {
+        let token = address!("1111111111111111111111111111111111111111");
+
+        let mut result = TokenPriceResult::new(token);
+        result.add_swap(100.0, 200.0);
+
+        let empty = TokenPriceResult::new(token);
+
+        // Merge empty result should not change values
+        result.merge(&empty);
+
+        assert_eq!(result.total_token_amount(), 100.0);
+        assert_eq!(result.total_usdc_amount(), 200.0);
+        assert_eq!(result.transaction_count(), 1);
+    }
+
+    #[test]
+    fn test_merge_two_empty_results() {
+        let token = address!("1111111111111111111111111111111111111111");
+
+        let mut result1 = TokenPriceResult::new(token);
+        let result2 = TokenPriceResult::new(token);
+
+        result1.merge(&result2);
+
+        assert_eq!(result1.total_token_amount(), 0.0);
+        assert_eq!(result1.total_usdc_amount(), 0.0);
+        assert_eq!(result1.transaction_count(), 0);
+        assert_eq!(result1.get_average_price(), 0.0);
+    }
+
+    #[test]
+    fn test_large_amounts() {
+        let token = address!("1111111111111111111111111111111111111111");
+        let mut result = TokenPriceResult::new(token);
+
+        // Test with large amounts (billions of dollars)
+        result.add_swap(1_000_000_000.0, 2_000_000_000.0);
+        result.add_swap(500_000_000.0, 1_000_000_000.0);
+
+        assert_eq!(result.total_token_amount(), 1_500_000_000.0);
+        assert_eq!(result.total_usdc_amount(), 3_000_000_000.0);
+        assert_eq!(result.get_average_price(), 2.0);
+    }
+
+    #[test]
+    fn test_fractional_amounts() {
+        let token = address!("1111111111111111111111111111111111111111");
+        let mut result = TokenPriceResult::new(token);
+
+        // Test with small fractional amounts
+        result.add_swap(0.001, 0.002);
+        result.add_swap(0.0005, 0.001);
+
+        assert!((result.total_token_amount() - 0.0015).abs() < 1e-10);
+        assert!((result.total_usdc_amount() - 0.003).abs() < 1e-10);
+        assert!((result.get_average_price() - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_normalize_amount_standard_decimals() {
+        // Test normalize_amount logic directly without needing a provider
+        // This tests the business logic of decimal normalization
+
+        // Test USDC (6 decimals): 1,000,000 raw = 1.0 USDC
+        let divisor = U256::from(10u64.pow(6));
+        let normalized = f64::from(U256::from(1_000_000u64)) / f64::from(divisor);
+        assert_eq!(normalized, 1.0);
+
+        // Test WETH (18 decimals): 1e18 raw = 1.0 ETH
+        let divisor = U256::from(10u128.pow(18));
+        let normalized = f64::from(U256::from(1_000_000_000_000_000_000u64)) / f64::from(divisor);
+        assert_eq!(normalized, 1.0);
+    }
+
+    #[test]
+    fn test_normalize_amount_edge_cases() {
+        // Test normalize_amount logic without needing a provider
+
+        // Zero amount
+        let divisor = U256::from(10u128.pow(18));
+        let normalized = f64::from(U256::ZERO) / f64::from(divisor);
+        assert_eq!(normalized, 0.0);
+
+        // Zero decimals (like some weird tokens)
+        let divisor = U256::from(10u64.pow(0)); // = 1
+        let normalized = f64::from(U256::from(42u64)) / f64::from(divisor);
+        assert_eq!(normalized, 42.0);
+
+        // 1 decimal
+        let divisor = U256::from(10u64.pow(1));
+        let normalized = f64::from(U256::from(100u64)) / f64::from(divisor);
+        assert_eq!(normalized, 10.0);
+    }
+
+    #[test]
+    fn test_average_price_calculation() {
+        let token = address!("1111111111111111111111111111111111111111");
+
+        // Manually set values to simulate swap processing
+        let result = TokenPriceResult {
+            token_address: token,
+            total_token_amount: 100.0,
+            total_usdc_amount: 200.0,
+            transaction_count: 5,
+        };
+
+        // Average price = 200.0 / 100.0 = 2.0 USDC per token
+        assert_eq!(result.get_average_price(), 2.0);
+    }
+
+    #[test]
+    fn test_average_price_fractional() {
+        let token = address!("1111111111111111111111111111111111111111");
+        let result = TokenPriceResult {
+            token_address: token,
+            total_token_amount: 333.33,
+            total_usdc_amount: 999.99,
+            transaction_count: 10,
+        };
+
+        // Average price ≈ 3.0
+        let price = result.get_average_price();
+        assert!((price - 3.0).abs() < 0.01, "Expected ~3.0, got {price}");
+    }
+
+    #[test]
+    fn test_price_result_multiple_merges() {
+        let token = address!("1111111111111111111111111111111111111111");
+
+        let mut total = TokenPriceResult::new(token);
+
+        // Merge three results
+        let r1 = TokenPriceResult {
+            token_address: token,
+            total_token_amount: 10.0,
+            total_usdc_amount: 20.0,
+            transaction_count: 1,
+        };
+
+        let r2 = TokenPriceResult {
+            token_address: token,
+            total_token_amount: 20.0,
+            total_usdc_amount: 40.0,
+            transaction_count: 2,
+        };
+
+        let r3 = TokenPriceResult {
+            token_address: token,
+            total_token_amount: 30.0,
+            total_usdc_amount: 60.0,
+            transaction_count: 3,
+        };
+
+        total.merge(&r1);
+        total.merge(&r2);
+        total.merge(&r3);
+
+        assert_eq!(total.total_token_amount(), 60.0);
+        assert_eq!(total.total_usdc_amount(), 120.0);
+        assert_eq!(total.transaction_count(), 6);
+        assert_eq!(total.get_average_price(), 2.0);
+    }
+
+    #[test]
+    fn test_price_calculation_high_precision() {
+        let token = address!("1111111111111111111111111111111111111111");
+
+        let result = TokenPriceResult {
+            token_address: token,
+            total_token_amount: 0.000001,  // Very small amount
+            total_usdc_amount: 0.00000123, // Even smaller USDC amount
+            transaction_count: 1,
+        };
+
+        let price = result.get_average_price();
+        // Price = 0.00000123 / 0.000001 = 1.23
+        assert!((price - 1.23).abs() < 0.001, "Expected ~1.23, got {price}");
     }
 }

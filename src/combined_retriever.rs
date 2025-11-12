@@ -730,3 +730,254 @@ where
         .await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::b256;
+
+    /// Helper to create a test transaction with specified values
+    fn create_test_tx(
+        gas_used: u64,
+        effective_gas_price: u64,
+        l1_fee: Option<u64>,
+        blob_gas_cost: u64,
+        transferred_amount: u64,
+    ) -> GasAndAmountForTx {
+        GasAndAmountForTx {
+            tx_hash: b256!("0000000000000000000000000000000000000000000000000000000000000001"),
+            block_number: 1000,
+            gas_used: U256::from(gas_used),
+            effective_gas_price: U256::from(effective_gas_price),
+            l1_fee: l1_fee.map(U256::from),
+            blob_gas_cost: U256::from(blob_gas_cost),
+            transferred_amount: U256::from(transferred_amount),
+        }
+    }
+
+    #[test]
+    fn test_total_gas_cost_l1_only() {
+        // L1 transaction: gas_used * effective_gas_price
+        let tx = create_test_tx(
+            21000, // gas_used
+            50,    // effective_gas_price (50 Gwei)
+            None,  // no L1 fee
+            0,     // no blob gas
+            1000,  // transferred amount (irrelevant for this test)
+        );
+
+        let total = tx.total_gas_cost();
+        let expected = U256::from(21000) * U256::from(50); // 1,050,000
+        assert_eq!(
+            total, expected,
+            "L1 transaction cost should be gas_used * effective_gas_price"
+        );
+    }
+
+    #[test]
+    fn test_total_gas_cost_l2_with_l1_fee() {
+        // L2 transaction: (gas_used * effective_gas_price) + l1_fee
+        let tx = create_test_tx(
+            100000,     // gas_used
+            10,         // effective_gas_price (10 Gwei)
+            Some(5000), // L1 data fee
+            0,          // no blob gas
+            2000,
+        );
+
+        let total = tx.total_gas_cost();
+        let l2_execution = U256::from(100000) * U256::from(10); // 1,000,000
+        let expected = l2_execution + U256::from(5000); // 1,005,000
+        assert_eq!(total, expected, "L2 transaction should include L1 fee");
+    }
+
+    #[test]
+    fn test_total_gas_cost_with_blob_gas() {
+        // EIP-4844 transaction with blob gas costs
+        let tx = create_test_tx(
+            50000, // gas_used
+            20,    // effective_gas_price
+            None,  // no L1 fee (L1 chain)
+            10000, // blob gas cost
+            3000,
+        );
+
+        let total = tx.total_gas_cost();
+        let base_cost = U256::from(50000) * U256::from(20); // 1,000,000
+        let expected = base_cost + U256::from(10000); // 1,010,000
+        assert_eq!(total, expected, "Should include blob gas cost");
+    }
+
+    #[test]
+    fn test_total_gas_cost_l2_with_all_components() {
+        // L2 transaction with all cost components
+        let tx = create_test_tx(
+            75000,      // gas_used
+            15,         // effective_gas_price
+            Some(8000), // L1 data fee
+            12000,      // blob gas cost
+            5000,
+        );
+
+        let total = tx.total_gas_cost();
+        let l2_execution = U256::from(75000) * U256::from(15); // 1,125,000
+        let expected = l2_execution + U256::from(12000) + U256::from(8000); // 1,145,000
+        assert_eq!(total, expected, "Should include all cost components");
+    }
+
+    #[test]
+    fn test_total_gas_cost_zero_values() {
+        // Edge case: all zeros
+        let tx = create_test_tx(0, 0, None, 0, 0);
+
+        let total = tx.total_gas_cost();
+        assert_eq!(total, U256::ZERO, "Zero inputs should give zero cost");
+    }
+
+    #[test]
+    fn test_total_gas_cost_large_values() {
+        // Test with large values to ensure no overflow
+        let large_gas = 10_000_000_u64;
+        let large_price = 1_000_u64;
+
+        let tx = create_test_tx(large_gas, large_price, Some(1_000_000), 500_000, 100_000);
+
+        let total = tx.total_gas_cost();
+        let expected_l2_cost = U256::from(large_gas) * U256::from(large_price);
+        let expected = expected_l2_cost + U256::from(1_000_000) + U256::from(500_000);
+
+        assert_eq!(total, expected, "Should handle large values correctly");
+    }
+
+    #[test]
+    fn test_total_gas_cost_saturating_arithmetic() {
+        // Test that the calculation uses saturating arithmetic
+        // This test verifies the function doesn't panic on large inputs
+        let max_gas = u64::MAX;
+        let max_price = u64::MAX;
+
+        let tx = create_test_tx(max_gas, max_price, Some(u64::MAX), u64::MAX, 1000);
+
+        // Should not panic - saturating_mul and saturating_add prevent overflow
+        let total = tx.total_gas_cost();
+
+        // The result should be saturated at U256::MAX
+        assert!(
+            total > U256::ZERO,
+            "Should produce non-zero result even with overflow"
+        );
+    }
+
+    #[test]
+    fn test_to_display_conversion_usdc() {
+        // Test conversion to display format with USDC (6 decimals)
+        let tx = create_test_tx(
+            21000,
+            50_000_000_000_u64, // 50 Gwei
+            None,
+            0,
+            1_000_000, // 1 USDC (6 decimals)
+        );
+
+        let display = tx.to_display(6); // USDC has 6 decimals
+
+        // Verify fields are properly formatted
+        assert_eq!(
+            display.gas_used, "21000",
+            "Gas used should be simple number"
+        );
+        // The format should be exactly "1" (trailing zeros removed)
+        assert_eq!(
+            display.transferred_amount_usdc, "1",
+            "Should format 1 USDC as '1'"
+        );
+    }
+
+    #[test]
+    fn test_to_display_conversion_18_decimals() {
+        // Test with 18-decimal token (like ETH/WETH)
+        let tx = create_test_tx(
+            100000,
+            10_000_000_000_u64, // 10 Gwei
+            Some(5000),
+            0,
+            1_000_000_000_000_000_000, // 1 token (18 decimals)
+        );
+
+        let display = tx.to_display(18);
+
+        assert_eq!(display.gas_used, "100000");
+        assert_eq!(
+            display.transferred_amount_usdc, "1",
+            "Should format 1 token as '1'"
+        );
+    }
+
+    #[test]
+    fn test_to_display_with_l1_fee() {
+        // Test that L1 fee is included in display
+        let tx = create_test_tx(
+            50000,
+            20_000_000_000_u64,            // 20 Gwei
+            Some(100_000_000_000_000_u64), // 0.0001 ETH L1 fee
+            0,
+            1_000_000,
+        );
+
+        let display = tx.to_display(6);
+
+        // L1 fee should be Some(String)
+        assert!(display.l1_fee_eth.is_some(), "L1 fee should be present");
+    }
+
+    #[test]
+    fn test_to_display_without_l1_fee() {
+        // Test L1-only transaction (no L1 fee field)
+        let tx = create_test_tx(
+            21000,
+            50_000_000_000_u64,
+            None, // L1 transaction, no L1 fee
+            0,
+            1_000_000,
+        );
+
+        let display = tx.to_display(6);
+
+        assert!(
+            display.l1_fee_eth.is_none(),
+            "L1 fee should be None for L1 transactions"
+        );
+    }
+
+    #[test]
+    fn test_clone_and_equality() {
+        // Test that GasAndAmountForTx implements Clone and PartialEq correctly
+        let tx1 = create_test_tx(21000, 50, None, 0, 1000);
+        let tx2 = tx1.clone();
+
+        assert_eq!(tx1, tx2, "Cloned transactions should be equal");
+        assert_eq!(
+            tx1.total_gas_cost(),
+            tx2.total_gas_cost(),
+            "Total costs should match"
+        );
+    }
+
+    #[test]
+    fn test_debug_representation() {
+        // Test that Debug trait is implemented
+        let tx = create_test_tx(21000, 50, Some(1000), 500, 2000);
+
+        let debug_str = format!("{:?}", tx);
+
+        // Should contain key fields
+        assert!(
+            debug_str.contains("gas_used"),
+            "Debug output should include gas_used"
+        );
+        assert!(
+            debug_str.contains("tx_hash"),
+            "Debug output should include tx_hash"
+        );
+    }
+}

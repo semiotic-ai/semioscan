@@ -246,3 +246,192 @@ impl<N: Network> GasCostCalculator<N> {
         Self::with_cache_and_config(provider, gas_cache, SemioscanConfig::default())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::address;
+
+    #[test]
+    fn test_gas_cost_result_add_transaction_l1() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+        let mut result = GasCostResult::new(1, from, to);
+
+        // Add first transaction: 21000 gas at 50 gwei = 1,050,000,000,000,000 wei
+        result.add_transaction(GasForTx::L1(L1Gas {
+            gas_used: U256::from(21000),
+            effective_gas_price: U256::from(50_000_000_000u64), // 50 gwei
+        }));
+
+        assert_eq!(result.transaction_count, 1);
+        assert_eq!(result.total_gas_cost, U256::from(1_050_000_000_000_000u64));
+
+        // Add second transaction: 100000 gas at 60 gwei = 6,000,000,000,000,000 wei
+        result.add_transaction(GasForTx::L1(L1Gas {
+            gas_used: U256::from(100000),
+            effective_gas_price: U256::from(60_000_000_000u64), // 60 gwei
+        }));
+
+        assert_eq!(result.transaction_count, 2);
+        // Total: 1,050,000,000,000,000 + 6,000,000,000,000,000 = 7,050,000,000,000,000
+        assert_eq!(result.total_gas_cost, U256::from(7_050_000_000_000_000u64));
+    }
+
+    #[test]
+    fn test_gas_cost_result_add_transaction_l2() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+        let mut result = GasCostResult::new(42161, from, to); // Arbitrum
+
+        // Add L2 transaction: 150000 gas at 0.1 gwei + 0.005 ETH L1 data fee
+        result.add_transaction(GasForTx::L2(L2Gas {
+            gas_used: U256::from(150000),
+            effective_gas_price: U256::from(100_000_000u64), // 0.1 gwei
+            l1_data_fee: U256::from(5_000_000_000_000_000u64), // 0.005 ETH
+        }));
+
+        assert_eq!(result.transaction_count, 1);
+        // L2 gas: 150000 * 100,000,000 = 15,000,000,000,000
+        // L1 fee: 5,000,000,000,000,000
+        // Total: 5,015,000,000,000,000
+        assert_eq!(result.total_gas_cost, U256::from(5_015_000_000_000_000u64));
+    }
+
+    #[test]
+    fn test_gas_cost_result_merge() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+
+        let mut result1 = GasCostResult {
+            chain_id: 1,
+            from,
+            to,
+            total_gas_cost: U256::from(1_000_000_000_000_000u64),
+            transaction_count: 5,
+        };
+
+        let result2 = GasCostResult {
+            chain_id: 1,
+            from,
+            to,
+            total_gas_cost: U256::from(500_000_000_000_000u64),
+            transaction_count: 3,
+        };
+
+        result1.merge(&result2);
+
+        // Test that merge adds both gas costs and transaction counts
+        assert_eq!(result1.total_gas_cost, U256::from(1_500_000_000_000_000u64));
+        assert_eq!(result1.transaction_count, 8);
+    }
+
+    #[test]
+    fn test_gas_cost_result_merge_with_zero() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+
+        let mut result = GasCostResult {
+            chain_id: 1,
+            from,
+            to,
+            total_gas_cost: U256::from(1_000_000u64),
+            transaction_count: 5,
+        };
+
+        let empty = GasCostResult::new(1, from, to);
+
+        result.merge(&empty);
+
+        // Merging with empty result should not change values
+        assert_eq!(result.total_gas_cost, U256::from(1_000_000u64));
+        assert_eq!(result.transaction_count, 5);
+    }
+
+    #[test]
+    fn test_gas_cost_overflow_protection() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+        let mut result = GasCostResult::new(1, from, to);
+
+        // Set to near-max value
+        result.total_gas_cost = U256::MAX - U256::from(1000u64);
+
+        // Add transaction that would overflow - should saturate
+        result.add_transaction(GasForTx::L1(L1Gas {
+            gas_used: U256::from(1000000),
+            effective_gas_price: U256::from(1000000),
+        }));
+
+        // Should saturate at U256::MAX, not wrap around
+        assert_eq!(result.total_gas_cost, U256::MAX);
+        assert_eq!(result.transaction_count, 1);
+    }
+
+    #[test]
+    fn test_gas_cost_merge_overflow_protection() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+
+        let mut result1 = GasCostResult {
+            chain_id: 1,
+            from,
+            to,
+            total_gas_cost: U256::MAX - U256::from(100u64),
+            transaction_count: 5,
+        };
+
+        let result2 = GasCostResult {
+            chain_id: 1,
+            from,
+            to,
+            total_gas_cost: U256::from(500u64),
+            transaction_count: 3,
+        };
+
+        result1.merge(&result2);
+
+        // Should saturate at U256::MAX
+        assert_eq!(result1.total_gas_cost, U256::MAX);
+        assert_eq!(result1.transaction_count, 8);
+    }
+
+    #[test]
+    fn test_gas_cost_result_zero_transactions() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+        let result = GasCostResult::new(1, from, to);
+
+        assert_eq!(result.total_gas_cost, U256::ZERO);
+        assert_eq!(result.transaction_count, 0);
+        assert_eq!(result.chain_id, 1);
+        assert_eq!(result.from, from);
+        assert_eq!(result.to, to);
+    }
+
+    #[test]
+    fn test_add_l1_fee() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+        let mut result = GasCostResult::new(42161, from, to);
+
+        result.add_l1_fee(U256::from(1_000_000_000_000_000u64));
+        assert_eq!(result.total_gas_cost, U256::from(1_000_000_000_000_000u64));
+
+        result.add_l1_fee(U256::from(500_000_000_000_000u64));
+        assert_eq!(result.total_gas_cost, U256::from(1_500_000_000_000_000u64));
+    }
+
+    #[test]
+    fn test_formatted_gas_cost() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+
+        let mut result = GasCostResult::new(1, from, to);
+        result.total_gas_cost = U256::from(1_500_000_000_000_000_000u64); // 1.5 ETH
+
+        let formatted = result.formatted_gas_cost();
+        // Should format as "1.5" (trailing zeros removed)
+        assert!(formatted.starts_with("1.5"));
+    }
+}

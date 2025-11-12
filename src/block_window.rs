@@ -410,4 +410,118 @@ mod tests {
         let invalid = DailyBlockWindow::new(1000, 2000, end_ts, start_ts);
         assert!(invalid.is_err());
     }
+
+    #[test]
+    fn test_block_window_edge_cases() {
+        // Test edge cases for block window calculations
+
+        // Single block window
+        let single = DailyBlockWindow {
+            start_block: 1000,
+            end_block: 1000,
+            start_ts: UnixTimestamp(1697328000),
+            end_ts_exclusive: UnixTimestamp(1697414400),
+        };
+        // Single block: [1000, 1000] contains 1 block
+        assert_eq!(single.block_count(), 1);
+
+        // Large block range (e.g., Arbitrum produces ~40k blocks per day)
+        let large = DailyBlockWindow {
+            start_block: 100_000_000,
+            end_block: 100_040_000,
+            start_ts: UnixTimestamp(1697328000),
+            end_ts_exclusive: UnixTimestamp(1697414400),
+        };
+        // Inclusive: [100M, 100M+40k] contains 40,001 blocks
+        assert_eq!(large.block_count(), 40_001);
+
+        // Standard range
+        let window = DailyBlockWindow {
+            start_block: 1000,
+            end_block: 2000,
+            start_ts: UnixTimestamp(1697328000),
+            end_ts_exclusive: UnixTimestamp(1697414400),
+        };
+        // Inclusive count: [1000, 2000] contains 1001 blocks
+        assert_eq!(window.block_count(), 1001);
+    }
+
+    #[test]
+    fn test_block_window_validation_errors() {
+        // Test all validation error cases
+        let start_ts = UnixTimestamp(1728518400);
+        let end_ts = UnixTimestamp(1728604800);
+
+        // Error: end_block < start_block
+        let result = DailyBlockWindow::new(2000, 1000, start_ts, end_ts);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid block range"));
+
+        // Error: end_ts <= start_ts (equal)
+        let result = DailyBlockWindow::new(1000, 2000, start_ts, start_ts);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid timestamp range"));
+
+        // Error: end_ts < start_ts (reversed)
+        let result = DailyBlockWindow::new(1000, 2000, end_ts, start_ts);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid timestamp range"));
+    }
+
+    #[test]
+    fn test_block_window_zero_values() {
+        // Test edge case: block numbers starting at 0
+        let start_ts = UnixTimestamp(1728518400);
+        let end_ts = UnixTimestamp(1728604800);
+
+        // Valid: blocks 0 to 100
+        let window = DailyBlockWindow::new(0, 100, start_ts, end_ts);
+        assert!(window.is_ok());
+        assert_eq!(window.unwrap().block_count(), 101);
+
+        // Valid: single block at 0
+        let window = DailyBlockWindow::new(0, 0, start_ts, end_ts);
+        assert!(window.is_ok());
+        assert_eq!(window.unwrap().block_count(), 1);
+    }
+
+    #[test]
+    fn test_block_window_large_values() {
+        // Test with very large block numbers (real-world Arbitrum has blocks > 100M)
+        let start_ts = UnixTimestamp(1728518400);
+        let end_ts = UnixTimestamp(1728604800);
+
+        // Arbitrum-scale block numbers
+        let window = DailyBlockWindow::new(100_000_000, 100_040_000, start_ts, end_ts);
+        assert!(window.is_ok());
+        assert_eq!(window.unwrap().block_count(), 40_001);
+
+        // Very large range
+        let window = DailyBlockWindow::new(1_000_000_000, 1_001_000_000, start_ts, end_ts);
+        assert!(window.is_ok());
+        assert_eq!(window.unwrap().block_count(), 1_000_001);
+    }
+
+    #[test]
+    fn test_block_window_count_overflow_protection() {
+        // Test that block_count() handles near-overflow cases safely
+        let start_ts = UnixTimestamp(1728518400);
+        let end_ts = UnixTimestamp(1728604800);
+
+        // Near u64::MAX (should use saturating arithmetic)
+        let window = DailyBlockWindow::new(u64::MAX - 100, u64::MAX, start_ts, end_ts);
+        assert!(window.is_ok());
+        // Should saturate rather than wrap
+        let count = window.unwrap().block_count();
+        assert_eq!(count, 101);
+    }
 }

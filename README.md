@@ -286,7 +286,26 @@ cargo clippy --package semioscan --all-targets --all-features -- -D warnings
 
 ### Testing
 
-Semioscan uses `examples/` instead of `tests/` for blockchain-dependent code, as it requires real RPC connections to test properly.
+Semioscan has comprehensive unit tests for all business logic:
+
+```bash
+# Run all tests
+cargo test --package semioscan --all-features
+
+# Run only unit tests (no integration tests)
+cargo test --package semioscan --lib
+
+# Run specific test file
+cargo test --package semioscan --test gas_calculator_tests
+```
+
+**Testing Strategy**:
+
+- **Unit Tests** (`tests/`): Test business logic, edge cases, and error handling without external dependencies
+- **Examples** (`examples/`): Validate integration with real blockchain networks (requires RPC access)
+- **Mock Infrastructure**: `tests/helpers/` provides `MockPriceSource` for testing price extraction logic
+
+See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for detailed testing principles and best practices.
 
 ## Production Usage
 

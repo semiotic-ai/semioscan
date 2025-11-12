@@ -184,3 +184,88 @@ impl AmountCalculator {
         Ok(result)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::address;
+
+    #[test]
+    fn test_amount_result_initialization() {
+        let chain_id = 42161; // Arbitrum
+        let to = address!("1111111111111111111111111111111111111111");
+        let token = address!("2222222222222222222222222222222222222222");
+
+        let result = AmountResult {
+            chain_id,
+            to,
+            token,
+            amount: U256::ZERO,
+        };
+
+        assert_eq!(result.chain_id, chain_id);
+        assert_eq!(result.to, to);
+        assert_eq!(result.token, token);
+        assert_eq!(result.amount, U256::ZERO);
+    }
+
+    #[test]
+    fn test_amount_accumulation() {
+        let chain_id = 1; // Ethereum
+        let to = address!("1111111111111111111111111111111111111111");
+        let token = address!("2222222222222222222222222222222222222222");
+
+        let mut result = AmountResult {
+            chain_id,
+            to,
+            token,
+            amount: U256::ZERO,
+        };
+
+        // Add amounts using saturating_add (as done in calculate_transfer_amount_between_blocks)
+        result.amount = result.amount.saturating_add(U256::from(1_000_000u64)); // 1 USDC (6 decimals)
+        result.amount = result.amount.saturating_add(U256::from(2_500_000u64)); // 2.5 USDC
+
+        assert_eq!(result.amount, U256::from(3_500_000u64)); // 3.5 USDC total
+    }
+
+    #[test]
+    fn test_amount_overflow_protection() {
+        let chain_id = 1;
+        let to = address!("1111111111111111111111111111111111111111");
+        let token = address!("2222222222222222222222222222222222222222");
+
+        let mut result = AmountResult {
+            chain_id,
+            to,
+            token,
+            amount: U256::MAX - U256::from(100u64),
+        };
+
+        // Add amount that would overflow - should saturate at U256::MAX
+        result.amount = result.amount.saturating_add(U256::from(200u64));
+
+        assert_eq!(result.amount, U256::MAX);
+    }
+
+    #[test]
+    fn test_large_token_amounts() {
+        let chain_id = 1;
+        let to = address!("1111111111111111111111111111111111111111");
+        let token = address!("2222222222222222222222222222222222222222");
+
+        let mut result = AmountResult {
+            chain_id,
+            to,
+            token,
+            amount: U256::ZERO,
+        };
+
+        // Test with 18-decimal token (like WETH): 1 ETH = 1e18 wei
+        let one_eth = U256::from(1_000_000_000_000_000_000u64);
+        result.amount = result.amount.saturating_add(one_eth);
+        result.amount = result.amount.saturating_add(one_eth);
+
+        assert_eq!(result.amount, U256::from(2_000_000_000_000_000_000u64)); // 2 ETH
+    }
+}

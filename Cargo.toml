@@ -61,3 +61,9 @@ odos-sdk = { version = "1.0", features = [
     "limit-orders",
 ], optional = true }
 usdshe = { version = "0.4", optional = true }
+
+[dev-dependencies]
+alloy-consensus = "1.1"
+alloy-transport = "1.1"
+async-trait = "0.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
