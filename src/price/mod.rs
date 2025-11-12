@@ -53,7 +53,7 @@
 //!             .map_err(|e| PriceSourceError::DecodeError(e.to_string()))?;
 //!
 //!         // Determine direction based on sign of amounts
-//!         let (token_in, amount_in, token_out, amount_out) = if event.amount0.is_negative() {
+//!         let (token_in, token_in_amount, token_out, token_out_amount) = if event.amount0.is_negative() {
 //!             (self.token0, event.amount0.unsigned_abs(), self.token1, event.amount1.into())
 //!         } else {
 //!             (self.token1, event.amount1.unsigned_abs(), self.token0, event.amount0.into())
@@ -61,9 +61,9 @@
 //!
 //!         Ok(Some(SwapData {
 //!             token_in,
-//!             amount_in,
+//!             token_in_amount,
 //!             token_out,
-//!             amount_out,
+//!             token_out_amount,
 //!             sender: Some(event.sender),
 //!         }))
 //!     }
