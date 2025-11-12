@@ -1,6 +1,16 @@
-# CLI
+# CLI (DEPRECATED)
 
-## API Server
+> **⚠️ DEPRECATION NOTICE**
+>
+> As of semioscan v0.2.0, this crate is a **library-only** package. The CLI and API server binaries described in this document have been removed.
+>
+> **For current usage**, see the [README](../README.md) and the [examples/](../examples/) directory which demonstrate how to use semioscan as a library in your own applications.
+>
+> This document is preserved for historical reference only. For v0.1.x CLI documentation, see the [v0.1.x branch](https://github.com/semiotic-ai/likwid/tree/v0.1.x/crates/semioscan).
+
+---
+
+## API Server (REMOVED IN v0.2.0)
 
 ```bash
 cargo run --bin semioscan api -- --port 3000
