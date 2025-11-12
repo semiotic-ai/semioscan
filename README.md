@@ -22,10 +22,10 @@ Add semioscan to your `Cargo.toml`:
 ```toml
 [dependencies]
 # Core library (gas, block windows, events)
-semioscan = "0.1"
+semioscan = "0.2"
 
 # With Odos DEX reference implementation
-semioscan = { version = "0.1", features = ["odos-example"] }
+semioscan = { version = "0.2", features = ["odos-example"] }
 ```
 
 ### Feature Flags

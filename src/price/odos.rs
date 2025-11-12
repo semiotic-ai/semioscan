@@ -1,6 +1,6 @@
 //! Odos DEX price source implementation
 //!
-//! This module provides a reference implementation of [`PriceSource`](super::PriceSource)
+//! This module provides a reference implementation of [`PriceSource`]
 //! for the Odos DEX aggregator. It demonstrates how to extract swap data from Odos router events.
 //!
 //! # Features

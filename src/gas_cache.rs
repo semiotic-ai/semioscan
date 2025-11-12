@@ -114,8 +114,8 @@ impl GasCache {
     /// Calculate which block ranges need to be processed by finding gaps in the cached data
     ///
     /// Returns:
-    /// - Option<GasCostResult>: Any cached data that overlaps with the requested range
-    /// - Vec<(u64, u64)>: Gaps in the cached data that need to be processed
+    /// - `Option<GasCostResult>`: Any cached data that overlaps with the requested range
+    /// - `Vec<(u64, u64)>`: Gaps in the cached data that need to be processed
     pub fn calculate_gaps(
         &self,
         chain_id: u64,

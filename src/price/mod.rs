@@ -90,7 +90,7 @@ pub mod odos;
 /// Represents a single token swap extracted from on-chain events
 ///
 /// This is the core data structure that [`PriceSource`] implementations must produce.
-/// Token amounts are raw U256 values (not normalized) - the [`PriceCalculator`](crate::price::PriceCalculator)
+/// Token amounts are raw U256 values (not normalized) - the [`PriceCalculator`](crate::PriceCalculator)
 /// handles decimal normalization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SwapData {
