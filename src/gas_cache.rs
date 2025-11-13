@@ -1,3 +1,60 @@
+//! In-memory cache for gas cost calculations with gap detection
+//!
+//! This module provides intelligent caching for gas cost calculations that supports:
+//! - Automatic merging of overlapping block ranges
+//! - Gap detection to identify uncached regions
+//! - Cache invalidation by address or block height
+//!
+//! # Use Cases
+//!
+//! - **Avoid redundant RPC calls**: Cache gas calculations to prevent re-scanning the same blocks
+//! - **Incremental updates**: Add new block ranges and automatically merge with existing data
+//! - **Gap filling**: Identify precisely which block ranges still need to be scanned
+//!
+//! # Example: Basic caching
+//!
+//! ```rust
+//! use semioscan::{GasCache, GasCostResult};
+//! use alloy_primitives::{Address, U256};
+//!
+//! let mut cache = GasCache::default();
+//! let from = Address::ZERO;
+//! let to = Address::ZERO;
+//!
+//! // Insert a result for blocks 100-200
+//! let mut result = GasCostResult::new(1, from, to);
+//! result.total_gas_cost = U256::from(1_000_000u64);
+//! cache.insert(from, to, 100, 200, result);
+//!
+//! // Retrieve it
+//! let cached = cache.get(from, to, 100, 200);
+//! assert!(cached.is_some());
+//! ```
+//!
+//! # Example: Gap detection
+//!
+//! ```rust
+//! use semioscan::{GasCache, GasCostResult};
+//! use alloy_primitives::{Address, U256};
+//!
+//! let mut cache = GasCache::default();
+//! let from = Address::ZERO;
+//! let to = Address::ZERO;
+//!
+//! // Cache blocks 100-200 and 300-400
+//! cache.insert(from, to, 100, 200, GasCostResult::new(1, from, to));
+//! cache.insert(from, to, 300, 400, GasCostResult::new(1, from, to));
+//!
+//! // Find gaps in range 50-500
+//! let (cached, gaps) = cache.calculate_gaps(1, from, to, 50, 500);
+//!
+//! // Gaps: [50, 99], [201, 299], [401, 500]
+//! assert_eq!(gaps.len(), 3);
+//! assert_eq!(gaps[0], (50, 99));
+//! assert_eq!(gaps[1], (201, 299));
+//! assert_eq!(gaps[2], (401, 500));
+//! ```
+
 use std::cmp::{max, min};
 use std::collections::HashMap;
 
@@ -7,14 +64,78 @@ use crate::GasCostResult;
 
 type CacheKey = (Address, Address, u64, u64); // (from, to, start_block, end_block)
 
-/// Cache for storing gas cost calculation results to avoid redundant calculations
+/// In-memory cache for gas cost calculation results
+///
+/// Stores gas cost data keyed by `(from, to, start_block, end_block)` and provides
+/// intelligent features like automatic range merging and gap detection.
+///
+/// # Features
+///
+/// - **Range queries**: Retrieve cached data that fully contains a requested range
+/// - **Auto-merging**: Overlapping inserts are automatically merged
+/// - **Gap detection**: Calculate precisely which blocks are not yet cached
+/// - **Cache management**: Clear by address or block height
+///
+/// # Example
+///
+/// ```rust
+/// use semioscan::{GasCache, GasCostResult};
+/// use alloy_primitives::Address;
+///
+/// let mut cache = GasCache::default();
+/// let from = Address::ZERO;
+/// let to = Address::ZERO;
+///
+/// // Insert results for different block ranges
+/// cache.insert(from, to, 100, 200, GasCostResult::new(1, from, to));
+/// cache.insert(from, to, 150, 250, GasCostResult::new(1, from, to));
+///
+/// // Overlapping ranges are merged automatically
+/// assert_eq!(cache.len(), 1);
+/// ```
 #[derive(Debug, Clone, Default)]
 pub struct GasCache {
     cache: HashMap<CacheKey, GasCostResult>,
 }
 
 impl GasCache {
-    /// Check if we have a result that fully contains the requested range
+    /// Retrieve cached result that fully contains the requested range
+    ///
+    /// Returns a cached result if there exists an entry that completely covers
+    /// the requested block range. Checks both exact matches and larger ranges
+    /// that encompass the request.
+    ///
+    /// # Arguments
+    ///
+    /// * `from` - Source address
+    /// * `to` - Destination address
+    /// * `start_block` - Start of requested range (inclusive)
+    /// * `end_block` - End of requested range (inclusive)
+    ///
+    /// # Returns
+    ///
+    /// - `Some(result)`: Cached data that covers `[start_block, end_block]`
+    /// - `None`: No cached entry fully contains this range
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_primitives::Address;
+    ///
+    /// let mut cache = GasCache::default();
+    /// let from = Address::ZERO;
+    /// let to = Address::ZERO;
+    ///
+    /// // Cache blocks 100-300
+    /// cache.insert(from, to, 100, 300, GasCostResult::new(1, from, to));
+    ///
+    /// // Query for subset [150, 250] - returns cached data
+    /// assert!(cache.get(from, to, 150, 250).is_some());
+    ///
+    /// // Query for [50, 350] - returns None (not fully covered)
+    /// assert!(cache.get(from, to, 50, 350).is_none());
+    /// ```
     pub fn get(
         &self,
         from: Address,
@@ -66,7 +187,47 @@ impl GasCache {
         overlapping
     }
 
-    /// Insert a new result, potentially merging with existing results
+    /// Insert a result and automatically merge with overlapping entries
+    ///
+    /// When inserting a result that overlaps with existing cached data, this method:
+    /// 1. Finds all overlapping entries
+    /// 2. Merges their gas costs and transaction counts
+    /// 3. Extends the block range to cover all overlapping entries
+    /// 4. Removes the old entries and stores the merged result
+    ///
+    /// # Arguments
+    ///
+    /// * `from` - Source address
+    /// * `to` - Destination address
+    /// * `start_block` - Start of block range (inclusive)
+    /// * `end_block` - End of block range (inclusive)
+    /// * `result` - Gas cost data for this range
+    ///
+    /// # Example: Auto-merging
+    ///
+    /// ```rust
+    /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_primitives::{Address, U256};
+    ///
+    /// let mut cache = GasCache::default();
+    /// let from = Address::ZERO;
+    /// let to = Address::ZERO;
+    ///
+    /// // Insert blocks 100-200 with 5 transactions
+    /// let mut result1 = GasCostResult::new(1, from, to);
+    /// result1.transaction_count = 5;
+    /// cache.insert(from, to, 100, 200, result1);
+    ///
+    /// // Insert overlapping blocks 150-250 with 3 transactions
+    /// let mut result2 = GasCostResult::new(1, from, to);
+    /// result2.transaction_count = 3;
+    /// cache.insert(from, to, 150, 250, result2);
+    ///
+    /// // Results are merged: 1 entry covering 100-250 with 8 transactions
+    /// assert_eq!(cache.len(), 1);
+    /// let merged = cache.get(from, to, 100, 250).unwrap();
+    /// assert_eq!(merged.transaction_count, 8);
+    /// ```
     pub fn insert(
         &mut self,
         from: Address,
@@ -111,11 +272,56 @@ impl GasCache {
             .insert((from, to, min_start, max_end), merged_result);
     }
 
-    /// Calculate which block ranges need to be processed by finding gaps in the cached data
+    /// Calculate uncached block ranges (gaps) and return merged cached data
     ///
-    /// Returns:
-    /// - `Option<GasCostResult>`: Any cached data that overlaps with the requested range
-    /// - `Vec<(u64, u64)>`: Gaps in the cached data that need to be processed
+    /// This is the key method for incremental scanning. It analyzes which portions of
+    /// a requested block range are already cached and which need to be scanned.
+    ///
+    /// # Behavior
+    ///
+    /// 1. If the entire range is cached, returns `(Some(data), vec![])`
+    /// 2. If nothing is cached, returns `(None, vec![(start, end)])`
+    /// 3. If partially cached, returns merged cached data and a list of gaps
+    ///
+    /// # Arguments
+    ///
+    /// * `chain_id` - Chain ID (used when creating merged result)
+    /// * `from` - Source address
+    /// * `to` - Destination address
+    /// * `start_block` - Start of requested range (inclusive)
+    /// * `end_block` - End of requested range (inclusive)
+    ///
+    /// # Returns
+    ///
+    /// A tuple of:
+    /// - `Option<GasCostResult>`: Merged data from all overlapping cached entries
+    /// - `Vec<(u64, u64)>`: Sorted list of uncached ranges (gaps) to scan
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_primitives::Address;
+    ///
+    /// let mut cache = GasCache::default();
+    /// let from = Address::ZERO;
+    /// let to = Address::ZERO;
+    ///
+    /// // Cache two ranges with a gap
+    /// cache.insert(from, to, 100, 200, GasCostResult::new(1, from, to));
+    /// cache.insert(from, to, 300, 400, GasCostResult::new(1, from, to));
+    ///
+    /// // Request range [50, 500]
+    /// let (cached, gaps) = cache.calculate_gaps(1, from, to, 50, 500);
+    ///
+    /// // We get cached data and three gaps to fill
+    /// assert!(cached.is_some());
+    /// assert_eq!(gaps, vec![
+    ///     (50, 99),    // Before first cached range
+    ///     (201, 299),  // Between cached ranges
+    ///     (401, 500),  // After last cached range
+    /// ]);
+    /// ```
     pub fn calculate_gaps(
         &self,
         chain_id: u64,
@@ -173,24 +379,93 @@ impl GasCache {
         (Some(merged_result), gaps)
     }
 
-    /// Clear all cached data for a specific signer
+    /// Clear all cached data for a specific address pair
+    ///
+    /// Removes all entries where transactions were sent from `from` to `to`.
+    /// Useful when you want to invalidate cached data for a specific route.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_primitives::address;
+    ///
+    /// let mut cache = GasCache::default();
+    /// let addr1 = address!("0x1111111111111111111111111111111111111111");
+    /// let addr2 = address!("0x2222222222222222222222222222222222222222");
+    ///
+    /// cache.insert(addr1, addr2, 100, 200, GasCostResult::new(1, addr1, addr2));
+    /// assert_eq!(cache.len(), 1);
+    ///
+    /// cache.clear_signer_data(addr1, addr2);
+    /// assert_eq!(cache.len(), 0);
+    /// ```
     pub fn clear_signer_data(&mut self, from: Address, to: Address) {
         self.cache
             .retain(|(cached_from, cached_to, _, _), _| *cached_from != from && *cached_to != to);
     }
 
-    /// Clear all cached data for blocks below a certain height
+    /// Clear all cached entries that end before a minimum block height
+    ///
+    /// Useful for invalidating old data when you know earlier blocks
+    /// are no longer relevant (e.g., after a blockchain reorganization).
+    ///
+    /// # Arguments
+    ///
+    /// * `min_block` - Minimum block height to keep (entries ending before this are removed)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_primitives::Address;
+    ///
+    /// let mut cache = GasCache::default();
+    /// let from = Address::ZERO;
+    /// let to = Address::ZERO;
+    ///
+    /// cache.insert(from, to, 100, 200, GasCostResult::new(1, from, to));
+    /// cache.insert(from, to, 500, 600, GasCostResult::new(1, from, to));
+    /// assert_eq!(cache.len(), 2);
+    ///
+    /// // Clear entries ending before block 300
+    /// cache.clear_old_blocks(300);
+    /// assert_eq!(cache.len(), 1); // Only [500, 600] remains
+    /// ```
     pub fn clear_old_blocks(&mut self, min_block: u64) {
         self.cache
             .retain(|(_, _, _, end_block), _| *end_block >= min_block);
     }
 
     /// Get the total number of cached entries
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_primitives::Address;
+    ///
+    /// let mut cache = GasCache::default();
+    /// assert_eq!(cache.len(), 0);
+    ///
+    /// cache.insert(Address::ZERO, Address::ZERO, 100, 200, GasCostResult::new(1, Address::ZERO, Address::ZERO));
+    /// assert_eq!(cache.len(), 1);
+    /// ```
     pub fn len(&self) -> usize {
         self.cache.len()
     }
 
-    /// Check if the cache is empty
+    /// Check if the cache contains no entries
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_primitives::Address;
+    ///
+    /// let cache = GasCache::default();
+    /// assert!(cache.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.cache.is_empty()
     }
