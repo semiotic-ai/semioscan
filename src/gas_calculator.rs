@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use alloy_network::Network;
 use alloy_primitives::{Address, U256};
-use alloy_provider::RootProvider;
+use alloy_provider::Provider;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -207,30 +207,32 @@ impl GasCostResult {
 #[allow(dead_code)]
 pub(crate) const MAX_BLOCK_RANGE: u64 = 500;
 
-pub struct GasCostCalculator<N: Network> {
-    pub(crate) provider: RootProvider<N>,
+pub struct GasCostCalculator<N: Network, P: Provider<N>> {
+    pub(crate) provider: P,
     pub(crate) gas_cache: Arc<Mutex<GasCache>>,
     pub(crate) config: SemioscanConfig,
+    pub(crate) _phantom: std::marker::PhantomData<N>,
 }
 
-impl<N: Network> GasCostCalculator<N> {
+impl<N: Network, P: Provider<N>> GasCostCalculator<N, P> {
     /// Create a new gas cost calculator with default configuration
-    pub fn new(provider: RootProvider<N>) -> Self {
+    pub fn new(provider: P) -> Self {
         Self::with_config(provider, SemioscanConfig::default())
     }
 
     /// Create a gas cost calculator with custom configuration
-    pub fn with_config(provider: RootProvider<N>, config: SemioscanConfig) -> Self {
+    pub fn with_config(provider: P, config: SemioscanConfig) -> Self {
         Self {
             provider,
             gas_cache: Arc::new(Mutex::new(GasCache::default())),
             config,
+            _phantom: std::marker::PhantomData,
         }
     }
 
     /// Create a gas cost calculator with custom cache and configuration
     pub fn with_cache_and_config(
-        provider: RootProvider<N>,
+        provider: P,
         gas_cache: Arc<Mutex<GasCache>>,
         config: SemioscanConfig,
     ) -> Self {
@@ -238,11 +240,12 @@ impl<N: Network> GasCostCalculator<N> {
             provider,
             gas_cache,
             config,
+            _phantom: std::marker::PhantomData,
         }
     }
 
     /// Create a gas cost calculator with custom cache (uses default config)
-    pub fn with_cache(provider: RootProvider<N>, gas_cache: Arc<Mutex<GasCache>>) -> Self {
+    pub fn with_cache(provider: P, gas_cache: Arc<Mutex<GasCache>>) -> Self {
         Self::with_cache_and_config(provider, gas_cache, SemioscanConfig::default())
     }
 }

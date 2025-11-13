@@ -91,7 +91,7 @@ impl GasCalculationCore {
 }
 
 /// Generic implementation that works for both Ethereum and Optimism
-impl<N: Network> GasCostCalculator<N>
+impl<N: Network, P: Provider<N>> GasCostCalculator<N, P>
 where
     N::TransactionResponse: TransactionTrait + Typed2718,
 {
@@ -508,7 +508,7 @@ where
 }
 
 // Network-specific implementations using the adapters
-impl GasCostCalculator<Ethereum> {
+impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
     pub async fn calculate_gas_cost_for_transfers_between_blocks(
         &self,
         chain_id: u64,
@@ -532,7 +532,7 @@ impl GasCostCalculator<Ethereum> {
     }
 }
 
-impl GasCostCalculator<Optimism> {
+impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
     pub async fn calculate_gas_cost_for_transfers_between_blocks(
         &self,
         chain_id: u64,
@@ -557,7 +557,7 @@ impl GasCostCalculator<Optimism> {
 }
 
 // Network-specific implementations using the adapters
-impl GasCostCalculator<Ethereum> {
+impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
     pub async fn calculate_gas_cost_for_approvals_between_blocks(
         &self,
         chain_id: u64,
@@ -581,7 +581,7 @@ impl GasCostCalculator<Ethereum> {
     }
 }
 
-impl GasCostCalculator<Optimism> {
+impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
     pub async fn calculate_gas_cost_for_approvals_between_blocks(
         &self,
         chain_id: u64,

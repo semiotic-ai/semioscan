@@ -1,5 +1,5 @@
 use alloy_primitives::{Address, U256};
-use alloy_provider::{Provider, RootProvider};
+use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use erc20_rs::Erc20;
 use serde::Serialize;
@@ -64,8 +64,8 @@ impl TokenPriceResult {
     }
 }
 
-pub struct PriceCalculator {
-    provider: RootProvider,
+pub struct PriceCalculator<P> {
+    provider: P,
     price_source: Box<dyn PriceSource>,
     usdc_address: Address,
     chain: alloy_chains::NamedChain,
@@ -74,7 +74,7 @@ pub struct PriceCalculator {
     config: crate::SemioscanConfig,
 }
 
-impl PriceCalculator {
+impl<P: Provider + Clone> PriceCalculator<P> {
     /// Create a new PriceCalculator with a custom price source
     ///
     /// # Arguments
@@ -94,7 +94,7 @@ impl PriceCalculator {
     /// let calculator = PriceCalculator::new(provider, usdc_address, Box::new(price_source));
     /// ```
     pub fn new(
-        provider: RootProvider,
+        provider: P,
         chain: alloy_chains::NamedChain,
         usdc_address: Address,
         price_source: Box<dyn PriceSource>,
@@ -118,7 +118,7 @@ impl PriceCalculator {
     /// * `price_source` - Implementation of PriceSource trait for extracting swap data
     /// * `config` - Configuration for RPC behavior (block ranges, rate limiting)
     pub fn with_config(
-        provider: RootProvider,
+        provider: P,
         chain: alloy_chains::NamedChain,
         usdc_address: Address,
         price_source: Box<dyn PriceSource>,

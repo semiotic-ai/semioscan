@@ -30,7 +30,7 @@
 
 use alloy_chains::NamedChain;
 use alloy_primitives::{keccak256, Address, B256, U256};
-use alloy_provider::{Provider, RootProvider};
+use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
 use tokio::time::sleep;
@@ -86,12 +86,12 @@ pub struct AmountResult {
 ///
 /// let calculator = AmountCalculator::new(provider.root().clone(), config);
 /// ```
-pub struct AmountCalculator {
-    provider: RootProvider,
+pub struct AmountCalculator<P> {
+    provider: P,
     config: SemioscanConfig,
 }
 
-impl AmountCalculator {
+impl<P: Provider> AmountCalculator<P> {
     /// Creates a new `AmountCalculator` with the given provider and configuration
     ///
     /// # Arguments
@@ -114,7 +114,7 @@ impl AmountCalculator {
     /// // Or customize for premium RPC (no delays)
     /// let premium_calculator = AmountCalculator::new(root_provider, SemioscanConfig::minimal());
     /// ```
-    pub fn new(provider: RootProvider, config: SemioscanConfig) -> Self {
+    pub fn new(provider: P, config: SemioscanConfig) -> Self {
         Self { provider, config }
     }
 

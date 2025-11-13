@@ -42,7 +42,6 @@
 /// - `BLOB_GAS_PER_BLOB = 131,072` (fixed constant)
 /// - `max_fee_per_blob_gas` = Maximum fee willing to pay per blob gas unit
 /// - `blob_count` = Number of blobs in transaction (1-6 blobs per tx)
-use alloy_network::Ethereum;
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use anyhow::{Context, Result};
@@ -215,7 +214,7 @@ async fn calculate_blob_costs_with_semioscan() -> Result<()> {
     info!(rpc_url, "Connecting to Ethereum mainnet");
 
     let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-    let _calculator = GasCostCalculator::<Ethereum>::new(provider.root().clone());
+    let _calculator = GasCostCalculator::new(provider.root().clone());
 
     println!("\n=== Using Semioscan GasCostCalculator ===\n");
     println!("The GasCostCalculator automatically handles blob gas:");
