@@ -1,6 +1,6 @@
 use alloy_chains::NamedChain;
 use alloy_network::{eip2718::Typed2718, Ethereum, Network};
-use alloy_primitives::{address, keccak256, Address, TxHash, U256};
+use alloy_primitives::{address, keccak256, Address, BlockNumber, TxHash, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Filter, Log as RpcLog, TransactionTrait};
 use alloy_sol_types::SolEvent;
@@ -493,8 +493,8 @@ where
         from_address: Address,
         to_address: Address,
         token_address: Address,
-        from_block: u64,
-        to_block: u64,
+        from_block: BlockNumber,
+        to_block: BlockNumber,
         adapter: &A,
     ) -> anyhow::Result<CombinedDataResult> {
         let span = spans::process_block_range_for_combined_data(
