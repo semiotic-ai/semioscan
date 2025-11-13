@@ -92,8 +92,8 @@ impl GasAndAmountForTx {
         total_cost.saturating_add(self.l1_fee.unwrap_or_default())
     }
 
-    /// Convert to display format with custom token decimals
-    pub fn to_display(&self, token_decimals: u8) -> GasAndAmountDisplay {
+    /// Convert to display format with custom token decimal precision
+    pub fn to_display(&self, token_precision: DecimalPrecision) -> GasAndAmountDisplay {
         let l2_execution_cost = self.gas_used.saturating_mul(self.effective_gas_price);
         let total_cost = l2_execution_cost
             .saturating_add(self.blob_gas_cost)
@@ -106,7 +106,7 @@ impl GasAndAmountForTx {
             l1_fee_eth: self.l1_fee.map(format_wei_to_eth),
             blob_gas_cost_eth: format_wei_to_eth(self.blob_gas_cost),
             total_gas_cost_eth: format_wei_to_eth(total_cost),
-            transferred_amount_usdc: format_token_amount(self.transferred_amount, token_decimals),
+            transferred_amount_usdc: format_token_amount(self.transferred_amount, token_precision),
         }
     }
 }
@@ -155,47 +155,6 @@ pub struct GasAndAmountDisplay {
     pub transferred_amount_usdc: String,
 }
 
-impl From<&CombinedDataResult> for CombinedDataDisplay {
-    fn from(result: &CombinedDataResult) -> Self {
-        CombinedDataDisplay {
-            chain: result.chain,
-            from_address: format!("{:#x}", result.from_address),
-            to_address: format!("{:#x}", result.to_address),
-            token_address: format!("{:#x}", result.token_address),
-            total_l2_execution_cost_eth: format_wei_to_eth(result.total_l2_execution_cost),
-            total_blob_gas_cost_eth: format_wei_to_eth(result.total_blob_gas_cost),
-            total_l1_fee_eth: format_wei_to_eth(result.total_l1_fee),
-            overall_total_gas_cost_eth: format_wei_to_eth(result.overall_total_gas_cost),
-            total_amount_transferred_usdc: format_usdc(result.total_amount_transferred),
-            transaction_count: result.transaction_count,
-            transactions_data: result
-                .transactions_data
-                .iter()
-                .map(GasAndAmountDisplay::from)
-                .collect(),
-        }
-    }
-}
-
-impl From<&GasAndAmountForTx> for GasAndAmountDisplay {
-    fn from(tx: &GasAndAmountForTx) -> Self {
-        let l2_execution_cost = tx.gas_used.saturating_mul(tx.effective_gas_price);
-        let total_cost = l2_execution_cost
-            .saturating_add(tx.blob_gas_cost)
-            .saturating_add(tx.l1_fee.unwrap_or_default());
-
-        GasAndAmountDisplay {
-            tx_hash: format!("{:#x}", tx.tx_hash),
-            gas_used: tx.gas_used.to_string(),
-            effective_gas_price_gwei: format_wei_to_gwei(tx.effective_gas_price),
-            l1_fee_eth: tx.l1_fee.map(format_wei_to_eth),
-            blob_gas_cost_eth: format_wei_to_eth(tx.blob_gas_cost),
-            total_gas_cost_eth: format_wei_to_eth(total_cost),
-            transferred_amount_usdc: format_usdc(tx.transferred_amount),
-        }
-    }
-}
-
 /// Convert wei (U256) to ETH string with 18 decimals
 fn format_wei_to_eth(wei: U256) -> String {
     // ETH has 18 decimals
@@ -233,9 +192,10 @@ fn format_wei_to_gwei(wei: U256) -> String {
     }
 }
 
-/// Convert token raw amount (U256) to string with specified decimals
+/// Convert token raw amount (U256) to string with specified decimal precision
 /// Most chains use 6 decimals for USDC, but BNB Chain uses 18 decimals
-fn format_token_amount(raw_amount: U256, decimals: u8) -> String {
+fn format_token_amount(raw_amount: U256, precision: DecimalPrecision) -> String {
+    let decimals = precision.decimals();
     if decimals == 0 {
         return raw_amount.to_string();
     }
@@ -254,11 +214,6 @@ fn format_token_amount(raw_amount: U256, decimals: u8) -> String {
     } else {
         format!("{}.{}", whole, trimmed)
     }
-}
-
-/// Convert USDC raw amount (U256) to USDC string with 6 decimals (default)
-fn format_usdc(raw_amount: U256) -> String {
-    format_token_amount(raw_amount, 6)
 }
 
 /// Decimal precision for blockchain values
@@ -372,8 +327,8 @@ impl CombinedDataResult {
         }
     }
 
-    /// Convert to display format with custom token decimals
-    pub fn to_display(&self, token_decimals: u8) -> CombinedDataDisplay {
+    /// Convert to display format with custom token decimal precision
+    pub fn to_display(&self, token_precision: DecimalPrecision) -> CombinedDataDisplay {
         CombinedDataDisplay {
             chain: self.chain,
             from_address: format!("{:#x}", self.from_address),
@@ -385,13 +340,13 @@ impl CombinedDataResult {
             overall_total_gas_cost_eth: format_wei_to_eth(self.overall_total_gas_cost),
             total_amount_transferred_usdc: format_token_amount(
                 self.total_amount_transferred,
-                token_decimals,
+                token_precision,
             ),
             transaction_count: self.transaction_count,
             transactions_data: self
                 .transactions_data
                 .iter()
-                .map(|tx| tx.to_display(token_decimals))
+                .map(|tx| tx.to_display(token_precision))
                 .collect(),
         }
     }
@@ -879,7 +834,7 @@ mod tests {
             1_000_000, // 1 USDC (6 decimals)
         );
 
-        let display = tx.to_display(6); // USDC has 6 decimals
+        let display = tx.to_display(DecimalPrecision::Usdc);
 
         // Verify fields are properly formatted
         assert_eq!(
@@ -904,7 +859,7 @@ mod tests {
             1_000_000_000_000_000_000, // 1 token (18 decimals)
         );
 
-        let display = tx.to_display(18);
+        let display = tx.to_display(DecimalPrecision::NativeToken);
 
         assert_eq!(display.gas_used, "100000");
         assert_eq!(
@@ -924,7 +879,7 @@ mod tests {
             1_000_000,
         );
 
-        let display = tx.to_display(6);
+        let display = tx.to_display(DecimalPrecision::Usdc);
 
         // L1 fee should be Some(String)
         assert!(display.l1_fee_eth.is_some(), "L1 fee should be present");
@@ -941,7 +896,7 @@ mod tests {
             1_000_000,
         );
 
-        let display = tx.to_display(6);
+        let display = tx.to_display(DecimalPrecision::Usdc);
 
         assert!(
             display.l1_fee_eth.is_none(),
