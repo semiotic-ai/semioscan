@@ -315,4 +315,227 @@ mod tests {
         assert_eq!(result.transaction_count, 8);
         assert_eq!(result.total_gas_cost, U256::from(160_000u64));
     }
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        /// Strategy for generating valid block ranges
+        fn block_range_strategy() -> impl Strategy<Value = (u64, u64)> {
+            (0u64..100_000u64)
+                .prop_flat_map(|start| (Just(start), start..start.saturating_add(10_000)))
+        }
+
+        /// Strategy for generating multiple non-overlapping cached ranges
+        fn cached_ranges_strategy() -> impl Strategy<Value = Vec<(u64, u64)>> {
+            prop::collection::vec(block_range_strategy(), 0..10).prop_map(|mut ranges| {
+                // Sort and make them non-overlapping
+                ranges.sort_by_key(|(start, _)| *start);
+                let mut non_overlapping = Vec::new();
+                let mut last_end = 0u64;
+
+                for (start, end) in ranges {
+                    let adjusted_start = start.max(last_end + 2);
+                    if adjusted_start < end {
+                        non_overlapping.push((adjusted_start, end));
+                        last_end = end;
+                    }
+                }
+
+                non_overlapping
+            })
+        }
+
+        proptest! {
+            /// Property: Gaps should never overlap with cached ranges
+            #[test]
+            fn test_gaps_never_overlap_with_cached(
+                cached_ranges in cached_ranges_strategy(),
+                (query_start, query_end) in block_range_strategy()
+            ) {
+                let mut cache = GasCache::default();
+                let from = Address::ZERO;
+                let to = Address::ZERO;
+                let chain_id = 1u64;
+
+                // Insert cached ranges
+                for (start, end) in &cached_ranges {
+                    cache.insert(from, to, *start, *end, create_test_result(chain_id, from, to, 1, 1000));
+                }
+
+                // Calculate gaps
+                let (_, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+
+                // Verify no gap overlaps with any cached range
+                for (gap_start, gap_end) in &gaps {
+                    for (cached_start, cached_end) in &cached_ranges {
+                        // Skip ranges outside the query window
+                        if *cached_end < query_start || *cached_start > query_end {
+                            continue;
+                        }
+
+                        // Check for no overlap: gap ends before cached starts OR gap starts after cached ends
+                        let no_overlap = *gap_end < *cached_start || *gap_start > *cached_end;
+                        prop_assert!(
+                            no_overlap,
+                            "Gap [{gap_start}, {gap_end}] overlaps with cached range [{cached_start}, {cached_end}]"
+                        );
+                    }
+                }
+            }
+
+            /// Property: All gaps should be sorted by start block
+            #[test]
+            fn test_gaps_are_sorted(
+                cached_ranges in cached_ranges_strategy(),
+                (query_start, query_end) in block_range_strategy()
+            ) {
+                let mut cache = GasCache::default();
+                let from = Address::ZERO;
+                let to = Address::ZERO;
+                let chain_id = 1u64;
+
+                // Insert cached ranges
+                for (start, end) in &cached_ranges {
+                    cache.insert(from, to, *start, *end, create_test_result(chain_id, from, to, 1, 1000));
+                }
+
+                // Calculate gaps
+                let (_, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+
+                // Verify gaps are sorted
+                for i in 1..gaps.len() {
+                    prop_assert!(
+                        gaps[i - 1].0 < gaps[i].0,
+                        "Gaps not sorted: gap[{i_prev}] = {prev:?}, gap[{i}] = {curr:?}",
+                        i_prev = i - 1,
+                        prev = gaps[i - 1],
+                        curr = gaps[i]
+                    );
+                }
+            }
+
+            /// Property: Gaps should cover entire uncached space within the query range
+            #[test]
+            fn test_gaps_cover_uncached_space(
+                cached_ranges in cached_ranges_strategy(),
+                (query_start, query_end) in block_range_strategy()
+            ) {
+                let mut cache = GasCache::default();
+                let from = Address::ZERO;
+                let to = Address::ZERO;
+                let chain_id = 1u64;
+
+                // Insert cached ranges
+                for (start, end) in &cached_ranges {
+                    cache.insert(from, to, *start, *end, create_test_result(chain_id, from, to, 1, 1000));
+                }
+
+                // Calculate gaps
+                let (_, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+
+                // Build a set of all blocks that are either cached or in gaps
+                let mut covered_blocks = std::collections::HashSet::new();
+
+                // Add cached blocks (within query range)
+                for (cached_start, cached_end) in &cached_ranges {
+                    let start = (*cached_start).max(query_start);
+                    let end = (*cached_end).min(query_end);
+                    if start <= end {
+                        for block in start..=end {
+                            covered_blocks.insert(block);
+                        }
+                    }
+                }
+
+                // Add gap blocks
+                for (gap_start, gap_end) in &gaps {
+                    for block in *gap_start..=*gap_end {
+                        covered_blocks.insert(block);
+                    }
+                }
+
+                // Verify all blocks in query range are covered
+                for block in query_start..=query_end {
+                    prop_assert!(
+                        covered_blocks.contains(&block),
+                        "Block {block} in range [{query_start}, {query_end}] is not covered by cache or gaps"
+                    );
+                }
+            }
+
+            /// Property: Gaps should not overlap with each other
+            #[test]
+            fn test_gaps_dont_overlap_each_other(
+                cached_ranges in cached_ranges_strategy(),
+                (query_start, query_end) in block_range_strategy()
+            ) {
+                let mut cache = GasCache::default();
+                let from = Address::ZERO;
+                let to = Address::ZERO;
+                let chain_id = 1u64;
+
+                // Insert cached ranges
+                for (start, end) in &cached_ranges {
+                    cache.insert(from, to, *start, *end, create_test_result(chain_id, from, to, 1, 1000));
+                }
+
+                // Calculate gaps
+                let (_, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+
+                // Verify no gap overlaps with another gap
+                for i in 0..gaps.len() {
+                    for j in (i + 1)..gaps.len() {
+                        let (gap_i_start, gap_i_end) = gaps[i];
+                        let (gap_j_start, gap_j_end) = gaps[j];
+
+                        let no_overlap = gap_i_end < gap_j_start || gap_j_end < gap_i_start;
+                        prop_assert!(
+                            no_overlap,
+                            "Gap {i} [{gap_i_start}, {gap_i_end}] overlaps with gap {j} [{gap_j_start}, {gap_j_end}]"
+                        );
+                    }
+                }
+            }
+
+            /// Property: When cache is empty, should return entire query range as gap
+            #[test]
+            fn test_empty_cache_returns_full_range(
+                (query_start, query_end) in block_range_strategy()
+            ) {
+                let cache = GasCache::default();
+                let from = Address::ZERO;
+                let to = Address::ZERO;
+                let chain_id = 1u64;
+
+                let (result, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+
+                prop_assert!(result.is_none(), "Empty cache should return None result");
+                prop_assert_eq!(gaps.len(), 1, "Empty cache should return exactly one gap");
+                prop_assert_eq!(gaps[0], (query_start, query_end), "Gap should cover entire query range");
+            }
+
+            /// Property: When query range is fully cached, should return no gaps
+            #[test]
+            fn test_fully_cached_returns_no_gaps(
+                (inner_start, inner_end) in block_range_strategy()
+            ) {
+                let mut cache = GasCache::default();
+                let from = Address::ZERO;
+                let to = Address::ZERO;
+                let chain_id = 1u64;
+
+                // Cache a range that fully covers the query (add padding)
+                let cache_start = inner_start.saturating_sub(10);
+                let cache_end = inner_end.saturating_add(10);
+
+                cache.insert(from, to, cache_start, cache_end, create_test_result(chain_id, from, to, 1, 1000));
+
+                let (result, gaps) = cache.calculate_gaps(chain_id, from, to, inner_start, inner_end);
+
+                prop_assert!(result.is_some(), "Fully cached range should return result");
+                prop_assert_eq!(gaps.len(), 0, "Fully cached range should return no gaps");
+            }
+        }
+    }
 }
