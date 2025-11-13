@@ -37,22 +37,6 @@ use tracing::{debug, info};
 
 use crate::spans;
 
-/// Chain ID as a distinct type to prevent mixing with other u64 values
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ChainId(pub u64);
-
-impl std::fmt::Display for ChainId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<u64> for ChainId {
-    fn from(id: u64) -> Self {
-        Self(id)
-    }
-}
-
 /// Unix timestamp in seconds (always UTC)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct UnixTimestamp(pub i64);
@@ -127,19 +111,19 @@ impl DailyBlockWindow {
 /// Key for caching daily block windows
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct CacheKey {
-    chain_id: ChainId,
+    chain: NamedChain,
     date: NaiveDate,
 }
 
 impl CacheKey {
-    fn new(chain_id: ChainId, date: NaiveDate) -> Self {
-        Self { chain_id, date }
+    fn new(chain: NamedChain, date: NaiveDate) -> Self {
+        Self { chain, date }
     }
 }
 
 impl std::fmt::Display for CacheKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.chain_id, self.date)
+        write!(f, "{}:{}", self.chain as u64, self.date)
     }
 }
 
@@ -297,7 +281,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
     /// 3. Saves the result to the cache for future use
     ///
     /// # Arguments
-    /// * `chain_id` - The chain ID (passed explicitly instead of querying from provider)
+    /// * `chain` - The named chain for which to calculate the block window
     /// * `date` - The UTC date for which to calculate the block window
     ///
     /// # Returns
@@ -310,14 +294,12 @@ impl<P: Provider> BlockWindowCalculator<P> {
         let span = spans::get_daily_window(chain, date);
         let _guard = span.enter();
 
-        let chain_id = ChainId(chain as u64);
-
         let mut cache = BlockWindowCache::load(&self.cache_path).await?;
-        let key = CacheKey::new(chain_id, date);
+        let key = CacheKey::new(chain, date);
 
         // Check cache first
         if let Some(window) = cache.get(&key) {
-            info!(chain_id = %chain_id, date = %date, cached = true, "Retrieved daily block window from cache");
+            info!(chain = %chain, date = %date, cached = true, "Retrieved daily block window from cache");
             return Ok(window.clone());
         }
 
@@ -342,7 +324,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
             .context("Failed to get latest block number")?;
 
         info!(
-            chain_id = %chain_id,
+            chain = %chain,
             date = %date,
             start_ts = %start_ts,
             end_ts_exclusive = %end_ts_exclusive,
@@ -362,7 +344,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
         let window = DailyBlockWindow::new(start_block, end_block, start_ts, end_ts_exclusive)?;
 
         info!(
-            chain_id = %chain_id,
+            chain = %chain,
             date = %date,
             start_block = window.start_block,
             end_block = window.end_block,
@@ -385,7 +367,7 @@ mod tests {
     #[test]
     fn test_cache_key_display() {
         let key = CacheKey::new(
-            ChainId(42161),
+            NamedChain::Arbitrum,
             NaiveDate::from_ymd_opt(2025, 10, 10).unwrap(),
         );
         let serialized = key.to_string();
