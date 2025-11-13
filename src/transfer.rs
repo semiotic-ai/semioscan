@@ -6,11 +6,13 @@
 //! # Examples
 //!
 //! ```rust,ignore
-//! use semioscan::AmountCalculator;
+//! use semioscan::{AmountCalculator, SemioscanConfig};
 //! use alloy_provider::ProviderBuilder;
 //!
 //! let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-//! let calculator = AmountCalculator::new(provider);
+//! let root_provider = provider.root().clone();
+//! let config = SemioscanConfig::default(); // Includes rate limiting for Base, Sonic
+//! let calculator = AmountCalculator::new(root_provider, config);
 //!
 //! let result = calculator
 //!     .calculate_transfer_amount_between_blocks(
@@ -26,14 +28,15 @@
 //! println!("Total transferred: {} (raw amount)", result.amount);
 //! ```
 
+use alloy_chains::NamedChain;
 use alloy_primitives::{keccak256, Address, B256, U256};
 use alloy_provider::{Provider, RootProvider};
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
-use tokio::time::{sleep, Duration};
-use tracing::{info, warn};
+use tokio::time::sleep;
+use tracing::{info, trace, warn};
 
-use crate::{Transfer, TRANSFER_EVENT_SIGNATURE};
+use crate::{SemioscanConfig, Transfer, TRANSFER_EVENT_SIGNATURE};
 
 /// Result of transfer amount calculation
 ///
@@ -69,16 +72,50 @@ pub struct AmountResult {
 ///
 /// # Rate Limiting
 ///
-/// The calculator automatically adds delays for certain chains (e.g., Sonic)
-/// to avoid hitting RPC rate limits.
+/// The calculator uses [`SemioscanConfig`] to control rate limiting behavior.
+/// Use default configuration for common RPC providers or customize for specific needs.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use semioscan::{AmountCalculator, SemioscanConfig};
+/// use alloy_provider::ProviderBuilder;
+///
+/// let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+/// let config = SemioscanConfig::default(); // Includes rate limiting for Base, Sonic
+///
+/// let calculator = AmountCalculator::new(provider.root().clone(), config);
+/// ```
 pub struct AmountCalculator {
     provider: RootProvider,
+    config: SemioscanConfig,
 }
 
 impl AmountCalculator {
-    /// Creates a new `AmountCalculator` with the given provider
-    pub fn new(provider: RootProvider) -> Self {
-        Self { provider }
+    /// Creates a new `AmountCalculator` with the given provider and configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - Alloy provider for blockchain RPC calls
+    /// * `config` - Configuration controlling rate limiting and block range behavior
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::{AmountCalculator, SemioscanConfig};
+    /// use alloy_provider::ProviderBuilder;
+    ///
+    /// let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+    /// let root_provider = provider.root().clone();
+    ///
+    /// // Use defaults (includes rate limiting for Base, Sonic)
+    /// let calculator = AmountCalculator::new(root_provider.clone(), SemioscanConfig::default());
+    ///
+    /// // Or customize for premium RPC (no delays)
+    /// let premium_calculator = AmountCalculator::new(root_provider, SemioscanConfig::minimal());
+    /// ```
+    pub fn new(provider: RootProvider, config: SemioscanConfig) -> Self {
+        Self { provider, config }
     }
 
     /// Calculate total ERC-20 token transfers from one address to another
@@ -109,7 +146,33 @@ impl AmountCalculator {
     ///
     /// # Rate Limiting
     ///
-    /// Adds automatic delays for chains with strict rate limits (e.g., Sonic chain ID 146).
+    /// Rate limiting behavior is controlled by the [`SemioscanConfig`] passed to [`AmountCalculator::new`].
+    /// The calculator will automatically delay between chunks according to the configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::{AmountCalculator, SemioscanConfig, SemioscanConfigBuilder};
+    /// use alloy_chains::NamedChain;
+    /// use std::time::Duration;
+    ///
+    /// // Custom rate limiting for specific chain
+    /// let config = SemioscanConfigBuilder::new()
+    ///     .chain_rate_limit(NamedChain::Arbitrum, Duration::from_millis(100))
+    ///     .build();
+    ///
+    /// let calculator = AmountCalculator::new(provider, config);
+    /// let result = calculator
+    ///     .calculate_transfer_amount_between_blocks(
+    ///         42161, // Arbitrum
+    ///         from_addr,
+    ///         to_addr,
+    ///         token_addr,
+    ///         start_block,
+    ///         end_block,
+    ///     )
+    ///     .await?;
+    /// ```
     pub async fn calculate_transfer_amount_between_blocks(
         &self,
         chain_id: u64,
@@ -129,6 +192,16 @@ impl AmountCalculator {
         let contract_address = token;
 
         let transfer_topic = B256::from_slice(&*keccak256(TRANSFER_EVENT_SIGNATURE.as_bytes()));
+
+        // Get rate limit configuration for this chain
+        let chain = NamedChain::try_from(chain_id).unwrap_or_else(|_| {
+            warn!(
+                chain_id = chain_id,
+                "Unknown chain ID, using default rate limiting"
+            );
+            NamedChain::Mainnet // Fallback for unknown chains
+        });
+        let rate_limit = self.config.get_rate_limit_delay(chain);
 
         let mut current_block = from_block;
 
@@ -167,9 +240,16 @@ impl AmountCalculator {
 
             current_block = end_chunk_block + 1;
 
-            // Add a small delay to avoid hitting rate limits on Sonic Alchemy endpoint
-            if chain_id.eq(&146) && current_block <= to_block {
-                sleep(Duration::from_millis(250)).await;
+            // Apply rate limiting if configured (don't sleep after last chunk)
+            if let Some(delay) = rate_limit {
+                if current_block <= to_block {
+                    trace!(
+                        chain_id = chain_id,
+                        delay_ms = delay.as_millis(),
+                        "Applying rate limit delay between chunks"
+                    );
+                    sleep(delay).await;
+                }
             }
         }
 
@@ -188,7 +268,9 @@ impl AmountCalculator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SemioscanConfigBuilder;
     use alloy_primitives::address;
+    use std::time::Duration;
 
     #[test]
     fn test_amount_result_initialization() {
@@ -207,6 +289,58 @@ mod tests {
         assert_eq!(result.to, to);
         assert_eq!(result.token, token);
         assert_eq!(result.amount, U256::ZERO);
+    }
+
+    #[test]
+    fn test_rate_limit_applied_for_sonic() {
+        let config = SemioscanConfig::default();
+
+        // Sonic should have 250ms delay by default
+        let sonic_delay = config.get_rate_limit_delay(NamedChain::Sonic);
+        assert_eq!(sonic_delay, Some(Duration::from_millis(250)));
+    }
+
+    #[test]
+    fn test_rate_limit_applied_for_base() {
+        let config = SemioscanConfig::default();
+
+        // Base should have 250ms delay by default
+        let base_delay = config.get_rate_limit_delay(NamedChain::Base);
+        assert_eq!(base_delay, Some(Duration::from_millis(250)));
+    }
+
+    #[test]
+    fn test_no_rate_limit_for_arbitrum_by_default() {
+        let config = SemioscanConfig::default();
+
+        // Arbitrum should have no delay by default
+        let arb_delay = config.get_rate_limit_delay(NamedChain::Arbitrum);
+        assert_eq!(arb_delay, None);
+    }
+
+    #[test]
+    fn test_custom_rate_limit_overrides_default() {
+        let config = SemioscanConfigBuilder::with_defaults()
+            .chain_rate_limit(NamedChain::Arbitrum, Duration::from_millis(100))
+            .build();
+
+        // Custom delay should override default (no delay)
+        let arb_delay = config.get_rate_limit_delay(NamedChain::Arbitrum);
+        assert_eq!(arb_delay, Some(Duration::from_millis(100)));
+
+        // Base should still have default delay
+        let base_delay = config.get_rate_limit_delay(NamedChain::Base);
+        assert_eq!(base_delay, Some(Duration::from_millis(250)));
+    }
+
+    #[test]
+    fn test_minimal_config_has_no_delays() {
+        let config = SemioscanConfig::minimal();
+
+        // Premium RPC: no delays for any chain
+        assert_eq!(config.get_rate_limit_delay(NamedChain::Sonic), None);
+        assert_eq!(config.get_rate_limit_delay(NamedChain::Base), None);
+        assert_eq!(config.get_rate_limit_delay(NamedChain::Arbitrum), None);
     }
 
     #[test]
