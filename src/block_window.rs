@@ -45,6 +45,21 @@ impl UnixTimestamp {
     pub fn from_datetime(dt: DateTime<Utc>) -> Self {
         Self(dt.timestamp())
     }
+
+    /// Creates a UnixTimestamp from a u64 value
+    pub fn from_u64(ts: u64) -> Self {
+        Self(ts as i64)
+    }
+
+    /// Converts to u64 for use with blockchain timestamps
+    pub fn as_u64(&self) -> u64 {
+        self.0 as u64
+    }
+
+    /// Subtracts one second from the timestamp
+    pub fn pred(&self) -> Self {
+        Self(self.0 - 1)
+    }
 }
 
 impl std::fmt::Display for UnixTimestamp {
@@ -191,7 +206,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
     }
 
     /// Fetches the timestamp of a specific block
-    async fn get_block_timestamp(&self, block_number: BlockNumber) -> Result<u64> {
+    async fn get_block_timestamp(&self, block_number: BlockNumber) -> Result<UnixTimestamp> {
         let span = spans::get_block_timestamp(block_number);
         let _guard = span.enter();
 
@@ -202,7 +217,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
             .context("Failed to fetch block")?
             .context("Block not found")?;
 
-        Ok(block.header.timestamp)
+        Ok(UnixTimestamp::from_u64(block.header.timestamp))
     }
 
     /// Binary search to find the first block at or after the target timestamp
@@ -210,10 +225,10 @@ impl<P: Provider> BlockWindowCalculator<P> {
     /// Returns the block number of the first block with timestamp >= target_ts
     async fn find_first_block_at_or_after(
         &self,
-        target_ts: u64,
+        target_ts: UnixTimestamp,
         latest_block: BlockNumber,
     ) -> Result<BlockNumber> {
-        let span = spans::find_first_block_at_or_after(target_ts, latest_block);
+        let span = spans::find_first_block_at_or_after(target_ts.as_u64(), latest_block);
         let _guard = span.enter();
 
         let mut lo = 0u64;
@@ -235,7 +250,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
             }
         }
 
-        debug!(target_ts, result, "Found first block at or after timestamp");
+        debug!(target_ts = %target_ts, result, "Found first block at or after timestamp");
         Ok(result)
     }
 
@@ -244,10 +259,10 @@ impl<P: Provider> BlockWindowCalculator<P> {
     /// Returns the block number of the last block with timestamp <= target_ts
     async fn find_last_block_at_or_before(
         &self,
-        target_ts: u64,
+        target_ts: UnixTimestamp,
         latest_block: BlockNumber,
     ) -> Result<BlockNumber> {
-        let span = spans::find_last_block_at_or_before(target_ts, latest_block);
+        let span = spans::find_last_block_at_or_before(target_ts.as_u64(), latest_block);
         let _guard = span.enter();
 
         let mut lo = 0u64;
@@ -269,7 +284,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
             }
         }
 
-        debug!(target_ts, result, "Found last block at or before timestamp");
+        debug!(target_ts = %target_ts, result, "Found last block at or before timestamp");
         Ok(result)
     }
 
@@ -334,11 +349,11 @@ impl<P: Provider> BlockWindowCalculator<P> {
 
         // Binary search for block boundaries
         let start_block = self
-            .find_first_block_at_or_after(start_ts.0 as u64, latest_block)
+            .find_first_block_at_or_after(start_ts, latest_block)
             .await?;
 
         let end_block = self
-            .find_last_block_at_or_before((end_ts_exclusive.0 - 1) as u64, latest_block)
+            .find_last_block_at_or_before(end_ts_exclusive.pred(), latest_block)
             .await?;
 
         let window = DailyBlockWindow::new(start_block, end_block, start_ts, end_ts_exclusive)?;
