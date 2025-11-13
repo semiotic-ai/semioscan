@@ -124,7 +124,7 @@ impl DailyBlockWindow {
 }
 
 /// Key for caching daily block windows
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct CacheKey {
     chain: NamedChain,
     date: NaiveDate,
@@ -148,8 +148,8 @@ impl std::fmt::Display for CacheKey {
 /// the blockchain when calculating block ranges for the same days.
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct BlockWindowCache {
-    /// Maps "{chain_id}:{yyyy-mm-dd}" to DailyBlockWindow
-    windows: HashMap<String, DailyBlockWindow>,
+    /// Maps CacheKey (chain + date) to DailyBlockWindow
+    windows: HashMap<CacheKey, DailyBlockWindow>,
 }
 
 impl BlockWindowCache {
@@ -182,11 +182,11 @@ impl BlockWindowCache {
     }
 
     fn get(&self, key: &CacheKey) -> Option<&DailyBlockWindow> {
-        self.windows.get(&key.to_string())
+        self.windows.get(key)
     }
 
     fn insert(&mut self, key: CacheKey, window: DailyBlockWindow) {
-        self.windows.insert(key.to_string(), window);
+        self.windows.insert(key, window);
     }
 }
 
