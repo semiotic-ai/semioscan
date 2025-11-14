@@ -89,28 +89,28 @@ impl L1DataFee {
 
     /// Calculate percentage of total cost that is L1 data fee
     ///
-    /// Returns a value between 0.0 and 1.0 (e.g., 0.75 = 75% of cost is L1 fee)
+    /// Returns a Percentage value (0.0 = 0%, 1.0 = 100%)
     ///
     /// # Examples
     ///
     /// ```
     /// use alloy_primitives::U256;
-    /// use semioscan::L1DataFee;
+    /// use semioscan::{L1DataFee, Percentage};
     ///
     /// let l1_fee = L1DataFee::new(U256::from(75_000u64));
     /// let total_cost = U256::from(100_000u64);
     /// let percentage = l1_fee.percentage_of_total(total_cost);
-    /// assert_eq!(percentage, 0.75); // 75%
+    /// assert_eq!(percentage, Percentage::new(0.75)); // 75%
     /// ```
-    pub fn percentage_of_total(&self, total_cost: U256) -> f64 {
+    pub fn percentage_of_total(&self, total_cost: U256) -> Percentage {
         if total_cost.is_zero() {
-            return 0.0;
+            return Percentage::ZERO;
         }
 
         let l1_f64 = self.0.to_string().parse::<f64>().unwrap_or(0.0);
         let total_f64 = total_cost.to_string().parse::<f64>().unwrap_or(1.0);
 
-        l1_f64 / total_f64
+        Percentage::new(l1_f64 / total_f64)
     }
 
     /// Check if L1 data fee is zero
@@ -158,6 +158,116 @@ impl std::fmt::Display for L1DataFee {
     }
 }
 
+/// Represents a percentage value in the range [0.0, 1.0]
+///
+/// This type provides type safety for percentage calculations, preventing confusion
+/// with other f64 values like USD amounts or raw token amounts. The value is stored
+/// as a fraction (0.0 = 0%, 1.0 = 100%).
+///
+/// # Examples
+///
+/// ```
+/// use semioscan::Percentage;
+///
+/// let percent = Percentage::new(0.75);
+/// assert_eq!(percent.format(), "75.00%");
+/// assert_eq!(percent.as_basis_points(), 7500);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Percentage(f64);
+
+impl Percentage {
+    /// Zero percent (0%)
+    pub const ZERO: Self = Self(0.0);
+
+    /// One hundred percent (100%)
+    pub const ONE_HUNDRED: Self = Self(1.0);
+
+    /// Create a percentage, clamping to [0.0, 1.0]
+    ///
+    /// Values outside the range are automatically clamped.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::Percentage;
+    ///
+    /// let valid = Percentage::new(0.5);
+    /// assert_eq!(valid.as_f64(), 0.5);
+    ///
+    /// let clamped = Percentage::new(1.5); // > 1.0
+    /// assert_eq!(clamped.as_f64(), 1.0);
+    /// ```
+    pub fn new(value: f64) -> Self {
+        Self(value.clamp(0.0, 1.0))
+    }
+
+    /// Create a percentage from basis points (10000 = 100%)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::Percentage;
+    ///
+    /// let percent = Percentage::from_basis_points(7500);
+    /// assert_eq!(percent.as_f64(), 0.75);
+    /// ```
+    pub fn from_basis_points(bps: u64) -> Self {
+        Self::new(bps as f64 / 10000.0)
+    }
+
+    /// Get the inner f64 value (0.0 to 1.0)
+    pub const fn as_f64(&self) -> f64 {
+        self.0
+    }
+
+    /// Convert to basis points (10000 = 100%)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::Percentage;
+    ///
+    /// let percent = Percentage::new(0.75);
+    /// assert_eq!(percent.as_basis_points(), 7500);
+    /// ```
+    pub fn as_basis_points(&self) -> u64 {
+        (self.0 * 10000.0).round() as u64
+    }
+
+    /// Format as percentage string (e.g., "25.50%")
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::Percentage;
+    ///
+    /// let percent = Percentage::new(0.7534);
+    /// assert_eq!(percent.format(), "75.34%");
+    /// ```
+    pub fn format(&self) -> String {
+        format!("{:.2}%", self.0 * 100.0)
+    }
+
+    /// Check if percentage is zero
+    pub fn is_zero(&self) -> bool {
+        self.0.abs() < f64::EPSILON
+    }
+}
+
+impl From<f64> for Percentage {
+    fn from(value: f64) -> Self {
+        Self::new(value)
+    }
+}
+
+impl std::fmt::Display for Percentage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:.2}%", self.0 * 100.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -187,14 +297,14 @@ mod tests {
         let l1_fee = L1DataFee::new(U256::from(75_000u64));
         let total_cost = U256::from(100_000u64);
         let percentage = l1_fee.percentage_of_total(total_cost);
-        assert!((percentage - 0.75).abs() < 0.0001);
+        assert!((percentage.as_f64() - 0.75).abs() < 0.0001);
     }
 
     #[test]
     fn test_percentage_of_total_zero_total() {
         let l1_fee = L1DataFee::new(U256::from(1_000u64));
         let percentage = l1_fee.percentage_of_total(U256::ZERO);
-        assert_eq!(percentage, 0.0);
+        assert_eq!(percentage, Percentage::ZERO);
     }
 
     #[test]
@@ -202,7 +312,7 @@ mod tests {
         let l1_fee = L1DataFee::ZERO;
         let total_cost = U256::from(100_000u64);
         let percentage = l1_fee.percentage_of_total(total_cost);
-        assert_eq!(percentage, 0.0);
+        assert_eq!(percentage, Percentage::ZERO);
     }
 
     #[test]
@@ -302,7 +412,7 @@ mod tests {
 
         // L1 fee is ~83% of total (common on L2s)
         let percentage = l1_fee.percentage_of_total(total);
-        assert!((percentage - 0.833).abs() < 0.01);
+        assert!((percentage.as_f64() - 0.833).abs() < 0.01);
     }
 
     #[test]
@@ -313,6 +423,6 @@ mod tests {
         let total = l1_fee.total_with_l2_cost(gas_cost);
 
         assert_eq!(total, gas_cost);
-        assert_eq!(l1_fee.percentage_of_total(total), 0.0);
+        assert_eq!(l1_fee.percentage_of_total(total), Percentage::ZERO);
     }
 }

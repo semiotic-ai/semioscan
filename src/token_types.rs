@@ -218,11 +218,11 @@ impl std::fmt::Display for TokenDecimals {
 /// # Examples
 ///
 /// ```
-/// use semioscan::NormalizedAmount;
+/// use semioscan::{NormalizedAmount, UsdValue};
 ///
 /// let amount = NormalizedAmount::new(1.5);
 /// let usd_value = amount.to_usd(2000.0); // 1.5 ETH × $2000/ETH
-/// assert_eq!(usd_value, 3000.0);
+/// assert_eq!(usd_value, UsdValue::new(3000.0));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -247,15 +247,15 @@ impl NormalizedAmount {
     /// # Examples
     ///
     /// ```
-    /// use semioscan::NormalizedAmount;
+    /// use semioscan::{NormalizedAmount, UsdValue};
     ///
     /// let amount = NormalizedAmount::new(2.5);
     /// let price_per_token = 1800.0; // $1800 per token
     /// let usd_value = amount.to_usd(price_per_token);
-    /// assert_eq!(usd_value, 4500.0); // 2.5 × $1800
+    /// assert_eq!(usd_value, UsdValue::new(4500.0)); // 2.5 × $1800
     /// ```
-    pub fn to_usd(&self, price_per_token: f64) -> f64 {
-        self.0 * price_per_token
+    pub fn to_usd(&self, price_per_token: f64) -> UsdValue {
+        UsdValue::new(self.0 * price_per_token)
     }
 
     /// Check if amount is effectively zero (within epsilon)
@@ -315,6 +315,101 @@ impl std::ops::Div<f64> for NormalizedAmount {
 impl std::fmt::Display for NormalizedAmount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:.6}", self.0) // 6 decimal places for display
+    }
+}
+
+/// Represents a USD-denominated value
+///
+/// This type provides type safety for financial calculations involving USD values,
+/// preventing confusion with other f64 values like percentages or raw token amounts.
+///
+/// # Examples
+///
+/// ```
+/// use semioscan::UsdValue;
+///
+/// let price = UsdValue::new(1800.50);
+/// let formatted = price.format(2);
+/// assert_eq!(formatted, "$1800.50");
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct UsdValue(f64);
+
+impl UsdValue {
+    /// Zero USD value
+    pub const ZERO: Self = Self(0.0);
+
+    /// Create a new USD value
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::UsdValue;
+    ///
+    /// let value = UsdValue::new(100.50);
+    /// assert_eq!(value.as_f64(), 100.50);
+    /// ```
+    pub const fn new(value: f64) -> Self {
+        Self(value)
+    }
+
+    /// Get the inner f64 value
+    pub const fn as_f64(&self) -> f64 {
+        self.0
+    }
+
+    /// Check if the value is zero
+    pub fn is_zero(&self) -> bool {
+        self.0.abs() < f64::EPSILON
+    }
+
+    /// Format as USD string with specified precision
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::UsdValue;
+    ///
+    /// let value = UsdValue::new(1234.567);
+    /// assert_eq!(value.format(2), "$1234.57");
+    /// assert_eq!(value.format(0), "$1235");
+    /// ```
+    pub fn format(&self, precision: usize) -> String {
+        format!("${:.precision$}", self.0, precision = precision)
+    }
+
+    /// Get absolute value
+    pub fn abs(&self) -> Self {
+        Self(self.0.abs())
+    }
+}
+
+impl From<f64> for UsdValue {
+    fn from(value: f64) -> Self {
+        Self(value)
+    }
+}
+
+impl Add for UsdValue {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl std::ops::Sub for UsdValue {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
+impl std::fmt::Display for UsdValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "${:.2}", self.0)
     }
 }
 
@@ -420,7 +515,7 @@ mod tests {
         let amount = NormalizedAmount::new(2.5);
         let price = 1800.0; // $1800 per token
         let usd = amount.to_usd(price);
-        assert_eq!(usd, 4500.0);
+        assert_eq!(usd, UsdValue::new(4500.0));
     }
 
     #[test]
@@ -506,6 +601,6 @@ mod tests {
         assert_eq!(normalized.as_f64(), 250.0);
 
         let usd_value = normalized.to_usd(price_per_usdc);
-        assert_eq!(usd_value, 250.0);
+        assert_eq!(usd_value, UsdValue::new(250.0));
     }
 }
