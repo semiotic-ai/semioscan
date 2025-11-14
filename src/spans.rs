@@ -141,3 +141,57 @@ pub(crate) fn get_daily_window(chain: NamedChain, date: NaiveDate) -> Span {
         date = %date,
     )
 }
+
+/// Create span for processing logs in a block range for gas calculation.
+///
+/// Parent: calculate_gas_cost_with_adapter span
+/// Children: RPC calls for fetching logs and processing individual log entries
+#[inline]
+pub(crate) fn process_logs_in_range(
+    event_type: crate::EventType,
+    chain: NamedChain,
+    topic1: Address,
+    topic2: Address,
+    token: Address,
+    from_block: BlockNumber,
+    to_block: BlockNumber,
+) -> Span {
+    tracing::debug_span!(
+        "semioscan.process_logs_in_range",
+        event_type = event_type.name(),
+        chain_id = %chain,
+        topic1 = %topic1,
+        topic2 = %topic2,
+        token = %token,
+        from_block = from_block,
+        to_block = to_block,
+        block_count = to_block.saturating_sub(from_block) + 1,
+    )
+}
+
+/// Create span for gas cost calculation with caching and gap detection.
+///
+/// This is the main entry point for gas cost calculations.
+///
+/// Parent: None (root span for this operation)
+/// Children: process_logs_in_range spans (one per gap)
+#[inline]
+pub(crate) fn calculate_gas_cost_with_adapter(
+    event_type: crate::EventType,
+    chain: NamedChain,
+    topic1: Address,
+    topic2: Address,
+    start_block: BlockNumber,
+    end_block: BlockNumber,
+) -> Span {
+    tracing::info_span!(
+        "semioscan.calculate_gas_cost_with_adapter",
+        event_type = event_type.name(),
+        chain_id = %chain,
+        topic1 = %topic1,
+        topic2 = %topic2,
+        start_block = start_block,
+        end_block = end_block,
+        block_count = end_block.saturating_sub(start_block) + 1,
+    )
+}

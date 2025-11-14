@@ -21,6 +21,7 @@ pub use block_window::*;
 pub use combined_retriever::*;
 pub use config::*;
 pub use event::*;
+pub use gas::EventType; // Re-export for public API
 pub use gas_cache::*;
 pub use gas_calculator::*;
 #[cfg(feature = "odos-example")]
