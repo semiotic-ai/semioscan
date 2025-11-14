@@ -1,4 +1,5 @@
 mod adapter;
+mod block_range_cache;
 mod block_window;
 mod combined_retriever;
 mod config;

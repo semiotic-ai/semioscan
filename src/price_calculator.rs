@@ -1,4 +1,5 @@
-use alloy_primitives::{Address, U256};
+use alloy_chains::NamedChain;
+use alloy_primitives::{Address, BlockNumber, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use erc20_rs::Erc20;
@@ -8,7 +9,7 @@ use std::sync::Mutex;
 use tracing::{error, info};
 
 use crate::price::{PriceSource, PriceSourceError};
-use crate::PriceCache;
+use crate::{PriceCache, SemioscanConfig};
 
 // Price calculation result
 #[derive(Default, Debug, Clone, Serialize)]
@@ -68,10 +69,10 @@ pub struct PriceCalculator<P> {
     provider: P,
     price_source: Box<dyn PriceSource>,
     usdc_address: Address,
-    chain: alloy_chains::NamedChain,
+    chain: NamedChain,
     token_decimals_cache: HashMap<Address, u8>,
     price_cache: Mutex<PriceCache>,
-    config: crate::SemioscanConfig,
+    config: SemioscanConfig,
 }
 
 impl<P: Provider + Clone> PriceCalculator<P> {
@@ -95,7 +96,7 @@ impl<P: Provider + Clone> PriceCalculator<P> {
     /// ```
     pub fn new(
         provider: P,
-        chain: alloy_chains::NamedChain,
+        chain: NamedChain,
         usdc_address: Address,
         price_source: Box<dyn PriceSource>,
     ) -> Self {
@@ -119,7 +120,7 @@ impl<P: Provider + Clone> PriceCalculator<P> {
     /// * `config` - Configuration for RPC behavior (block ranges, rate limiting)
     pub fn with_config(
         provider: P,
-        chain: alloy_chains::NamedChain,
+        chain: NamedChain,
         usdc_address: Address,
         price_source: Box<dyn PriceSource>,
         config: crate::SemioscanConfig,
@@ -192,8 +193,8 @@ impl<P: Provider + Clone> PriceCalculator<P> {
     pub async fn calculate_price_between_blocks(
         &mut self,
         token_address: Address,
-        start_block: u64,
-        end_block: u64,
+        start_block: BlockNumber,
+        end_block: BlockNumber,
     ) -> anyhow::Result<TokenPriceResult> {
         info!(
             token_address = ?token_address,

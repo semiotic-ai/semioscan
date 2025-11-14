@@ -594,8 +594,8 @@ where
         from_address: Address,
         to_address: Address,
         token_address: Address,
-        from_block: u64,
-        to_block: u64,
+        from_block: BlockNumber,
+        to_block: BlockNumber,
         adapter: &A,
     ) -> anyhow::Result<CombinedDataResult> {
         let span = spans::calculate_combined_data_with_adapter(
@@ -639,8 +639,8 @@ where
         from_address: Address,
         to_address: Address,
         token_address: Address,
-        from_block: u64,
-        to_block: u64,
+        from_block: BlockNumber,
+        to_block: BlockNumber,
     ) -> anyhow::Result<CombinedDataResult> {
         let adapter = EthereumReceiptAdapter;
         self.calculate_combined_data_with_adapter(
@@ -669,8 +669,8 @@ where
         from_address: Address,
         to_address: Address,
         token_address: Address,
-        from_block: u64,
-        to_block: u64,
+        from_block: BlockNumber,
+        to_block: BlockNumber,
     ) -> anyhow::Result<CombinedDataResult> {
         let adapter = OptimismReceiptAdapter;
         self.calculate_combined_data_with_adapter(

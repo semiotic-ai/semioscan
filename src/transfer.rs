@@ -29,7 +29,7 @@
 //! ```
 
 use alloy_chains::NamedChain;
-use alloy_primitives::{keccak256, Address, B256, U256};
+use alloy_primitives::{keccak256, Address, BlockNumber, B256, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
@@ -56,7 +56,7 @@ use crate::{SemioscanConfig, Transfer, TRANSFER_EVENT_SIGNATURE};
 /// ```
 pub struct AmountResult {
     /// Chain ID where the transfers occurred
-    pub chain_id: u64,
+    pub chain: NamedChain,
     /// Address that received the tokens
     pub to: Address,
     /// Token contract address
@@ -164,7 +164,7 @@ impl<P: Provider> AmountCalculator<P> {
     /// let calculator = AmountCalculator::new(provider, config);
     /// let result = calculator
     ///     .calculate_transfer_amount_between_blocks(
-    ///         42161, // Arbitrum
+    ///         NamedChain::Arbitrum,
     ///         from_addr,
     ///         to_addr,
     ///         token_addr,
@@ -175,15 +175,15 @@ impl<P: Provider> AmountCalculator<P> {
     /// ```
     pub async fn calculate_transfer_amount_between_blocks(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from: Address,
         to: Address,
         token: Address,
-        from_block: u64,
-        to_block: u64,
+        from_block: BlockNumber,
+        to_block: BlockNumber,
     ) -> anyhow::Result<AmountResult> {
         let mut result = AmountResult {
-            chain_id,
+            chain,
             to,
             token,
             amount: U256::ZERO,
@@ -194,13 +194,6 @@ impl<P: Provider> AmountCalculator<P> {
         let transfer_topic = B256::from_slice(&*keccak256(TRANSFER_EVENT_SIGNATURE.as_bytes()));
 
         // Get rate limit configuration for this chain
-        let chain = NamedChain::try_from(chain_id).unwrap_or_else(|_| {
-            warn!(
-                chain_id = chain_id,
-                "Unknown chain ID, using default rate limiting"
-            );
-            NamedChain::Mainnet // Fallback for unknown chains
-        });
         let rate_limit = self.config.get_rate_limit_delay(chain);
 
         let mut current_block = from_block;
@@ -222,7 +215,7 @@ impl<P: Provider> AmountCalculator<P> {
                 match Transfer::decode_log(&log.into()) {
                     Ok(event) => {
                         info!(
-                            chain_id = chain_id,
+                            chain = ?chain,
                             to = ?to,
                             token = ?token,
                             amount = ?event.value,
@@ -244,7 +237,7 @@ impl<P: Provider> AmountCalculator<P> {
             if let Some(delay) = rate_limit {
                 if current_block <= to_block {
                     trace!(
-                        chain_id = chain_id,
+                        chain = ?chain,
                         delay_ms = delay.as_millis(),
                         "Applying rate limit delay between chunks"
                     );
@@ -254,7 +247,7 @@ impl<P: Provider> AmountCalculator<P> {
         }
 
         info!(
-            chain_id = chain_id,
+            chain = ?chain,
             to = ?to,
             token = ?token,
             total_amount = ?result.amount,
@@ -274,18 +267,18 @@ mod tests {
 
     #[test]
     fn test_amount_result_initialization() {
-        let chain_id = 42161; // Arbitrum
+        let chain = NamedChain::Arbitrum;
         let to = address!("1111111111111111111111111111111111111111");
         let token = address!("2222222222222222222222222222222222222222");
 
         let result = AmountResult {
-            chain_id,
+            chain,
             to,
             token,
             amount: U256::ZERO,
         };
 
-        assert_eq!(result.chain_id, chain_id);
+        assert_eq!(result.chain, chain);
         assert_eq!(result.to, to);
         assert_eq!(result.token, token);
         assert_eq!(result.amount, U256::ZERO);
@@ -345,12 +338,12 @@ mod tests {
 
     #[test]
     fn test_amount_accumulation() {
-        let chain_id = 1; // Ethereum
+        let chain = NamedChain::Mainnet;
         let to = address!("1111111111111111111111111111111111111111");
         let token = address!("2222222222222222222222222222222222222222");
 
         let mut result = AmountResult {
-            chain_id,
+            chain,
             to,
             token,
             amount: U256::ZERO,
@@ -365,12 +358,12 @@ mod tests {
 
     #[test]
     fn test_amount_overflow_protection() {
-        let chain_id = 1;
+        let chain = NamedChain::Mainnet;
         let to = address!("1111111111111111111111111111111111111111");
         let token = address!("2222222222222222222222222222222222222222");
 
         let mut result = AmountResult {
-            chain_id,
+            chain,
             to,
             token,
             amount: U256::MAX - U256::from(100u64),
@@ -384,12 +377,12 @@ mod tests {
 
     #[test]
     fn test_large_token_amounts() {
-        let chain_id = 1;
+        let chain = NamedChain::Mainnet;
         let to = address!("1111111111111111111111111111111111111111");
         let token = address!("2222222222222222222222222222222222222222");
 
         let mut result = AmountResult {
-            chain_id,
+            chain,
             to,
             token,
             amount: U256::ZERO,

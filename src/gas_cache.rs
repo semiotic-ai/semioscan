@@ -15,6 +15,7 @@
 //!
 //! ```rust
 //! use semioscan::{GasCache, GasCostResult};
+//! use alloy_chains::NamedChain;
 //! use alloy_primitives::{Address, U256};
 //!
 //! let mut cache = GasCache::default();
@@ -22,7 +23,7 @@
 //! let to = Address::ZERO;
 //!
 //! // Insert a result for blocks 100-200
-//! let mut result = GasCostResult::new(1, from, to);
+//! let mut result = GasCostResult::new(NamedChain::Mainnet, from, to);
 //! result.total_gas_cost = U256::from(1_000_000u64);
 //! cache.insert(from, to, 100, 200, result);
 //!
@@ -35,6 +36,7 @@
 //!
 //! ```rust
 //! use semioscan::{GasCache, GasCostResult};
+//! use alloy_chains::NamedChain;
 //! use alloy_primitives::{Address, U256};
 //!
 //! let mut cache = GasCache::default();
@@ -42,11 +44,11 @@
 //! let to = Address::ZERO;
 //!
 //! // Cache blocks 100-200 and 300-400
-//! cache.insert(from, to, 100, 200, GasCostResult::new(1, from, to));
-//! cache.insert(from, to, 300, 400, GasCostResult::new(1, from, to));
+//! cache.insert(from, to, 100, 200, GasCostResult::new(NamedChain::Mainnet, from, to));
+//! cache.insert(from, to, 300, 400, GasCostResult::new(NamedChain::Mainnet, from, to));
 //!
 //! // Find gaps in range 50-500
-//! let (cached, gaps) = cache.calculate_gaps(1, from, to, 50, 500);
+//! let (cached, gaps) = cache.calculate_gaps(NamedChain::Mainnet, from, to, 50, 500);
 //!
 //! // Gaps: [50, 99], [201, 299], [401, 500]
 //! assert_eq!(gaps.len(), 3);
@@ -55,14 +57,19 @@
 //! assert_eq!(gaps[2], (401, 500));
 //! ```
 
-use std::cmp::{max, min};
-use std::collections::HashMap;
+use alloy_chains::NamedChain;
+use alloy_primitives::{Address, BlockNumber};
 
-use alloy_primitives::Address;
-
+use crate::block_range_cache::{BlockRangeCache, Mergeable};
 use crate::GasCostResult;
 
-type CacheKey = (Address, Address, u64, u64); // (from, to, start_block, end_block)
+// Implement Mergeable for GasCostResult
+impl Mergeable for GasCostResult {
+    fn merge(&mut self, other: &Self) {
+        self.total_gas_cost = self.total_gas_cost.saturating_add(other.total_gas_cost);
+        self.transaction_count += other.transaction_count;
+    }
+}
 
 /// In-memory cache for gas cost calculation results
 ///
@@ -80,6 +87,7 @@ type CacheKey = (Address, Address, u64, u64); // (from, to, start_block, end_blo
 ///
 /// ```rust
 /// use semioscan::{GasCache, GasCostResult};
+/// use alloy_chains::NamedChain;
 /// use alloy_primitives::Address;
 ///
 /// let mut cache = GasCache::default();
@@ -87,15 +95,15 @@ type CacheKey = (Address, Address, u64, u64); // (from, to, start_block, end_blo
 /// let to = Address::ZERO;
 ///
 /// // Insert results for different block ranges
-/// cache.insert(from, to, 100, 200, GasCostResult::new(1, from, to));
-/// cache.insert(from, to, 150, 250, GasCostResult::new(1, from, to));
+/// cache.insert(from, to, 100, 200, GasCostResult::new(NamedChain::Mainnet, from, to));
+/// cache.insert(from, to, 150, 250, GasCostResult::new(NamedChain::Mainnet, from, to));
 ///
 /// // Overlapping ranges are merged automatically
 /// assert_eq!(cache.len(), 1);
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct GasCache {
-    cache: HashMap<CacheKey, GasCostResult>,
+    inner: BlockRangeCache<(Address, Address), GasCostResult>,
 }
 
 impl GasCache {
@@ -121,6 +129,7 @@ impl GasCache {
     ///
     /// ```rust
     /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_chains::NamedChain;
     /// use alloy_primitives::Address;
     ///
     /// let mut cache = GasCache::default();
@@ -128,7 +137,7 @@ impl GasCache {
     /// let to = Address::ZERO;
     ///
     /// // Cache blocks 100-300
-    /// cache.insert(from, to, 100, 300, GasCostResult::new(1, from, to));
+    /// cache.insert(from, to, 100, 300, GasCostResult::new(NamedChain::Mainnet, from, to));
     ///
     /// // Query for subset [150, 250] - returns cached data
     /// assert!(cache.get(from, to, 150, 250).is_some());
@@ -140,51 +149,10 @@ impl GasCache {
         &self,
         from: Address,
         to: Address,
-        start_block: u64,
-        end_block: u64,
+        start_block: BlockNumber,
+        end_block: BlockNumber,
     ) -> Option<GasCostResult> {
-        // First check for exact match
-        if let Some(result) = self.cache.get(&(from, to, start_block, end_block)) {
-            return Some(result.clone());
-        }
-
-        // Check for cached results that fully cover our requested range
-        for ((cached_from, cached_to, cached_start, cached_end), result) in &self.cache {
-            if *cached_from == from
-                && *cached_to == to
-                && *cached_start <= start_block
-                && *cached_end >= end_block
-            {
-                return Some(result.clone());
-            }
-        }
-
-        None
-    }
-
-    /// Find all cached results that overlap with the requested range
-    fn find_overlapping(
-        &self,
-        from: Address,
-        to: Address,
-        start_block: u64,
-        end_block: u64,
-    ) -> Vec<(CacheKey, &GasCostResult)> {
-        let mut overlapping = Vec::new();
-
-        for (key @ (cached_from, cached_to, cached_start, cached_end), result) in &self.cache {
-            if *cached_from == from
-                && *cached_to == to
-                && !(*cached_end < start_block || *cached_start > end_block)
-            {
-                overlapping.push((*key, result));
-            }
-        }
-
-        // Sort by start block to make merging easier
-        overlapping.sort_by_key(|((_, _, start, _), _)| *start);
-
-        overlapping
+        self.inner.get(&(from, to), start_block, end_block)
     }
 
     /// Insert a result and automatically merge with overlapping entries
@@ -207,6 +175,7 @@ impl GasCache {
     ///
     /// ```rust
     /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_chains::NamedChain;
     /// use alloy_primitives::{Address, U256};
     ///
     /// let mut cache = GasCache::default();
@@ -214,12 +183,12 @@ impl GasCache {
     /// let to = Address::ZERO;
     ///
     /// // Insert blocks 100-200 with 5 transactions
-    /// let mut result1 = GasCostResult::new(1, from, to);
+    /// let mut result1 = GasCostResult::new(NamedChain::Mainnet, from, to);
     /// result1.transaction_count = 5;
     /// cache.insert(from, to, 100, 200, result1);
     ///
     /// // Insert overlapping blocks 150-250 with 3 transactions
-    /// let mut result2 = GasCostResult::new(1, from, to);
+    /// let mut result2 = GasCostResult::new(NamedChain::Mainnet, from, to);
     /// result2.transaction_count = 3;
     /// cache.insert(from, to, 150, 250, result2);
     ///
@@ -232,44 +201,12 @@ impl GasCache {
         &mut self,
         from: Address,
         to: Address,
-        start_block: u64,
-        end_block: u64,
+        start_block: BlockNumber,
+        end_block: BlockNumber,
         result: GasCostResult,
     ) {
-        // Find overlapping results
-        let overlapping = self.find_overlapping(from, to, start_block, end_block);
-
-        if overlapping.is_empty() {
-            // No overlap, simple insert
-            self.cache
-                .insert((from, to, start_block, end_block), result);
-            return;
-        }
-
-        // There's overlap - we need to merge results
-        let mut merged_result = result;
-        let mut min_start = start_block;
-        let mut max_end = end_block;
-
-        // Collect keys to remove after merging
-        let keys_to_remove: Vec<CacheKey> = overlapping.iter().map(|(key, _)| *key).collect();
-
-        // Merge all overlapping results
-        for ((_, _, cached_start, cached_end), cached_result) in overlapping {
-            min_start = min(min_start, cached_start);
-            max_end = max(max_end, cached_end);
-
-            merged_result.merge(cached_result);
-        }
-
-        // Remove old entries
-        for key in keys_to_remove {
-            self.cache.remove(&key);
-        }
-
-        // Insert the merged result
-        self.cache
-            .insert((from, to, min_start, max_end), merged_result);
+        self.inner
+            .insert((from, to), start_block, end_block, result);
     }
 
     /// Calculate uncached block ranges (gaps) and return merged cached data
@@ -285,7 +222,7 @@ impl GasCache {
     ///
     /// # Arguments
     ///
-    /// * `chain_id` - Chain ID (used when creating merged result)
+    /// * `chain` - Chain (used when creating merged result)
     /// * `from` - Source address
     /// * `to` - Destination address
     /// * `start_block` - Start of requested range (inclusive)
@@ -295,12 +232,13 @@ impl GasCache {
     ///
     /// A tuple of:
     /// - `Option<GasCostResult>`: Merged data from all overlapping cached entries
-    /// - `Vec<(u64, u64)>`: Sorted list of uncached ranges (gaps) to scan
+    /// - `Vec<(BlockNumber, BlockNumber)>`: Sorted list of uncached ranges (gaps) to scan
     ///
     /// # Example
     ///
     /// ```rust
     /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_chains::NamedChain;
     /// use alloy_primitives::Address;
     ///
     /// let mut cache = GasCache::default();
@@ -308,11 +246,11 @@ impl GasCache {
     /// let to = Address::ZERO;
     ///
     /// // Cache two ranges with a gap
-    /// cache.insert(from, to, 100, 200, GasCostResult::new(1, from, to));
-    /// cache.insert(from, to, 300, 400, GasCostResult::new(1, from, to));
+    /// cache.insert(from, to, 100, 200, GasCostResult::new(NamedChain::Mainnet, from, to));
+    /// cache.insert(from, to, 300, 400, GasCostResult::new(NamedChain::Mainnet, from, to));
     ///
     /// // Request range [50, 500]
-    /// let (cached, gaps) = cache.calculate_gaps(1, from, to, 50, 500);
+    /// let (cached, gaps) = cache.calculate_gaps(NamedChain::Mainnet, from, to, 50, 500);
     ///
     /// // We get cached data and three gaps to fill
     /// assert!(cached.is_some());
@@ -324,59 +262,16 @@ impl GasCache {
     /// ```
     pub fn calculate_gaps(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from: Address,
         to: Address,
-        start_block: u64,
-        end_block: u64,
-    ) -> (Option<GasCostResult>, Vec<(u64, u64)>) {
-        // First check for exact match or fully contained range
-        if let Some(result) = self.get(from, to, start_block, end_block) {
-            return (Some(result), vec![]);
-        }
-
-        // Find overlapping results
-        let overlapping = self.find_overlapping(from, to, start_block, end_block);
-
-        if overlapping.is_empty() {
-            // No cached data, process the entire range
-            return (None, vec![(start_block, end_block)]);
-        }
-
-        // Merge the overlapping results
-        let mut merged_result = GasCostResult::new(chain_id, from, to);
-        for (_, result) in &overlapping {
-            merged_result.merge(result);
-        }
-
-        // Identify gaps by tracking covered ranges
-        let mut covered_ranges: Vec<(u64, u64)> = overlapping
-            .iter()
-            .map(|((_, _, block_start, block_end), _)| (*block_start, *block_end))
-            .collect();
-
-        // Sort by start block
-        covered_ranges.sort_by_key(|(start, _)| *start);
-
-        // Find gaps
-        let mut gaps = vec![];
-        let mut current = start_block;
-
-        for (range_start, range_end) in covered_ranges {
-            if current < range_start {
-                // Found a gap
-                gaps.push((current, range_start - 1));
-            }
-            // Move pointer past this range
-            current = max(current, range_end + 1);
-        }
-
-        // Check if there's a gap after the last range
-        if current <= end_block {
-            gaps.push((current, end_block));
-        }
-
-        (Some(merged_result), gaps)
+        start_block: BlockNumber,
+        end_block: BlockNumber,
+    ) -> (Option<GasCostResult>, Vec<(BlockNumber, BlockNumber)>) {
+        self.inner
+            .calculate_gaps(&(from, to), start_block, end_block, || {
+                GasCostResult::new(chain, from, to)
+            })
     }
 
     /// Clear all cached data for a specific address pair
@@ -388,21 +283,22 @@ impl GasCache {
     ///
     /// ```rust
     /// use semioscan::{GasCache, GasCostResult};
-    /// use alloy_primitives::address;
+    /// use alloy_chains::NamedChain;
+    /// use alloy_primitives::{Address, address};
     ///
     /// let mut cache = GasCache::default();
     /// let addr1 = address!("0x1111111111111111111111111111111111111111");
     /// let addr2 = address!("0x2222222222222222222222222222222222222222");
     ///
-    /// cache.insert(addr1, addr2, 100, 200, GasCostResult::new(1, addr1, addr2));
+    /// cache.insert(addr1, addr2, 100, 200, GasCostResult::new(NamedChain::Mainnet, addr1, addr2));
     /// assert_eq!(cache.len(), 1);
     ///
     /// cache.clear_signer_data(addr1, addr2);
     /// assert_eq!(cache.len(), 0);
     /// ```
     pub fn clear_signer_data(&mut self, from: Address, to: Address) {
-        self.cache
-            .retain(|(cached_from, cached_to, _, _), _| *cached_from != from && *cached_to != to);
+        self.inner
+            .retain(|(cached_from, cached_to), _, _| *cached_from != from || *cached_to != to);
     }
 
     /// Clear all cached entries that end before a minimum block height
@@ -418,23 +314,23 @@ impl GasCache {
     ///
     /// ```rust
     /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_chains::NamedChain;
     /// use alloy_primitives::Address;
     ///
     /// let mut cache = GasCache::default();
     /// let from = Address::ZERO;
     /// let to = Address::ZERO;
     ///
-    /// cache.insert(from, to, 100, 200, GasCostResult::new(1, from, to));
-    /// cache.insert(from, to, 500, 600, GasCostResult::new(1, from, to));
+    /// cache.insert(from, to, 100, 200, GasCostResult::new(NamedChain::Mainnet, from, to));
+    /// cache.insert(from, to, 500, 600, GasCostResult::new(NamedChain::Mainnet, from, to));
     /// assert_eq!(cache.len(), 2);
     ///
     /// // Clear entries ending before block 300
     /// cache.clear_old_blocks(300);
     /// assert_eq!(cache.len(), 1); // Only [500, 600] remains
     /// ```
-    pub fn clear_old_blocks(&mut self, min_block: u64) {
-        self.cache
-            .retain(|(_, _, _, end_block), _| *end_block >= min_block);
+    pub fn clear_old_blocks(&mut self, min_block: BlockNumber) {
+        self.inner.retain(|_, _, end_block| end_block >= min_block);
     }
 
     /// Get the total number of cached entries
@@ -443,16 +339,17 @@ impl GasCache {
     ///
     /// ```rust
     /// use semioscan::{GasCache, GasCostResult};
+    /// use alloy_chains::NamedChain;
     /// use alloy_primitives::Address;
     ///
     /// let mut cache = GasCache::default();
     /// assert_eq!(cache.len(), 0);
     ///
-    /// cache.insert(Address::ZERO, Address::ZERO, 100, 200, GasCostResult::new(1, Address::ZERO, Address::ZERO));
+    /// cache.insert(Address::ZERO, Address::ZERO, 100, 200, GasCostResult::new(NamedChain::Mainnet, Address::ZERO, Address::ZERO));
     /// assert_eq!(cache.len(), 1);
     /// ```
     pub fn len(&self) -> usize {
-        self.cache.len()
+        self.inner.len()
     }
 
     /// Check if the cache contains no entries
@@ -467,23 +364,24 @@ impl GasCache {
     /// assert!(cache.is_empty());
     /// ```
     pub fn is_empty(&self) -> bool {
-        self.cache.is_empty()
+        self.inner.is_empty()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_chains::NamedChain;
     use alloy_primitives::{Address, U256};
 
     fn create_test_result(
-        chain_id: u64,
+        chain: NamedChain,
         from: Address,
         to: Address,
         tx_count: usize,
         gas_cost: u64,
     ) -> GasCostResult {
-        let mut result = GasCostResult::new(chain_id, from, to);
+        let mut result = GasCostResult::new(chain, from, to);
         result.transaction_count = tx_count;
         result.total_gas_cost = U256::from(gas_cost);
         result
@@ -496,7 +394,7 @@ mod tests {
         let to = Address::ZERO;
 
         // Insert a range
-        let result = create_test_result(1, from, to, 5, 100_000);
+        let result = create_test_result(NamedChain::Mainnet, from, to, 5, 100_000);
         cache.insert(from, to, 100, 200, result.clone());
 
         // Exact match
@@ -525,25 +423,25 @@ mod tests {
             to,
             100,
             200,
-            create_test_result(1, from, to, 5, 100_000),
+            create_test_result(NamedChain::Mainnet, from, to, 5, 100_000),
         );
         cache.insert(
             from,
             to,
             300,
             400,
-            create_test_result(1, from, to, 3, 60_000),
+            create_test_result(NamedChain::Mainnet, from, to, 3, 60_000),
         );
         cache.insert(
             from,
             to,
             600,
             700,
-            create_test_result(1, from, to, 2, 40_000),
+            create_test_result(NamedChain::Mainnet, from, to, 2, 40_000),
         );
 
         // Calculate gaps for a range that covers all cached ranges
-        let (result, gaps) = cache.calculate_gaps(1, from, to, 50, 800);
+        let (result, gaps) = cache.calculate_gaps(NamedChain::Mainnet, from, to, 50, 800);
         assert!(result.is_some());
 
         // Expected gaps: 50-99, 201-299, 401-599, 701-800
@@ -569,14 +467,14 @@ mod tests {
             to,
             100,
             300,
-            create_test_result(1, from, to, 5, 100_000),
+            create_test_result(NamedChain::Mainnet, from, to, 5, 100_000),
         );
         cache.insert(
             from,
             to,
             250,
             400,
-            create_test_result(1, from, to, 3, 60_000),
+            create_test_result(NamedChain::Mainnet, from, to, 3, 60_000),
         );
 
         // Should have merged the two entries
@@ -596,13 +494,13 @@ mod tests {
         use proptest::prelude::*;
 
         /// Strategy for generating valid block ranges
-        fn block_range_strategy() -> impl Strategy<Value = (u64, u64)> {
+        fn block_range_strategy() -> impl Strategy<Value = (BlockNumber, BlockNumber)> {
             (0u64..100_000u64)
                 .prop_flat_map(|start| (Just(start), start..start.saturating_add(10_000)))
         }
 
         /// Strategy for generating multiple non-overlapping cached ranges
-        fn cached_ranges_strategy() -> impl Strategy<Value = Vec<(u64, u64)>> {
+        fn cached_ranges_strategy() -> impl Strategy<Value = Vec<(BlockNumber, BlockNumber)>> {
             prop::collection::vec(block_range_strategy(), 0..10).prop_map(|mut ranges| {
                 // Sort and make them non-overlapping
                 ranges.sort_by_key(|(start, _)| *start);
@@ -631,15 +529,15 @@ mod tests {
                 let mut cache = GasCache::default();
                 let from = Address::ZERO;
                 let to = Address::ZERO;
-                let chain_id = 1u64;
+                let chain = NamedChain::Mainnet;
 
                 // Insert cached ranges
                 for (start, end) in &cached_ranges {
-                    cache.insert(from, to, *start, *end, create_test_result(chain_id, from, to, 1, 1000));
+                    cache.insert(from, to, *start, *end, create_test_result(chain, from, to, 1, 1000));
                 }
 
                 // Calculate gaps
-                let (_, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+                let (_, gaps) = cache.calculate_gaps(chain, from, to, query_start, query_end);
 
                 // Verify no gap overlaps with any cached range
                 for (gap_start, gap_end) in &gaps {
@@ -668,15 +566,15 @@ mod tests {
                 let mut cache = GasCache::default();
                 let from = Address::ZERO;
                 let to = Address::ZERO;
-                let chain_id = 1u64;
+                let chain = NamedChain::Mainnet;
 
                 // Insert cached ranges
                 for (start, end) in &cached_ranges {
-                    cache.insert(from, to, *start, *end, create_test_result(chain_id, from, to, 1, 1000));
+                    cache.insert(from, to, *start, *end, create_test_result(chain, from, to, 1, 1000));
                 }
 
                 // Calculate gaps
-                let (_, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+                let (_, gaps) = cache.calculate_gaps(chain, from, to, query_start, query_end);
 
                 // Verify gaps are sorted
                 for i in 1..gaps.len() {
@@ -699,15 +597,15 @@ mod tests {
                 let mut cache = GasCache::default();
                 let from = Address::ZERO;
                 let to = Address::ZERO;
-                let chain_id = 1u64;
+                let chain = NamedChain::Mainnet;
 
                 // Insert cached ranges
                 for (start, end) in &cached_ranges {
-                    cache.insert(from, to, *start, *end, create_test_result(chain_id, from, to, 1, 1000));
+                    cache.insert(from, to, *start, *end, create_test_result(chain, from, to, 1, 1000));
                 }
 
                 // Calculate gaps
-                let (_, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+                let (_, gaps) = cache.calculate_gaps(chain, from, to, query_start, query_end);
 
                 // Build a set of all blocks that are either cached or in gaps
                 let mut covered_blocks = std::collections::HashSet::new();
@@ -748,15 +646,15 @@ mod tests {
                 let mut cache = GasCache::default();
                 let from = Address::ZERO;
                 let to = Address::ZERO;
-                let chain_id = 1u64;
+                let chain = NamedChain::Mainnet;
 
                 // Insert cached ranges
                 for (start, end) in &cached_ranges {
-                    cache.insert(from, to, *start, *end, create_test_result(chain_id, from, to, 1, 1000));
+                    cache.insert(from, to, *start, *end, create_test_result(chain, from, to, 1, 1000));
                 }
 
                 // Calculate gaps
-                let (_, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+                let (_, gaps) = cache.calculate_gaps(chain, from, to, query_start, query_end);
 
                 // Verify no gap overlaps with another gap
                 for i in 0..gaps.len() {
@@ -781,9 +679,9 @@ mod tests {
                 let cache = GasCache::default();
                 let from = Address::ZERO;
                 let to = Address::ZERO;
-                let chain_id = 1u64;
+                let chain = NamedChain::Mainnet;
 
-                let (result, gaps) = cache.calculate_gaps(chain_id, from, to, query_start, query_end);
+                let (result, gaps) = cache.calculate_gaps(chain, from, to, query_start, query_end);
 
                 prop_assert!(result.is_none(), "Empty cache should return None result");
                 prop_assert_eq!(gaps.len(), 1, "Empty cache should return exactly one gap");
@@ -798,15 +696,15 @@ mod tests {
                 let mut cache = GasCache::default();
                 let from = Address::ZERO;
                 let to = Address::ZERO;
-                let chain_id = 1u64;
+                let chain = NamedChain::Mainnet;
 
                 // Cache a range that fully covers the query (add padding)
                 let cache_start = inner_start.saturating_sub(10);
                 let cache_end = inner_end.saturating_add(10);
 
-                cache.insert(from, to, cache_start, cache_end, create_test_result(chain_id, from, to, 1, 1000));
+                cache.insert(from, to, cache_start, cache_end, create_test_result(chain, from, to, 1, 1000));
 
-                let (result, gaps) = cache.calculate_gaps(chain_id, from, to, inner_start, inner_end);
+                let (result, gaps) = cache.calculate_gaps(chain, from, to, inner_start, inner_end);
 
                 prop_assert!(result.is_some(), "Fully cached range should return result");
                 prop_assert_eq!(gaps.len(), 0, "Fully cached range should return no gaps");

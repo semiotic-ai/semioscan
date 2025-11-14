@@ -40,7 +40,7 @@
 use std::collections::BTreeSet;
 
 use alloy_chains::NamedChain;
-use alloy_primitives::{keccak256, Address, U256};
+use alloy_primitives::{keccak256, Address, BlockNumber, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
@@ -97,8 +97,8 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
     provider: &T,
     chain: NamedChain,
     router: Address,
-    start_block: u64,
-    end_block: u64,
+    start_block: BlockNumber,
+    end_block: BlockNumber,
 ) -> anyhow::Result<BTreeSet<Address>> {
     extract_transferred_to_tokens_with_config(
         provider,
@@ -163,8 +163,8 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
     provider: &T,
     chain: NamedChain,
     router: Address,
-    start_block: u64,
-    end_block: u64,
+    start_block: BlockNumber,
+    end_block: BlockNumber,
     config: &SemioscanConfig,
 ) -> anyhow::Result<BTreeSet<Address>> {
     info!(
@@ -184,7 +184,10 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
     let mut transferred_to_tokens = BTreeSet::new();
 
     while current_block <= end_block {
-        let to_block = std::cmp::min(current_block + max_block_range - 1, end_block);
+        let to_block = current_block
+            .saturating_add(max_block_range)
+            .saturating_sub(1)
+            .min(end_block);
 
         let filter = Filter::new()
             .from_block(current_block)
@@ -196,7 +199,7 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
             Ok(logs) => {
                 for log in logs {
                     let token_address = log.address();
-                    match Transfer::decode_log(&log.into()) {
+                    match Transfer::decode_log(&log.inner) {
                         Ok(event) if event.to == router => {
                             debug!(extracted_token = ?token_address);
                             transferred_to_tokens.insert(token_address);

@@ -23,13 +23,14 @@
 
 use std::sync::Arc;
 
+use alloy_chains::NamedChain;
 use alloy_network::Network;
 use alloy_primitives::{Address, U256};
 use alloy_provider::Provider;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::{GasCache, SemioscanConfig};
+use crate::{DecimalPrecision, GasCache, SemioscanConfig};
 
 /// Gas data for a single transaction
 ///
@@ -117,8 +118,8 @@ impl From<(U256, U256, U256)> for L2Gas {
 /// includes both L2 execution gas and L1 data fees.
 #[derive(Default, Debug, Clone, Serialize)]
 pub struct GasCostResult {
-    /// Chain ID where the transactions occurred
-    pub chain_id: u64,
+    /// Chain where the transactions occurred
+    pub chain: NamedChain,
     /// Address that sent the transactions
     pub from: Address,
     /// Address that received the transactions
@@ -130,11 +131,11 @@ pub struct GasCostResult {
 }
 
 impl GasCostResult {
-    pub fn new(chain_id: u64, from: Address, to: Address) -> Self {
+    pub fn new(chain: NamedChain, from: Address, to: Address) -> Self {
         Self {
             from,
             to,
-            chain_id,
+            chain,
             total_gas_cost: U256::ZERO,
             transaction_count: 0,
         }
@@ -184,28 +185,20 @@ impl GasCostResult {
     fn format_gas_cost(&self) -> String {
         let gas_cost = self.total_gas_cost;
 
-        const DECIMALS: u8 = 18; // All EVM chains use 18 decimals
-        let divisor = U256::from(10).pow(U256::from(DECIMALS));
+        let decimals = DecimalPrecision::NativeToken.decimals();
+
+        let divisor = U256::from(10).pow(U256::from(decimals));
 
         let whole = gas_cost / divisor;
         let fractional = gas_cost % divisor;
 
         // Convert fractional part to string with leading zeros
-        let fractional_str = format!("{:0width$}", fractional, width = DECIMALS as usize);
+        let fractional_str = format!("{:0width$}", fractional, width = decimals as usize);
 
         // Format with proper decimal places, ensuring we don't have trailing zeros
         format!("{}.{}", whole, fractional_str.trim_end_matches('0'))
     }
 }
-
-// Maximum number of blocks to query in a single request (legacy default, now deprecated)
-// Replaced by SemioscanConfig.max_block_range - use config.get_max_block_range(chain) instead
-#[deprecated(
-    since = "0.2.0",
-    note = "Use SemioscanConfig.get_max_block_range(chain) instead"
-)]
-#[allow(dead_code)]
-pub(crate) const MAX_BLOCK_RANGE: u64 = 500;
 
 pub struct GasCostCalculator<N: Network, P: Provider<N>> {
     pub(crate) provider: P,
@@ -259,7 +252,7 @@ mod tests {
     fn test_gas_cost_result_add_transaction_l1() {
         let from = address!("1111111111111111111111111111111111111111");
         let to = address!("2222222222222222222222222222222222222222");
-        let mut result = GasCostResult::new(1, from, to);
+        let mut result = GasCostResult::new(NamedChain::Mainnet, from, to);
 
         // Add first transaction: 21000 gas at 50 gwei = 1,050,000,000,000,000 wei
         result.add_transaction(GasForTx::L1(L1Gas {
@@ -285,7 +278,7 @@ mod tests {
     fn test_gas_cost_result_add_transaction_l2() {
         let from = address!("1111111111111111111111111111111111111111");
         let to = address!("2222222222222222222222222222222222222222");
-        let mut result = GasCostResult::new(42161, from, to); // Arbitrum
+        let mut result = GasCostResult::new(NamedChain::Arbitrum, from, to); // Arbitrum
 
         // Add L2 transaction: 150000 gas at 0.1 gwei + 0.005 ETH L1 data fee
         result.add_transaction(GasForTx::L2(L2Gas {
@@ -307,7 +300,7 @@ mod tests {
         let to = address!("2222222222222222222222222222222222222222");
 
         let mut result1 = GasCostResult {
-            chain_id: 1,
+            chain: NamedChain::Mainnet,
             from,
             to,
             total_gas_cost: U256::from(1_000_000_000_000_000u64),
@@ -315,7 +308,7 @@ mod tests {
         };
 
         let result2 = GasCostResult {
-            chain_id: 1,
+            chain: NamedChain::Mainnet,
             from,
             to,
             total_gas_cost: U256::from(500_000_000_000_000u64),
@@ -335,14 +328,14 @@ mod tests {
         let to = address!("2222222222222222222222222222222222222222");
 
         let mut result = GasCostResult {
-            chain_id: 1,
+            chain: NamedChain::Mainnet,
             from,
             to,
             total_gas_cost: U256::from(1_000_000u64),
             transaction_count: 5,
         };
 
-        let empty = GasCostResult::new(1, from, to);
+        let empty = GasCostResult::new(NamedChain::Mainnet, from, to);
 
         result.merge(&empty);
 
@@ -355,7 +348,7 @@ mod tests {
     fn test_gas_cost_overflow_protection() {
         let from = address!("1111111111111111111111111111111111111111");
         let to = address!("2222222222222222222222222222222222222222");
-        let mut result = GasCostResult::new(1, from, to);
+        let mut result = GasCostResult::new(NamedChain::Mainnet, from, to);
 
         // Set to near-max value
         result.total_gas_cost = U256::MAX - U256::from(1000u64);
@@ -377,7 +370,7 @@ mod tests {
         let to = address!("2222222222222222222222222222222222222222");
 
         let mut result1 = GasCostResult {
-            chain_id: 1,
+            chain: NamedChain::Mainnet,
             from,
             to,
             total_gas_cost: U256::MAX - U256::from(100u64),
@@ -385,7 +378,7 @@ mod tests {
         };
 
         let result2 = GasCostResult {
-            chain_id: 1,
+            chain: NamedChain::Mainnet,
             from,
             to,
             total_gas_cost: U256::from(500u64),
@@ -403,11 +396,11 @@ mod tests {
     fn test_gas_cost_result_zero_transactions() {
         let from = address!("1111111111111111111111111111111111111111");
         let to = address!("2222222222222222222222222222222222222222");
-        let result = GasCostResult::new(1, from, to);
+        let result = GasCostResult::new(NamedChain::Mainnet, from, to);
 
         assert_eq!(result.total_gas_cost, U256::ZERO);
         assert_eq!(result.transaction_count, 0);
-        assert_eq!(result.chain_id, 1);
+        assert_eq!(result.chain, NamedChain::Mainnet);
         assert_eq!(result.from, from);
         assert_eq!(result.to, to);
     }
@@ -416,7 +409,7 @@ mod tests {
     fn test_add_l1_fee() {
         let from = address!("1111111111111111111111111111111111111111");
         let to = address!("2222222222222222222222222222222222222222");
-        let mut result = GasCostResult::new(42161, from, to);
+        let mut result = GasCostResult::new(NamedChain::Arbitrum, from, to);
 
         result.add_l1_fee(U256::from(1_000_000_000_000_000u64));
         assert_eq!(result.total_gas_cost, U256::from(1_000_000_000_000_000u64));
@@ -430,7 +423,7 @@ mod tests {
         let from = address!("1111111111111111111111111111111111111111");
         let to = address!("2222222222222222222222222222222222222222");
 
-        let mut result = GasCostResult::new(1, from, to);
+        let mut result = GasCostResult::new(NamedChain::Mainnet, from, to);
         result.total_gas_cost = U256::from(1_500_000_000_000_000_000u64); // 1.5 ETH
 
         let formatted = result.formatted_gas_cost();

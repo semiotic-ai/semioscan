@@ -169,7 +169,7 @@ where
     #[allow(clippy::too_many_arguments)]
     async fn process_logs_for_transfers_in_range<A: ReceiptAdapter<N>>(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from: Address,
         to: Address,
         token: Address,
@@ -177,11 +177,10 @@ where
         to_block: u64,
         adapter: &A,
     ) -> anyhow::Result<GasCostResult> {
-        let mut result = GasCostResult::new(chain_id, from, to);
+        let mut result = GasCostResult::new(chain, from, to);
         let mut current_block = from_block;
 
         // Convert chain_id to NamedChain for config lookup
-        let chain = NamedChain::try_from(chain_id).unwrap_or(NamedChain::Mainnet); // Fallback to mainnet if unknown
         let max_block_range = self.config.get_max_block_range(chain);
         let rate_limit = self.config.get_rate_limit_delay(chain);
 
@@ -240,7 +239,7 @@ where
     #[allow(clippy::too_many_arguments)]
     async fn process_logs_for_approvals_in_range<A: ReceiptAdapter<N>>(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         owner: Address,
         spender: Address,
         token: Address,
@@ -248,11 +247,10 @@ where
         to_block: u64,
         adapter: &A,
     ) -> anyhow::Result<GasCostResult> {
-        let mut result = GasCostResult::new(chain_id, owner, spender);
+        let mut result = GasCostResult::new(chain, owner, spender);
         let mut current_block = from_block;
 
         // Convert chain_id to NamedChain for config lookup
-        let chain = NamedChain::try_from(chain_id).unwrap_or(NamedChain::Mainnet); // Fallback to mainnet if unknown
         let max_block_range = self.config.get_max_block_range(chain);
         let rate_limit = self.config.get_rate_limit_delay(chain);
 
@@ -333,7 +331,7 @@ where
     #[allow(clippy::too_many_arguments)]
     async fn calculate_gas_cost_for_transfers_with_adapter<A: ReceiptAdapter<N>>(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from: Address,
         to: Address,
         token: Address,
@@ -342,7 +340,7 @@ where
         adapter: &A,
     ) -> anyhow::Result<GasCostResult> {
         info!(
-            chain_id,
+            ?chain,
             ?from,
             ?to,
             start_block,
@@ -353,14 +351,14 @@ where
         // Check cache and calculate gaps that need to be filled
         let (cached_result, gaps) = {
             let cache = self.gas_cache.lock().await;
-            cache.calculate_gaps(chain_id, from, to, start_block, end_block)
+            cache.calculate_gaps(chain, from, to, start_block, end_block)
         };
 
         // If there are no gaps, we can return the cached result
         if let Some(result) = cached_result.clone() {
             if gaps.is_empty() {
                 info!(
-                    chain_id,
+                    ?chain,
                     ?from,
                     ?to,
                     "Using complete cached result for gas cost block range"
@@ -370,12 +368,12 @@ where
         }
 
         // Initialize with any cached data or create new result
-        let mut gas_data = cached_result.unwrap_or_else(|| GasCostResult::new(chain_id, from, to));
+        let mut gas_data = cached_result.unwrap_or_else(|| GasCostResult::new(chain, from, to));
 
         // Process each gap
         for (gap_start, gap_end) in gaps {
             info!(
-                chain_id,
+                ?chain,
                 ?from,
                 ?to,
                 gap_start,
@@ -385,7 +383,7 @@ where
 
             let gap_result = self
                 .process_logs_for_transfers_in_range(
-                    chain_id, from, to, token, gap_start, gap_end, adapter,
+                    chain, from, to, token, gap_start, gap_end, adapter,
                 )
                 .await?;
 
@@ -406,7 +404,7 @@ where
         }
 
         info!(
-            chain_id,
+            ?chain,
             ?from,
             ?to,
             total_gas_cost = ?gas_data.total_gas_cost,
@@ -421,7 +419,7 @@ where
     #[allow(clippy::too_many_arguments)]
     async fn calculate_gas_cost_for_approvals_with_adapter<A: ReceiptAdapter<N>>(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         owner: Address,
         spender: Address,
         token: Address,
@@ -430,7 +428,7 @@ where
         adapter: &A,
     ) -> anyhow::Result<GasCostResult> {
         info!(
-            chain_id,
+            ?chain,
             ?owner,
             ?spender,
             start_block,
@@ -441,14 +439,14 @@ where
         // Check cache and calculate gaps that need to be filled
         let (cached_result, gaps) = {
             let cache = self.gas_cache.lock().await;
-            cache.calculate_gaps(chain_id, owner, spender, start_block, end_block)
+            cache.calculate_gaps(chain, owner, spender, start_block, end_block)
         };
 
         // If there are no gaps, we can return the cached result
         if let Some(result) = cached_result.clone() {
             if gaps.is_empty() {
                 info!(
-                    chain_id,
+                    ?chain,
                     ?owner,
                     ?spender,
                     "Using complete cached result for gas cost block range"
@@ -459,12 +457,12 @@ where
 
         // Initialize with any cached data or create new result
         let mut gas_data =
-            cached_result.unwrap_or_else(|| GasCostResult::new(chain_id, owner, spender));
+            cached_result.unwrap_or_else(|| GasCostResult::new(chain, owner, spender));
 
         // Process each gap
         for (gap_start, gap_end) in gaps {
             info!(
-                chain_id,
+                ?chain,
                 ?owner,
                 ?spender,
                 gap_start,
@@ -474,7 +472,7 @@ where
 
             let gap_result = self
                 .process_logs_for_approvals_in_range(
-                    chain_id, owner, spender, token, gap_start, gap_end, adapter,
+                    chain, owner, spender, token, gap_start, gap_end, adapter,
                 )
                 .await?;
 
@@ -495,7 +493,7 @@ where
         }
 
         info!(
-            chain_id,
+            ?chain,
             ?owner,
             ?spender,
             total_gas_cost = ?gas_data.total_gas_cost,
@@ -511,7 +509,7 @@ where
 impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
     pub async fn calculate_gas_cost_for_transfers_between_blocks(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from: Address,
         to: Address,
         token: Address,
@@ -520,7 +518,7 @@ impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
     ) -> anyhow::Result<GasCostResult> {
         let adapter = EthereumReceiptAdapter;
         self.calculate_gas_cost_for_transfers_with_adapter(
-            chain_id,
+            chain,
             from,
             to,
             token,
@@ -535,7 +533,7 @@ impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
 impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
     pub async fn calculate_gas_cost_for_transfers_between_blocks(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         from: Address,
         to: Address,
         token: Address,
@@ -544,7 +542,7 @@ impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
     ) -> anyhow::Result<GasCostResult> {
         let adapter = OptimismReceiptAdapter;
         self.calculate_gas_cost_for_transfers_with_adapter(
-            chain_id,
+            chain,
             from,
             to,
             token,
@@ -560,7 +558,7 @@ impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
 impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
     pub async fn calculate_gas_cost_for_approvals_between_blocks(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         owner: Address,
         spender: Address,
         token: Address,
@@ -569,7 +567,7 @@ impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
     ) -> anyhow::Result<GasCostResult> {
         let adapter = EthereumReceiptAdapter;
         self.calculate_gas_cost_for_approvals_with_adapter(
-            chain_id,
+            chain,
             owner,
             spender,
             token,
@@ -584,7 +582,7 @@ impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
 impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
     pub async fn calculate_gas_cost_for_approvals_between_blocks(
         &self,
-        chain_id: u64,
+        chain: NamedChain,
         owner: Address,
         spender: Address,
         token: Address,
@@ -593,7 +591,7 @@ impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
     ) -> anyhow::Result<GasCostResult> {
         let adapter = OptimismReceiptAdapter;
         self.calculate_gas_cost_for_approvals_with_adapter(
-            chain_id,
+            chain,
             owner,
             spender,
             token,
