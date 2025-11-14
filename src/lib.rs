@@ -3,7 +3,9 @@ mod block_range_cache;
 mod block_window;
 mod combined_retriever;
 mod config;
+mod config_types;
 mod event;
+mod fee_types;
 mod gas;
 mod gas_cache;
 mod gas_calculator;
@@ -14,6 +16,7 @@ mod price_cache; // Legacy price cache for Odos example
 #[cfg(feature = "odos-example")]
 mod price_calculator; // Generic price calculator using PriceSource trait
 mod spans;
+mod token_types;
 mod tokens_to;
 mod transfer;
 
@@ -21,7 +24,9 @@ pub use adapter::*;
 pub use block_window::*;
 pub use combined_retriever::*;
 pub use config::*;
+pub use config_types::*;
 pub use event::*;
+pub use fee_types::*;
 pub use gas::EventType; // Re-export for public API
 pub use gas_cache::*;
 pub use gas_calculator::*;
@@ -30,6 +35,7 @@ pub use gas_types::*;
 pub use price_cache::*;
 #[cfg(feature = "odos-example")]
 pub use price_calculator::*; // Generic price calculator available with odos-example feature
+pub use token_types::*;
 pub use tokens_to::*;
 pub use transfer::*;
 
