@@ -37,8 +37,6 @@
 //! The scanner automatically chunks requests based on chain-specific rate limits
 //! (configured via [`SemioscanConfig`](crate::SemioscanConfig)) to avoid RPC throttling.
 
-use std::collections::BTreeSet;
-
 use alloy_chains::NamedChain;
 use alloy_primitives::{keccak256, Address, BlockNumber, U256};
 use alloy_provider::Provider;
@@ -47,7 +45,7 @@ use alloy_sol_types::SolEvent;
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
-use crate::{SemioscanConfig, Transfer};
+use crate::{SemioscanConfig, TokenSet, Transfer};
 
 /// Extract tokens transferred to a router contract using default configuration
 ///
@@ -65,10 +63,11 @@ use crate::{SemioscanConfig, Transfer};
 ///
 /// # Returns
 ///
-/// A `BTreeSet` of unique token addresses that have been transferred to the router.
-/// Using `BTreeSet` ensures:
+/// A [`TokenSet`] of unique token addresses that have been transferred to the router.
+/// Using [`TokenSet`] ensures:
 /// - Automatic deduplication
 /// - Deterministic ordering
+/// - Clear semantic meaning (this is a set of tokens, not arbitrary addresses)
 ///
 /// # Example
 ///
@@ -89,7 +88,7 @@ use crate::{SemioscanConfig, Transfer};
 ///     1_010_000,
 /// ).await?;
 ///
-/// for token in tokens {
+/// for token in tokens.iter() {
 ///     println!("Token: {}", token);
 /// }
 /// ```
@@ -99,7 +98,7 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
     router: Address,
     start_block: BlockNumber,
     end_block: BlockNumber,
-) -> anyhow::Result<BTreeSet<Address>> {
+) -> anyhow::Result<TokenSet> {
     extract_transferred_to_tokens_with_config(
         provider,
         chain,
@@ -128,7 +127,7 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
 ///
 /// # Returns
 ///
-/// A `BTreeSet` of unique token addresses that have been transferred to the router.
+/// A [`TokenSet`] of unique token addresses that have been transferred to the router.
 ///
 /// # Example
 ///
@@ -166,7 +165,7 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
     start_block: BlockNumber,
     end_block: BlockNumber,
     config: &SemioscanConfig,
-) -> anyhow::Result<BTreeSet<Address>> {
+) -> anyhow::Result<TokenSet> {
     info!(
         chain = %chain,
         router = %router,
@@ -180,8 +179,8 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
 
     let mut current_block = start_block;
 
-    // BTreeSet is used to deduplicate tokens while preserving their original order.
-    let mut transferred_to_tokens = BTreeSet::new();
+    // TokenSet automatically deduplicates tokens and preserves deterministic order
+    let mut transferred_to_tokens = TokenSet::new();
 
     while current_block <= end_block {
         let to_block = current_block

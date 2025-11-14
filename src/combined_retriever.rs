@@ -1,6 +1,6 @@
 use alloy_chains::NamedChain;
 use alloy_network::{eip2718::Typed2718, Ethereum, Network};
-use alloy_primitives::{address, Address, BlockNumber, TxHash, U256};
+use alloy_primitives::{Address, BlockNumber, TxHash, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Filter, Log as RpcLog, TransactionTrait};
 use alloy_sol_types::SolEvent;
@@ -13,8 +13,9 @@ use tokio::time::sleep;
 use tracing::{error, info, trace, warn};
 
 use crate::{
-    spans, BlobCount, EthereumReceiptAdapter, GasAmount, GasPrice, OptimismReceiptAdapter,
-    ReceiptAdapter, SemioscanConfig, TransactionCount, Transfer,
+    constants::stablecoins::BSC_BINANCE_PEG_USDC, spans, BlobCount, EthereumReceiptAdapter,
+    GasAmount, GasPrice, OptimismReceiptAdapter, ReceiptAdapter, SemioscanConfig, TransactionCount,
+    Transfer,
 };
 
 /// Core gas calculation logic (adapted from gas.rs)
@@ -255,11 +256,7 @@ pub fn get_token_decimal_precision(chain: NamedChain, token_address: Address) ->
     }
 
     // BSC Binance-Peg USDC has 18 decimals instead of 6
-    const BSC_BINANCE_PEG_USDC: Address = address!("8ac76a51cc950d9822d68b83fe1ad97b32cd580d");
-
-    if matches!(chain, NamedChain::BinanceSmartChain)
-        && matches!(token_address, BSC_BINANCE_PEG_USDC)
-    {
+    if matches!(chain, NamedChain::BinanceSmartChain) && token_address == BSC_BINANCE_PEG_USDC {
         DecimalPrecision::BinancePegUsdc // 18 decimals
     } else {
         DecimalPrecision::Usdc // 6 decimals

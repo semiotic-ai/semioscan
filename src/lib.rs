@@ -4,6 +4,7 @@ mod block_window;
 mod combined_retriever;
 mod config;
 mod config_types;
+pub mod constants;
 mod event;
 mod fee_types;
 mod gas;
