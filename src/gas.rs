@@ -255,7 +255,7 @@ where
         info!(
             event_type = event_type.name(),
             total_blocks = to_block.saturating_sub(from_block) + 1,
-            max_block_range,
+            max_block_range = max_block_range.as_u64(),
             "Starting log processing"
         );
 
@@ -263,7 +263,7 @@ where
         let mut chunk_count = 0;
 
         while current_block <= to_block {
-            let chunk_end = std::cmp::min(current_block + max_block_range - 1, to_block);
+            let chunk_end = std::cmp::min(current_block + max_block_range.as_u64() - 1, to_block);
             chunk_count += 1;
 
             let filter = gas_calc_core::create_event_filter(

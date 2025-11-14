@@ -39,6 +39,8 @@ use std::time::Duration;
 
 use alloy_chains::NamedChain;
 
+use crate::MaxBlockRange;
+
 /// Configuration for semioscan operations
 ///
 /// Controls RPC behavior including block range limits and rate limiting.
@@ -47,7 +49,7 @@ use alloy_chains::NamedChain;
 pub struct SemioscanConfig {
     /// Maximum number of blocks to query in a single RPC call
     /// Default: 500 (safe for most RPC providers)
-    pub max_block_range: u64,
+    pub max_block_range: MaxBlockRange,
 
     /// Delay between RPC requests to avoid rate limiting
     /// Default: None (no delay)
@@ -63,7 +65,7 @@ pub struct SemioscanConfig {
 #[derive(Debug, Clone)]
 pub struct ChainConfig {
     /// Override max block range for this chain
-    pub max_block_range: Option<u64>,
+    pub max_block_range: Option<MaxBlockRange>,
 
     /// Override rate limit delay for this chain
     pub rate_limit_delay: Option<Duration>,
@@ -92,7 +94,7 @@ impl SemioscanConfig {
     /// ```
     pub fn with_common_defaults() -> Self {
         let mut config = Self {
-            max_block_range: 500,
+            max_block_range: MaxBlockRange::new(500),
             rate_limit_delay: None,
             chain_overrides: HashMap::new(),
         };
@@ -132,7 +134,7 @@ impl SemioscanConfig {
     /// ```
     pub fn minimal() -> Self {
         Self {
-            max_block_range: 500,
+            max_block_range: MaxBlockRange::new(500),
             rate_limit_delay: None,
             chain_overrides: HashMap::new(),
         }
@@ -145,22 +147,22 @@ impl SemioscanConfig {
     /// # Example
     ///
     /// ```rust
-    /// use semioscan::{SemioscanConfig, SemioscanConfigBuilder, ChainConfig};
+    /// use semioscan::{SemioscanConfig, SemioscanConfigBuilder, ChainConfig, MaxBlockRange};
     /// use alloy_chains::NamedChain;
     ///
     /// let mut config = SemioscanConfig::minimal();
     /// config.set_chain_override(
     ///     NamedChain::Arbitrum,
     ///     ChainConfig {
-    ///         max_block_range: Some(1000),
+    ///         max_block_range: Some(MaxBlockRange::new(1000)),
     ///         rate_limit_delay: None,
     ///     },
     /// );
     ///
-    /// assert_eq!(config.get_max_block_range(NamedChain::Arbitrum), 1000);
-    /// assert_eq!(config.get_max_block_range(NamedChain::Base), 500); // Default
+    /// assert_eq!(config.get_max_block_range(NamedChain::Arbitrum), MaxBlockRange::new(1000));
+    /// assert_eq!(config.get_max_block_range(NamedChain::Base), MaxBlockRange::new(500)); // Default
     /// ```
-    pub fn get_max_block_range(&self, chain: NamedChain) -> u64 {
+    pub fn get_max_block_range(&self, chain: NamedChain) -> MaxBlockRange {
         self.chain_overrides
             .get(&chain)
             .and_then(|c| c.max_block_range)
@@ -201,7 +203,7 @@ impl SemioscanConfig {
     /// # Example
     ///
     /// ```rust
-    /// use semioscan::{SemioscanConfig, ChainConfig};
+    /// use semioscan::{SemioscanConfig, ChainConfig, MaxBlockRange};
     /// use alloy_chains::NamedChain;
     /// use std::time::Duration;
     ///
@@ -209,7 +211,7 @@ impl SemioscanConfig {
     /// config.set_chain_override(
     ///     NamedChain::Polygon,
     ///     ChainConfig {
-    ///         max_block_range: Some(2000),
+    ///         max_block_range: Some(MaxBlockRange::new(2000)),
     ///         rate_limit_delay: Some(Duration::from_millis(500)),
     ///     },
     /// );
@@ -298,7 +300,7 @@ impl SemioscanConfigBuilder {
     ///     .build();
     /// ```
     pub fn max_block_range(mut self, max: u64) -> Self {
-        self.config.max_block_range = max;
+        self.config.max_block_range = MaxBlockRange::new(max);
         self
     }
 
@@ -324,7 +326,7 @@ impl SemioscanConfigBuilder {
     /// # Example
     ///
     /// ```rust
-    /// use semioscan::{SemioscanConfigBuilder, ChainConfig};
+    /// use semioscan::{SemioscanConfigBuilder, ChainConfig, MaxBlockRange};
     /// use alloy_chains::NamedChain;
     /// use std::time::Duration;
     ///
@@ -332,7 +334,7 @@ impl SemioscanConfigBuilder {
     ///     .chain_config(
     ///         NamedChain::Polygon,
     ///         ChainConfig {
-    ///             max_block_range: Some(2000),
+    ///             max_block_range: Some(MaxBlockRange::new(2000)),
     ///             rate_limit_delay: Some(Duration::from_millis(500)),
     ///         },
     ///     )
@@ -381,7 +383,7 @@ impl SemioscanConfigBuilder {
     pub fn chain_max_blocks(mut self, chain: NamedChain, max: u64) -> Self {
         let existing = self.config.chain_overrides.remove(&chain);
         let chain_config = ChainConfig {
-            max_block_range: Some(max),
+            max_block_range: Some(MaxBlockRange::new(max)),
             rate_limit_delay: existing.and_then(|c| c.rate_limit_delay),
         };
         self.config.set_chain_override(chain, chain_config);
@@ -428,8 +430,14 @@ mod tests {
         assert_eq!(config.get_rate_limit_delay(NamedChain::Arbitrum), None);
 
         // All chains use default max block range
-        assert_eq!(config.get_max_block_range(NamedChain::Base), 500);
-        assert_eq!(config.get_max_block_range(NamedChain::Arbitrum), 500);
+        assert_eq!(
+            config.get_max_block_range(NamedChain::Base),
+            MaxBlockRange::new(500)
+        );
+        assert_eq!(
+            config.get_max_block_range(NamedChain::Arbitrum),
+            MaxBlockRange::new(500)
+        );
     }
 
     #[test]
@@ -441,7 +449,10 @@ mod tests {
         assert_eq!(config.get_rate_limit_delay(NamedChain::Sonic), None);
 
         // Default max block range
-        assert_eq!(config.get_max_block_range(NamedChain::Base), 500);
+        assert_eq!(
+            config.get_max_block_range(NamedChain::Base),
+            MaxBlockRange::new(500)
+        );
     }
 
     #[test]
@@ -451,7 +462,10 @@ mod tests {
             .chain_rate_limit(NamedChain::Polygon, Duration::from_secs(1))
             .build();
 
-        assert_eq!(config.get_max_block_range(NamedChain::Polygon), 1000);
+        assert_eq!(
+            config.get_max_block_range(NamedChain::Polygon),
+            MaxBlockRange::new(1000)
+        );
         assert_eq!(
             config.get_rate_limit_delay(NamedChain::Polygon),
             Some(Duration::from_secs(1))
@@ -465,13 +479,19 @@ mod tests {
         config.set_chain_override(
             NamedChain::Arbitrum,
             ChainConfig {
-                max_block_range: Some(2000),
+                max_block_range: Some(MaxBlockRange::new(2000)),
                 rate_limit_delay: Some(Duration::from_millis(100)),
             },
         );
 
-        assert_eq!(config.get_max_block_range(NamedChain::Arbitrum), 2000);
-        assert_eq!(config.get_max_block_range(NamedChain::Base), 500); // Default
+        assert_eq!(
+            config.get_max_block_range(NamedChain::Arbitrum),
+            MaxBlockRange::new(2000)
+        );
+        assert_eq!(
+            config.get_max_block_range(NamedChain::Base),
+            MaxBlockRange::new(500)
+        ); // Default
         assert_eq!(
             config.get_rate_limit_delay(NamedChain::Arbitrum),
             Some(Duration::from_millis(100))
@@ -495,7 +515,10 @@ mod tests {
         );
 
         // Polygon should have custom max blocks
-        assert_eq!(config.get_max_block_range(NamedChain::Polygon), 1000);
+        assert_eq!(
+            config.get_max_block_range(NamedChain::Polygon),
+            MaxBlockRange::new(1000)
+        );
     }
 
     #[test]
@@ -506,7 +529,10 @@ mod tests {
             .build();
 
         // Both settings should be present
-        assert_eq!(config.get_max_block_range(NamedChain::Arbitrum), 1000);
+        assert_eq!(
+            config.get_max_block_range(NamedChain::Arbitrum),
+            MaxBlockRange::new(1000)
+        );
         assert_eq!(
             config.get_rate_limit_delay(NamedChain::Arbitrum),
             Some(Duration::from_millis(100))

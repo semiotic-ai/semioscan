@@ -243,7 +243,7 @@ impl<P: Provider + Clone> PriceCalculator<P> {
             let mut gap_result = TokenPriceResult::new(token_address);
 
             while current_block <= gap_end {
-                let to_block = std::cmp::min(current_block + max_block_range - 1, gap_end);
+                let to_block = std::cmp::min(current_block + max_block_range.as_u64() - 1, gap_end);
 
                 // Create a filter for swap events from the price source
                 let filter = Filter::new()

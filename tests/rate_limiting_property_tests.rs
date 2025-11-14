@@ -5,7 +5,7 @@
 
 use alloy_chains::NamedChain;
 use proptest::prelude::*;
-use semioscan::{ChainConfig, SemioscanConfig, SemioscanConfigBuilder};
+use semioscan::{ChainConfig, MaxBlockRange, SemioscanConfig, SemioscanConfigBuilder};
 use std::time::Duration;
 
 // Helper to generate arbitrary NamedChain variants for testing
@@ -256,7 +256,7 @@ proptest! {
         let config = SemioscanConfig::default();
 
         let max_blocks = config.get_max_block_range(chain);
-        prop_assert!(max_blocks > 0, "Max block range must be positive");
+        prop_assert!(max_blocks.as_u64() > 0, "Max block range must be positive");
     }
 
     /// Property: Chain-specific max block range should override global
@@ -275,7 +275,7 @@ proptest! {
 
         // Chain-specific max blocks should override global
         prop_assert_eq!(
-            config.get_max_block_range(chain),
+            config.get_max_block_range(chain).as_u64(),
             chain_max,
             "Chain-specific max blocks must override global"
         );
@@ -302,7 +302,7 @@ proptest! {
             "Rate limit should be preserved"
         );
         prop_assert_eq!(
-            config.get_max_block_range(chain),
+            config.get_max_block_range(chain).as_u64(),
             max_blocks,
             "Max block range should be preserved"
         );
@@ -325,7 +325,7 @@ fn test_chain_config_with_only_rate_limit() {
 #[test]
 fn test_chain_config_with_only_max_blocks() {
     let config = ChainConfig {
-        max_block_range: Some(1000),
+        max_block_range: Some(MaxBlockRange::new(1000)),
         rate_limit_delay: None,
     };
 
@@ -336,11 +336,11 @@ fn test_chain_config_with_only_max_blocks() {
 #[test]
 fn test_chain_config_with_both_settings() {
     let config = ChainConfig {
-        max_block_range: Some(1000),
+        max_block_range: Some(MaxBlockRange::new(1000)),
         rate_limit_delay: Some(Duration::from_millis(250)),
     };
 
-    assert_eq!(config.max_block_range, Some(1000));
+    assert_eq!(config.max_block_range, Some(MaxBlockRange::new(1000)));
     assert_eq!(config.rate_limit_delay, Some(Duration::from_millis(250)));
 }
 

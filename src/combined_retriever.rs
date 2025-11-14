@@ -514,7 +514,7 @@ where
         let rate_limit = self.config.get_rate_limit_delay(chain);
 
         while current_block <= to_block {
-            let chunk_end = std::cmp::min(current_block + max_block_range, to_block);
+            let chunk_end = std::cmp::min(current_block + max_block_range.as_u64(), to_block);
 
             let filter = GasCalculationCore::create_transfer_filter(
                 current_block,

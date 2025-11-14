@@ -185,7 +185,7 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
 
     while current_block <= end_block {
         let to_block = current_block
-            .saturating_add(max_block_range)
+            .saturating_add(max_block_range.as_u64())
             .saturating_sub(1)
             .min(end_block);
 
