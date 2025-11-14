@@ -74,7 +74,14 @@ impl TokenAmount {
     pub fn normalize(&self, decimals: TokenDecimals) -> NormalizedAmount {
         // Convert U256 to f64 via string to handle large numbers
         let amount_str = self.0.to_string();
-        let amount_f64 = amount_str.parse::<f64>().unwrap_or(0.0);
+        let amount_f64 = amount_str.parse::<f64>().unwrap_or_else(|e| {
+            tracing::warn!(
+                amount = %self.0,
+                error = %e,
+                "Failed to parse token amount to f64, using 0.0"
+            );
+            0.0
+        });
 
         // Calculate divisor: 10^decimals
         let divisor = 10_f64.powi(decimals.as_u8() as i32);
