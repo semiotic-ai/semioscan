@@ -243,6 +243,86 @@ impl std::fmt::Display for TransactionCount {
     }
 }
 
+/// Represents a count of blocks (not a block number)
+///
+/// This type prevents confusion between block counts (a quantity of blocks)
+/// and block numbers (a position in the blockchain). For example, a block
+/// window from block 100 to 110 has a count of 11 blocks, not 10.
+///
+/// # Examples
+///
+/// ```
+/// use semioscan::BlockCount;
+///
+/// let count = BlockCount::new(100);
+/// assert_eq!(count.as_u64(), 100);
+///
+/// let total = count + BlockCount::new(50);
+/// assert_eq!(total.as_u64(), 150);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+pub struct BlockCount(u64);
+
+impl BlockCount {
+    /// Zero blocks
+    pub const ZERO: Self = Self(0);
+
+    /// Create a new block count
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::BlockCount;
+    ///
+    /// let count = BlockCount::new(1000);
+    /// assert_eq!(count.as_u64(), 1000);
+    /// ```
+    pub const fn new(count: u64) -> Self {
+        Self(count)
+    }
+
+    /// Get the inner u64 value
+    pub const fn as_u64(&self) -> u64 {
+        self.0
+    }
+
+    /// Check if count is zero
+    pub fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl From<u64> for BlockCount {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+impl Add for BlockCount {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0.saturating_add(rhs.0))
+    }
+}
+
+impl AddAssign for BlockCount {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 = self.0.saturating_add(rhs.0);
+    }
+}
+
+impl std::fmt::Display for BlockCount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0 == 1 {
+            write!(f, "1 block")
+        } else {
+            write!(f, "{} blocks", self.0)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

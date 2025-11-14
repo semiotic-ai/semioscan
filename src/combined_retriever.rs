@@ -1,5 +1,4 @@
 use alloy_chains::NamedChain;
-use alloy_eips::eip4844::DATA_GAS_PER_BLOB;
 use alloy_network::{eip2718::Typed2718, Ethereum, Network};
 use alloy_primitives::{address, Address, BlockNumber, TxHash, U256};
 use alloy_provider::Provider;
@@ -14,8 +13,8 @@ use tokio::time::sleep;
 use tracing::{error, info, trace, warn};
 
 use crate::{
-    spans, EthereumReceiptAdapter, GasAmount, GasPrice, OptimismReceiptAdapter, ReceiptAdapter,
-    SemioscanConfig, TransactionCount, Transfer,
+    spans, BlobCount, EthereumReceiptAdapter, GasAmount, GasPrice, OptimismReceiptAdapter,
+    ReceiptAdapter, SemioscanConfig, TransactionCount, Transfer,
 };
 
 /// Core gas calculation logic (adapted from gas.rs)
@@ -28,13 +27,15 @@ impl GasCalculationCore {
         if !transaction.is_eip4844() {
             return U256::ZERO;
         }
-        let blob_count = transaction
-            .blob_versioned_hashes()
-            .map(|hashes| hashes.len())
-            .unwrap_or_default();
-        let blob_gas_used = U256::from(blob_count * DATA_GAS_PER_BLOB as usize);
+        let blob_count = BlobCount::new(
+            transaction
+                .blob_versioned_hashes()
+                .map(|hashes| hashes.len())
+                .unwrap_or_default(),
+        );
+        let blob_gas_used = blob_count.to_blob_gas_amount();
         let blob_gas_price = U256::from(transaction.max_fee_per_blob_gas().unwrap_or_default());
-        blob_gas_used.saturating_mul(blob_gas_price)
+        blob_gas_used.as_u256().saturating_mul(blob_gas_price)
     }
 
     fn calculate_effective_gas_price<N: Network>(

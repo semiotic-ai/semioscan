@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 use tracing::{debug, info};
 
-use crate::spans;
+use crate::{spans, BlockCount};
 
 /// Unix timestamp in seconds (always UTC)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -116,10 +116,12 @@ impl DailyBlockWindow {
     }
 
     /// Returns the number of blocks in this window (inclusive)
-    pub fn block_count(&self) -> u64 {
-        self.end_block
+    pub fn block_count(&self) -> BlockCount {
+        let count = self
+            .end_block
             .saturating_sub(self.start_block)
-            .saturating_add(1)
+            .saturating_add(1);
+        BlockCount::new(count)
     }
 }
 
@@ -363,7 +365,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
             date = %date,
             start_block = window.start_block,
             end_block = window.end_block,
-            block_count = window.block_count(),
+            block_count = window.block_count().as_u64(),
             "Computed daily block window"
         );
 
@@ -397,7 +399,7 @@ mod tests {
         // Valid window
         let window = DailyBlockWindow::new(1000, 2000, start_ts, end_ts);
         assert!(window.is_ok());
-        assert_eq!(window.unwrap().block_count(), 1001);
+        assert_eq!(window.unwrap().block_count().as_u64(), 1001);
 
         // Invalid: end_block < start_block
         let invalid = DailyBlockWindow::new(2000, 1000, start_ts, end_ts);
@@ -420,7 +422,7 @@ mod tests {
             end_ts_exclusive: UnixTimestamp(1697414400),
         };
         // Single block: [1000, 1000] contains 1 block
-        assert_eq!(single.block_count(), 1);
+        assert_eq!(single.block_count().as_u64(), 1);
 
         // Large block range (e.g., Arbitrum produces ~40k blocks per day)
         let large = DailyBlockWindow {
@@ -430,7 +432,7 @@ mod tests {
             end_ts_exclusive: UnixTimestamp(1697414400),
         };
         // Inclusive: [100M, 100M+40k] contains 40,001 blocks
-        assert_eq!(large.block_count(), 40_001);
+        assert_eq!(large.block_count().as_u64(), 40_001);
 
         // Standard range
         let window = DailyBlockWindow {
@@ -440,7 +442,7 @@ mod tests {
             end_ts_exclusive: UnixTimestamp(1697414400),
         };
         // Inclusive count: [1000, 2000] contains 1001 blocks
-        assert_eq!(window.block_count(), 1001);
+        assert_eq!(window.block_count().as_u64(), 1001);
     }
 
     #[test]
@@ -483,12 +485,12 @@ mod tests {
         // Valid: blocks 0 to 100
         let window = DailyBlockWindow::new(0, 100, start_ts, end_ts);
         assert!(window.is_ok());
-        assert_eq!(window.unwrap().block_count(), 101);
+        assert_eq!(window.unwrap().block_count().as_u64(), 101);
 
         // Valid: single block at 0
         let window = DailyBlockWindow::new(0, 0, start_ts, end_ts);
         assert!(window.is_ok());
-        assert_eq!(window.unwrap().block_count(), 1);
+        assert_eq!(window.unwrap().block_count().as_u64(), 1);
     }
 
     #[test]
@@ -500,12 +502,12 @@ mod tests {
         // Arbitrum-scale block numbers
         let window = DailyBlockWindow::new(100_000_000, 100_040_000, start_ts, end_ts);
         assert!(window.is_ok());
-        assert_eq!(window.unwrap().block_count(), 40_001);
+        assert_eq!(window.unwrap().block_count().as_u64(), 40_001);
 
         // Very large range
         let window = DailyBlockWindow::new(1_000_000_000, 1_001_000_000, start_ts, end_ts);
         assert!(window.is_ok());
-        assert_eq!(window.unwrap().block_count(), 1_000_001);
+        assert_eq!(window.unwrap().block_count().as_u64(), 1_000_001);
     }
 
     #[test]
@@ -519,6 +521,6 @@ mod tests {
         assert!(window.is_ok());
         // Should saturate rather than wrap
         let count = window.unwrap().block_count();
-        assert_eq!(count, 101);
+        assert_eq!(count.as_u64(), 101);
     }
 }

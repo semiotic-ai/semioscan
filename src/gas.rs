@@ -1,5 +1,4 @@
 use alloy_chains::NamedChain;
-use alloy_eips::eip4844::DATA_GAS_PER_BLOB;
 use alloy_network::{Ethereum, Network};
 use alloy_primitives::{Address, BlockNumber, B256, U256};
 use alloy_provider::{network::eip2718::Typed2718, Provider};
@@ -10,7 +9,7 @@ use tokio::time::sleep;
 
 use crate::{
     adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter},
-    spans, Approval, GasCostCalculator, GasCostResult, GasForTx, Transfer,
+    spans, Approval, BlobCount, GasCostCalculator, GasCostResult, GasForTx, Transfer,
 };
 use tracing::{error, info, trace};
 
@@ -97,15 +96,17 @@ mod gas_calc_core {
             return U256::ZERO;
         }
 
-        let blob_count = transaction
-            .blob_versioned_hashes()
-            .map(|hashes| hashes.len())
-            .unwrap_or_default();
+        let blob_count = BlobCount::new(
+            transaction
+                .blob_versioned_hashes()
+                .map(|hashes| hashes.len())
+                .unwrap_or_default(),
+        );
 
-        let blob_gas_used = U256::from(blob_count * DATA_GAS_PER_BLOB as usize);
+        let blob_gas_used = blob_count.to_blob_gas_amount();
         let blob_gas_price = U256::from(transaction.max_fee_per_blob_gas().unwrap_or_default());
 
-        blob_gas_used.saturating_mul(blob_gas_price)
+        blob_gas_used.as_u256().saturating_mul(blob_gas_price)
     }
 
     /// Calculate effective gas price based on transaction type
@@ -607,6 +608,7 @@ impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_eips::eip4844::DATA_GAS_PER_BLOB;
 
     #[test]
     fn test_blob_gas_per_blob_constant() {
