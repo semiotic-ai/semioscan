@@ -14,9 +14,9 @@
 //! # Example: Basic caching
 //!
 //! ```rust
-//! use semioscan::{GasCache, GasCostResult};
+//! use semioscan::{GasCache, GasCostResult, WeiAmount};
 //! use alloy_chains::NamedChain;
-//! use alloy_primitives::{Address, U256};
+//! use alloy_primitives::Address;
 //!
 //! let mut cache = GasCache::default();
 //! let from = Address::ZERO;
@@ -24,7 +24,7 @@
 //!
 //! // Insert a result for blocks 100-200
 //! let mut result = GasCostResult::new(NamedChain::Mainnet, from, to);
-//! result.total_gas_cost = U256::from(1_000_000u64);
+//! result.total_gas_cost = WeiAmount::from(1_000_000u64);
 //! cache.insert(from, to, 100, 200, result);
 //!
 //! // Retrieve it
@@ -37,7 +37,7 @@
 //! ```rust
 //! use semioscan::{GasCache, GasCostResult};
 //! use alloy_chains::NamedChain;
-//! use alloy_primitives::{Address, U256};
+//! use alloy_primitives::Address;
 //!
 //! let mut cache = GasCache::default();
 //! let from = Address::ZERO;
@@ -66,7 +66,7 @@ use crate::GasCostResult;
 // Implement Mergeable for GasCostResult
 impl Mergeable for GasCostResult {
     fn merge(&mut self, other: &Self) {
-        self.total_gas_cost = self.total_gas_cost.saturating_add(other.total_gas_cost);
+        self.total_gas_cost = self.total_gas_cost + other.total_gas_cost;
         self.transaction_count += other.transaction_count;
     }
 }
@@ -174,9 +174,9 @@ impl GasCache {
     /// # Example: Auto-merging
     ///
     /// ```rust
-    /// use semioscan::{GasCache, GasCostResult};
+    /// use semioscan::{GasCache, GasCostResult, TransactionCount};
     /// use alloy_chains::NamedChain;
-    /// use alloy_primitives::{Address, U256};
+    /// use alloy_primitives::Address;
     ///
     /// let mut cache = GasCache::default();
     /// let from = Address::ZERO;
@@ -184,18 +184,18 @@ impl GasCache {
     ///
     /// // Insert blocks 100-200 with 5 transactions
     /// let mut result1 = GasCostResult::new(NamedChain::Mainnet, from, to);
-    /// result1.transaction_count = 5;
+    /// result1.transaction_count = TransactionCount::new(5);
     /// cache.insert(from, to, 100, 200, result1);
     ///
     /// // Insert overlapping blocks 150-250 with 3 transactions
     /// let mut result2 = GasCostResult::new(NamedChain::Mainnet, from, to);
-    /// result2.transaction_count = 3;
+    /// result2.transaction_count = TransactionCount::new(3);
     /// cache.insert(from, to, 150, 250, result2);
     ///
     /// // Results are merged: 1 entry covering 100-250 with 8 transactions
     /// assert_eq!(cache.len(), 1);
     /// let merged = cache.get(from, to, 100, 250).unwrap();
-    /// assert_eq!(merged.transaction_count, 8);
+    /// assert_eq!(merged.transaction_count, TransactionCount::new(8));
     /// ```
     pub fn insert(
         &mut self,
@@ -371,8 +371,9 @@ impl GasCache {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{TransactionCount, WeiAmount};
     use alloy_chains::NamedChain;
-    use alloy_primitives::{Address, U256};
+    use alloy_primitives::Address;
 
     fn create_test_result(
         chain: NamedChain,
@@ -382,8 +383,8 @@ mod tests {
         gas_cost: u64,
     ) -> GasCostResult {
         let mut result = GasCostResult::new(chain, from, to);
-        result.transaction_count = tx_count;
-        result.total_gas_cost = U256::from(gas_cost);
+        result.transaction_count = TransactionCount::new(tx_count);
+        result.total_gas_cost = WeiAmount::from(gas_cost);
         result
     }
 
@@ -400,7 +401,7 @@ mod tests {
         // Exact match
         let cached = cache.get(from, to, 100, 200);
         assert!(cached.is_some());
-        assert_eq!(cached.unwrap().transaction_count, 5);
+        assert_eq!(cached.unwrap().transaction_count, TransactionCount::new(5));
 
         // Smaller range (fully contained)
         let cached = cache.get(from, to, 120, 180);
@@ -452,7 +453,7 @@ mod tests {
         assert_eq!(gaps[3], (701, 800));
 
         // Merged result should have 10 transactions
-        assert_eq!(result.unwrap().transaction_count, 10);
+        assert_eq!(result.unwrap().transaction_count, TransactionCount::new(10));
     }
 
     #[test]
@@ -485,8 +486,8 @@ mod tests {
         assert!(cached.is_some());
 
         let result = cached.unwrap();
-        assert_eq!(result.transaction_count, 8);
-        assert_eq!(result.total_gas_cost, U256::from(160_000u64));
+        assert_eq!(result.transaction_count, TransactionCount::new(8));
+        assert_eq!(result.total_gas_cost, WeiAmount::from(160_000u64));
     }
 
     mod proptests {

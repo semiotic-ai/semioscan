@@ -19,6 +19,7 @@ mod spans;
 mod token_types;
 mod tokens_to;
 mod transfer;
+mod wei_types;
 
 pub use adapter::*;
 pub use block_window::*;
@@ -38,6 +39,7 @@ pub use price_calculator::*; // Generic price calculator available with odos-exa
 pub use token_types::*;
 pub use tokens_to::*;
 pub use transfer::*;
+pub use wei_types::*;
 
 // Re-export RouterType from odos-sdk for convenience
 #[cfg(feature = "odos-example")]

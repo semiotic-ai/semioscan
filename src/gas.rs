@@ -307,7 +307,7 @@ where
             event_type = event_type.name(),
             total_logs,
             total_chunks = chunk_count,
-            total_transactions = result.transaction_count,
+            total_transactions = result.transaction_count.as_usize(),
             total_gas_cost = %result.total_gas_cost,
             "Completed log processing"
         );
@@ -390,7 +390,7 @@ where
                     ?chain,
                     topic1 = %topic1_addr,
                     topic2 = %topic2_addr,
-                    cached_tx_count = result.transaction_count,
+                    cached_tx_count = result.transaction_count.as_usize(),
                     cached_gas_cost = %result.total_gas_cost,
                     "Using complete cached result for gas cost block range"
                 );
@@ -454,9 +454,9 @@ where
             info!(
                 event_type = event_type.name(),
                 gap_index = gap_index + 1,
-                gap_tx_count = gap_result.transaction_count,
+                gap_tx_count = gap_result.transaction_count.as_usize(),
                 gap_gas_cost = %gap_result.total_gas_cost,
-                cumulative_tx_count = gas_data.transaction_count,
+                cumulative_tx_count = gas_data.transaction_count.as_usize(),
                 cumulative_gas_cost = %gas_data.total_gas_cost,
                 "Completed gap processing"
             );
@@ -480,7 +480,7 @@ where
             topic1 = %topic1_addr,
             topic2 = %topic2_addr,
             total_gas_cost = %gas_data.total_gas_cost,
-            transaction_count = gas_data.transaction_count,
+            transaction_count = gas_data.transaction_count.as_usize(),
             "Finished gas cost calculation"
         );
 

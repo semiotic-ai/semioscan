@@ -15,7 +15,7 @@ use tracing::{error, info, trace, warn};
 
 use crate::{
     spans, EthereumReceiptAdapter, GasAmount, GasPrice, OptimismReceiptAdapter, ReceiptAdapter,
-    SemioscanConfig, Transfer,
+    SemioscanConfig, TransactionCount, Transfer,
 };
 
 /// Core gas calculation logic (adapted from gas.rs)
@@ -122,7 +122,7 @@ pub struct CombinedDataResult {
     pub total_l1_fee: U256,
     pub overall_total_gas_cost: U256,
     pub total_amount_transferred: U256,
-    pub transaction_count: i32,
+    pub transaction_count: TransactionCount,
     pub transactions_data: Vec<GasAndAmountForTx>,
 }
 
@@ -138,7 +138,7 @@ pub struct CombinedDataDisplay {
     pub total_l1_fee_eth: String,
     pub overall_total_gas_cost_eth: String,
     pub total_amount_transferred_usdc: String,
-    pub transaction_count: i32,
+    pub transaction_count: TransactionCount,
     pub transactions_data: Vec<GasAndAmountDisplay>,
 }
 
@@ -321,7 +321,7 @@ impl CombinedDataResult {
             total_l1_fee: U256::ZERO,
             overall_total_gas_cost: U256::ZERO,
             total_amount_transferred: U256::ZERO,
-            transaction_count: 0,
+            transaction_count: TransactionCount::ZERO,
             transactions_data: Vec::new(),
         }
     }
@@ -371,7 +371,7 @@ impl CombinedDataResult {
             .saturating_add(self.total_l1_fee);
 
         self.transactions_data.push(data);
-        self.transaction_count += 1;
+        self.transaction_count.increment();
     }
 
     pub fn merge(&mut self, other: &CombinedDataResult) {
@@ -514,7 +514,7 @@ where
         let rate_limit = self.config.get_rate_limit_delay(chain);
 
         while current_block <= to_block {
-            let chunk_end = std::cmp::min(current_block + max_block_range.as_u64(), to_block);
+            let chunk_end = std::cmp::min(current_block + max_block_range.as_u64() - 1, to_block);
 
             let filter = GasCalculationCore::create_transfer_filter(
                 current_block,
@@ -580,7 +580,7 @@ where
                 }
             }
         }
-        info!(?chain, %from_address, %to_address, %token_address, from_block, to_block, transactions_found = result.transaction_count, "Finished processing block range");
+        info!(?chain, %from_address, %to_address, %token_address, from_block, to_block, transactions_found = result.transaction_count.as_usize(), "Finished processing block range");
         Ok(result)
     }
 

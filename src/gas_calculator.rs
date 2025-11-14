@@ -30,7 +30,10 @@ use alloy_provider::Provider;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::{DecimalPrecision, GasAmount, GasCache, GasPrice, L1DataFee, SemioscanConfig};
+use crate::{
+    DecimalPrecision, GasAmount, GasCache, GasPrice, L1DataFee, SemioscanConfig, TransactionCount,
+    WeiAmount,
+};
 
 /// Gas data for a single transaction
 ///
@@ -125,9 +128,9 @@ pub struct GasCostResult {
     /// Address that received the transactions
     pub to: Address,
     /// Total gas cost in wei (includes L1 data fees for L2 chains)
-    pub total_gas_cost: U256,
+    pub total_gas_cost: WeiAmount,
     /// Number of transactions processed
-    pub transaction_count: usize,
+    pub transaction_count: TransactionCount,
 }
 
 impl GasCostResult {
@@ -136,13 +139,13 @@ impl GasCostResult {
             from,
             to,
             chain,
-            total_gas_cost: U256::ZERO,
-            transaction_count: 0,
+            total_gas_cost: WeiAmount::ZERO,
+            transaction_count: TransactionCount::ZERO,
         }
     }
 
     pub fn add_l1_fee(&mut self, l1_fee: L1DataFee) {
-        self.total_gas_cost = self.total_gas_cost.saturating_add(l1_fee.as_u256());
+        self.total_gas_cost = self.total_gas_cost + WeiAmount::from(l1_fee.as_u256());
     }
 
     /// Add a transaction to the gas cost result
@@ -158,22 +161,22 @@ impl GasCostResult {
         match gas {
             GasForTx::L1(gas) => {
                 let gas_cost = gas.gas_used * gas.effective_gas_price;
-                self.total_gas_cost = self.total_gas_cost.saturating_add(gas_cost);
-                self.transaction_count += 1;
+                self.total_gas_cost = self.total_gas_cost + WeiAmount::from(gas_cost);
+                self.transaction_count.increment();
             }
             GasForTx::L2(gas) => {
                 let l2_gas_cost = gas.gas_used * gas.effective_gas_price;
                 let l1_data_fee = gas.l1_data_fee.as_u256();
                 let total_gas_cost = l2_gas_cost.saturating_add(l1_data_fee);
-                self.total_gas_cost = self.total_gas_cost.saturating_add(total_gas_cost);
-                self.transaction_count += 1;
+                self.total_gas_cost = self.total_gas_cost + WeiAmount::from(total_gas_cost);
+                self.transaction_count.increment();
             }
         }
     }
 
     /// Merge another gas cost result into this one
     pub fn merge(&mut self, other: &Self) {
-        self.total_gas_cost = self.total_gas_cost.saturating_add(other.total_gas_cost);
+        self.total_gas_cost = self.total_gas_cost + other.total_gas_cost;
         self.transaction_count += other.transaction_count;
     }
 
@@ -183,7 +186,7 @@ impl GasCostResult {
     }
 
     fn format_gas_cost(&self) -> String {
-        let gas_cost = self.total_gas_cost;
+        let gas_cost = self.total_gas_cost.as_u256();
 
         let decimals = DecimalPrecision::NativeToken.decimals();
 
@@ -260,8 +263,11 @@ mod tests {
             effective_gas_price: GasPrice::from_gwei(50),
         }));
 
-        assert_eq!(result.transaction_count, 1);
-        assert_eq!(result.total_gas_cost, U256::from(1_050_000_000_000_000u64));
+        assert_eq!(result.transaction_count, TransactionCount::new(1));
+        assert_eq!(
+            result.total_gas_cost,
+            WeiAmount::from(1_050_000_000_000_000u64)
+        );
 
         // Add second transaction: 100000 gas at 60 gwei = 6,000,000,000,000,000 wei
         result.add_transaction(GasForTx::L1(L1Gas {
@@ -269,9 +275,12 @@ mod tests {
             effective_gas_price: GasPrice::from_gwei(60),
         }));
 
-        assert_eq!(result.transaction_count, 2);
+        assert_eq!(result.transaction_count, TransactionCount::new(2));
         // Total: 1,050,000,000,000,000 + 6,000,000,000,000,000 = 7,050,000,000,000,000
-        assert_eq!(result.total_gas_cost, U256::from(7_050_000_000_000_000u64));
+        assert_eq!(
+            result.total_gas_cost,
+            WeiAmount::from(7_050_000_000_000_000u64)
+        );
     }
 
     #[test]
@@ -287,11 +296,14 @@ mod tests {
             l1_data_fee: L1DataFee::new(U256::from(5_000_000_000_000_000u64)), // 0.005 ETH
         }));
 
-        assert_eq!(result.transaction_count, 1);
+        assert_eq!(result.transaction_count, TransactionCount::new(1));
         // L2 gas: 150000 * 100,000,000 = 15,000,000,000,000
         // L1 fee: 5,000,000,000,000,000
         // Total: 5,015,000,000,000,000
-        assert_eq!(result.total_gas_cost, U256::from(5_015_000_000_000_000u64));
+        assert_eq!(
+            result.total_gas_cost,
+            WeiAmount::from(5_015_000_000_000_000u64)
+        );
     }
 
     #[test]
@@ -303,23 +315,26 @@ mod tests {
             chain: NamedChain::Mainnet,
             from,
             to,
-            total_gas_cost: U256::from(1_000_000_000_000_000u64),
-            transaction_count: 5,
+            total_gas_cost: WeiAmount::from(1_000_000_000_000_000u64),
+            transaction_count: TransactionCount::new(5),
         };
 
         let result2 = GasCostResult {
             chain: NamedChain::Mainnet,
             from,
             to,
-            total_gas_cost: U256::from(500_000_000_000_000u64),
-            transaction_count: 3,
+            total_gas_cost: WeiAmount::from(500_000_000_000_000u64),
+            transaction_count: TransactionCount::new(3),
         };
 
         result1.merge(&result2);
 
         // Test that merge adds both gas costs and transaction counts
-        assert_eq!(result1.total_gas_cost, U256::from(1_500_000_000_000_000u64));
-        assert_eq!(result1.transaction_count, 8);
+        assert_eq!(
+            result1.total_gas_cost,
+            WeiAmount::from(1_500_000_000_000_000u64)
+        );
+        assert_eq!(result1.transaction_count, TransactionCount::new(8));
     }
 
     #[test]
@@ -331,8 +346,8 @@ mod tests {
             chain: NamedChain::Mainnet,
             from,
             to,
-            total_gas_cost: U256::from(1_000_000u64),
-            transaction_count: 5,
+            total_gas_cost: WeiAmount::from(1_000_000u64),
+            transaction_count: TransactionCount::new(5),
         };
 
         let empty = GasCostResult::new(NamedChain::Mainnet, from, to);
@@ -340,8 +355,8 @@ mod tests {
         result.merge(&empty);
 
         // Merging with empty result should not change values
-        assert_eq!(result.total_gas_cost, U256::from(1_000_000u64));
-        assert_eq!(result.transaction_count, 5);
+        assert_eq!(result.total_gas_cost, WeiAmount::from(1_000_000u64));
+        assert_eq!(result.transaction_count, TransactionCount::new(5));
     }
 
     #[test]
@@ -351,7 +366,7 @@ mod tests {
         let mut result = GasCostResult::new(NamedChain::Mainnet, from, to);
 
         // Set to near-max value
-        result.total_gas_cost = U256::MAX - U256::from(1000u64);
+        result.total_gas_cost = WeiAmount::from(U256::MAX - U256::from(1000u64));
 
         // Add transaction that would overflow - should saturate
         result.add_transaction(GasForTx::L1(L1Gas {
@@ -360,8 +375,8 @@ mod tests {
         }));
 
         // Should saturate at U256::MAX, not wrap around
-        assert_eq!(result.total_gas_cost, U256::MAX);
-        assert_eq!(result.transaction_count, 1);
+        assert_eq!(result.total_gas_cost, WeiAmount::from(U256::MAX));
+        assert_eq!(result.transaction_count, TransactionCount::new(1));
     }
 
     #[test]
@@ -373,23 +388,23 @@ mod tests {
             chain: NamedChain::Mainnet,
             from,
             to,
-            total_gas_cost: U256::MAX - U256::from(100u64),
-            transaction_count: 5,
+            total_gas_cost: WeiAmount::from(U256::MAX - U256::from(100u64)),
+            transaction_count: TransactionCount::new(5),
         };
 
         let result2 = GasCostResult {
             chain: NamedChain::Mainnet,
             from,
             to,
-            total_gas_cost: U256::from(500u64),
-            transaction_count: 3,
+            total_gas_cost: WeiAmount::from(500u64),
+            transaction_count: TransactionCount::new(3),
         };
 
         result1.merge(&result2);
 
         // Should saturate at U256::MAX
-        assert_eq!(result1.total_gas_cost, U256::MAX);
-        assert_eq!(result1.transaction_count, 8);
+        assert_eq!(result1.total_gas_cost, WeiAmount::from(U256::MAX));
+        assert_eq!(result1.transaction_count, TransactionCount::new(8));
     }
 
     #[test]
@@ -398,8 +413,8 @@ mod tests {
         let to = address!("2222222222222222222222222222222222222222");
         let result = GasCostResult::new(NamedChain::Mainnet, from, to);
 
-        assert_eq!(result.total_gas_cost, U256::ZERO);
-        assert_eq!(result.transaction_count, 0);
+        assert_eq!(result.total_gas_cost, WeiAmount::ZERO);
+        assert_eq!(result.transaction_count, TransactionCount::ZERO);
         assert_eq!(result.chain, NamedChain::Mainnet);
         assert_eq!(result.from, from);
         assert_eq!(result.to, to);
@@ -412,10 +427,16 @@ mod tests {
         let mut result = GasCostResult::new(NamedChain::Arbitrum, from, to);
 
         result.add_l1_fee(L1DataFee::new(U256::from(1_000_000_000_000_000u64)));
-        assert_eq!(result.total_gas_cost, U256::from(1_000_000_000_000_000u64));
+        assert_eq!(
+            result.total_gas_cost,
+            WeiAmount::from(1_000_000_000_000_000u64)
+        );
 
         result.add_l1_fee(L1DataFee::new(U256::from(500_000_000_000_000u64)));
-        assert_eq!(result.total_gas_cost, U256::from(1_500_000_000_000_000u64));
+        assert_eq!(
+            result.total_gas_cost,
+            WeiAmount::from(1_500_000_000_000_000u64)
+        );
     }
 
     #[test]
@@ -424,7 +445,7 @@ mod tests {
         let to = address!("2222222222222222222222222222222222222222");
 
         let mut result = GasCostResult::new(NamedChain::Mainnet, from, to);
-        result.total_gas_cost = U256::from(1_500_000_000_000_000_000u64); // 1.5 ETH
+        result.total_gas_cost = WeiAmount::from(1_500_000_000_000_000_000u64); // 1.5 ETH
 
         let formatted = result.formatted_gas_cost();
         // Should format as "1.5" (trailing zeros removed)
