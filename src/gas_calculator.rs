@@ -30,7 +30,7 @@ use alloy_provider::Provider;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::{DecimalPrecision, GasCache, SemioscanConfig};
+use crate::{DecimalPrecision, GasAmount, GasCache, GasPrice, SemioscanConfig};
 
 /// Gas data for a single transaction
 ///
@@ -63,16 +63,16 @@ impl From<(U256, U256, U256)> for GasForTx {
 #[derive(Debug, Clone)]
 pub struct L1Gas {
     /// Amount of gas consumed by the transaction
-    pub gas_used: U256,
+    pub gas_used: GasAmount,
     /// Effective gas price paid per unit of gas (in wei)
-    pub effective_gas_price: U256,
+    pub effective_gas_price: GasPrice,
 }
 
 impl From<(U256, U256)> for L1Gas {
     fn from((gas_used, effective_gas_price): (U256, U256)) -> Self {
         Self {
-            gas_used,
-            effective_gas_price,
+            gas_used: GasAmount::from_u256(gas_used),
+            effective_gas_price: GasPrice::from_u256(effective_gas_price),
         }
     }
 }
@@ -86,9 +86,9 @@ impl From<(U256, U256)> for L1Gas {
 #[derive(Debug, Clone)]
 pub struct L2Gas {
     /// Amount of L2 gas consumed by the transaction
-    pub gas_used: U256,
+    pub gas_used: GasAmount,
     /// Effective L2 gas price paid per unit of gas (in wei)
-    pub effective_gas_price: U256,
+    pub effective_gas_price: GasPrice,
     /// L1 data fee for posting transaction to L1 chain (in wei)
     pub l1_data_fee: U256,
 }
@@ -96,8 +96,8 @@ pub struct L2Gas {
 impl From<(U256, U256, U256)> for L2Gas {
     fn from((gas_used, effective_gas_price, l1_data_fee): (U256, U256, U256)) -> Self {
         Self {
-            gas_used,
-            effective_gas_price,
+            gas_used: GasAmount::from_u256(gas_used),
+            effective_gas_price: GasPrice::from_u256(effective_gas_price),
             l1_data_fee,
         }
     }
@@ -157,12 +157,12 @@ impl GasCostResult {
     pub fn add_transaction(&mut self, gas: GasForTx) {
         match gas {
             GasForTx::L1(gas) => {
-                let gas_cost = gas.gas_used.saturating_mul(gas.effective_gas_price);
+                let gas_cost = gas.gas_used * gas.effective_gas_price;
                 self.total_gas_cost = self.total_gas_cost.saturating_add(gas_cost);
                 self.transaction_count += 1;
             }
             GasForTx::L2(gas) => {
-                let l2_gas_cost = gas.gas_used.saturating_mul(gas.effective_gas_price);
+                let l2_gas_cost = gas.gas_used * gas.effective_gas_price;
                 let l1_data_fee = gas.l1_data_fee;
                 let total_gas_cost = l2_gas_cost.saturating_add(l1_data_fee);
                 self.total_gas_cost = self.total_gas_cost.saturating_add(total_gas_cost);
@@ -256,8 +256,8 @@ mod tests {
 
         // Add first transaction: 21000 gas at 50 gwei = 1,050,000,000,000,000 wei
         result.add_transaction(GasForTx::L1(L1Gas {
-            gas_used: U256::from(21000),
-            effective_gas_price: U256::from(50_000_000_000u64), // 50 gwei
+            gas_used: GasAmount::new(21000),
+            effective_gas_price: GasPrice::from_gwei(50),
         }));
 
         assert_eq!(result.transaction_count, 1);
@@ -265,8 +265,8 @@ mod tests {
 
         // Add second transaction: 100000 gas at 60 gwei = 6,000,000,000,000,000 wei
         result.add_transaction(GasForTx::L1(L1Gas {
-            gas_used: U256::from(100000),
-            effective_gas_price: U256::from(60_000_000_000u64), // 60 gwei
+            gas_used: GasAmount::new(100000),
+            effective_gas_price: GasPrice::from_gwei(60),
         }));
 
         assert_eq!(result.transaction_count, 2);
@@ -282,8 +282,8 @@ mod tests {
 
         // Add L2 transaction: 150000 gas at 0.1 gwei + 0.005 ETH L1 data fee
         result.add_transaction(GasForTx::L2(L2Gas {
-            gas_used: U256::from(150000),
-            effective_gas_price: U256::from(100_000_000u64), // 0.1 gwei
+            gas_used: GasAmount::new(150000),
+            effective_gas_price: GasPrice::new(100_000_000), // 0.1 gwei
             l1_data_fee: U256::from(5_000_000_000_000_000u64), // 0.005 ETH
         }));
 
@@ -355,8 +355,8 @@ mod tests {
 
         // Add transaction that would overflow - should saturate
         result.add_transaction(GasForTx::L1(L1Gas {
-            gas_used: U256::from(1000000),
-            effective_gas_price: U256::from(1000000),
+            gas_used: GasAmount::new(1000000),
+            effective_gas_price: GasPrice::new(1000000),
         }));
 
         // Should saturate at U256::MAX, not wrap around

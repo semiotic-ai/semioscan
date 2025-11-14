@@ -14,8 +14,8 @@ use tokio::time::sleep;
 use tracing::{error, info, trace, warn};
 
 use crate::{
-    spans, EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter, SemioscanConfig,
-    Transfer,
+    spans, EthereumReceiptAdapter, GasAmount, GasPrice, OptimismReceiptAdapter, ReceiptAdapter,
+    SemioscanConfig, Transfer,
 };
 
 /// Core gas calculation logic (adapted from gas.rs)
@@ -54,8 +54,8 @@ impl GasCalculationCore {
     }
 
     fn create_transfer_filter(
-        current_block: u64,
-        to_block: u64,
+        current_block: BlockNumber,
+        to_block: BlockNumber,
         token_address: Address,
         from_address: Address, // topic1
         to_address: Address,   // topic2
@@ -75,25 +75,25 @@ impl GasCalculationCore {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GasAndAmountForTx {
     pub tx_hash: TxHash,
-    pub block_number: u64,
-    pub gas_used: U256,            // L2 gas used
-    pub effective_gas_price: U256, // L2 effective gas price
-    pub l1_fee: Option<U256>,      // L1 data fee for L2s
-    pub blob_gas_cost: U256,       // Cost from EIP-4844 blobs
+    pub block_number: BlockNumber,
+    pub gas_used: GasAmount,           // L2 gas used
+    pub effective_gas_price: GasPrice, // L2 effective gas price
+    pub l1_fee: Option<U256>,          // L1 data fee for L2s
+    pub blob_gas_cost: U256,           // Cost from EIP-4844 blobs
     pub transferred_amount: U256,
 }
 
 impl GasAndAmountForTx {
     /// Calculates the total gas cost for this transaction, including L2 gas, L1 fee, and blob gas.
     pub fn total_gas_cost(&self) -> U256 {
-        let l2_execution_cost = self.gas_used.saturating_mul(self.effective_gas_price);
+        let l2_execution_cost = self.gas_used * self.effective_gas_price;
         let total_cost = l2_execution_cost.saturating_add(self.blob_gas_cost);
         total_cost.saturating_add(self.l1_fee.unwrap_or_default())
     }
 
     /// Convert to display format with custom token decimal precision
     pub fn to_display(&self, token_precision: DecimalPrecision) -> GasAndAmountDisplay {
-        let l2_execution_cost = self.gas_used.saturating_mul(self.effective_gas_price);
+        let l2_execution_cost = self.gas_used * self.effective_gas_price;
         let total_cost = l2_execution_cost
             .saturating_add(self.blob_gas_cost)
             .saturating_add(self.l1_fee.unwrap_or_default());
@@ -101,7 +101,7 @@ impl GasAndAmountForTx {
         GasAndAmountDisplay {
             tx_hash: self.tx_hash.to_string(),
             gas_used: self.gas_used.to_string(),
-            effective_gas_price_gwei: format_wei_to_gwei(self.effective_gas_price),
+            effective_gas_price_gwei: format_wei_to_gwei(self.effective_gas_price.as_u256()),
             l1_fee_eth: self.l1_fee.map(format_wei_to_eth),
             blob_gas_cost_eth: format_wei_to_eth(self.blob_gas_cost),
             total_gas_cost_eth: format_wei_to_eth(total_cost),
@@ -355,7 +355,7 @@ impl CombinedDataResult {
             .total_amount_transferred
             .saturating_add(data.transferred_amount);
 
-        let l2_execution_cost = data.gas_used.saturating_mul(data.effective_gas_price);
+        let l2_execution_cost = data.gas_used * data.effective_gas_price;
         self.total_l2_execution_cost = self
             .total_l2_execution_cost
             .saturating_add(l2_execution_cost);
@@ -477,8 +477,8 @@ where
         Ok(Some(GasAndAmountForTx {
             tx_hash,
             block_number,
-            gas_used,
-            effective_gas_price,
+            gas_used: GasAmount::from_u256(gas_used),
+            effective_gas_price: GasPrice::from_u256(effective_gas_price),
             l1_fee,
             transferred_amount: transfer_event.value,
             blob_gas_cost,
@@ -701,8 +701,8 @@ mod tests {
         GasAndAmountForTx {
             tx_hash: b256!("0000000000000000000000000000000000000000000000000000000000000001"),
             block_number: 1000,
-            gas_used: U256::from(gas_used),
-            effective_gas_price: U256::from(effective_gas_price),
+            gas_used: GasAmount::new(gas_used),
+            effective_gas_price: GasPrice::new(effective_gas_price),
             l1_fee: l1_fee.map(U256::from),
             blob_gas_cost: U256::from(blob_gas_cost),
             transferred_amount: U256::from(transferred_amount),

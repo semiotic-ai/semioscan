@@ -7,6 +7,7 @@ mod event;
 mod gas;
 mod gas_cache;
 mod gas_calculator;
+mod gas_types;
 pub mod price; // New trait-based architecture
 #[cfg(feature = "odos-example")]
 mod price_cache; // Legacy price cache for Odos example
@@ -24,6 +25,7 @@ pub use event::*;
 pub use gas::EventType; // Re-export for public API
 pub use gas_cache::*;
 pub use gas_calculator::*;
+pub use gas_types::*;
 #[cfg(feature = "odos-example")]
 pub use price_cache::*;
 #[cfg(feature = "odos-example")]
