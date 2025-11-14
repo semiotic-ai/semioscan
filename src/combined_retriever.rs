@@ -1,4 +1,5 @@
 use alloy_chains::NamedChain;
+use alloy_eips::eip4844::DATA_GAS_PER_BLOB;
 use alloy_network::{eip2718::Typed2718, Ethereum, Network};
 use alloy_primitives::{address, Address, BlockNumber, TxHash, U256};
 use alloy_provider::Provider;
@@ -17,8 +18,6 @@ use crate::{
     Transfer,
 };
 
-const BLOB_GAS_PER_BLOB: u64 = 131_072; // EIP-4844 blob gas per blob
-
 /// Core gas calculation logic (adapted from gas.rs)
 pub struct GasCalculationCore;
 impl GasCalculationCore {
@@ -33,7 +32,7 @@ impl GasCalculationCore {
             .blob_versioned_hashes()
             .map(|hashes| hashes.len())
             .unwrap_or_default();
-        let blob_gas_used = U256::from(blob_count * BLOB_GAS_PER_BLOB as usize);
+        let blob_gas_used = U256::from(blob_count * DATA_GAS_PER_BLOB as usize);
         let blob_gas_price = U256::from(transaction.max_fee_per_blob_gas().unwrap_or_default());
         blob_gas_used.saturating_mul(blob_gas_price)
     }

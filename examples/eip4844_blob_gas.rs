@@ -35,13 +35,14 @@
 ///
 /// **Blob Transaction (EIP-4844):**
 /// - Execution Cost = `gas_used * effective_gas_price`
-/// - Blob Gas Cost = `blob_count * BLOB_GAS_PER_BLOB * max_fee_per_blob_gas`
+/// - Blob Gas Cost = `blob_count * DATA_GAS_PER_BLOB * max_fee_per_blob_gas`
 /// - Total Cost = Execution Cost + Blob Gas Cost
 ///
 /// Where:
-/// - `BLOB_GAS_PER_BLOB = 131,072` (fixed constant)
+/// - `DATA_GAS_PER_BLOB = 131,072` (EIP-4844 constant from alloy-eips)
 /// - `max_fee_per_blob_gas` = Maximum fee willing to pay per blob gas unit
 /// - `blob_count` = Number of blobs in transaction (1-6 blobs per tx)
+use alloy_eips::eip4844::DATA_GAS_PER_BLOB;
 use alloy_primitives::{Address, U256};
 use alloy_provider::{Provider, ProviderBuilder};
 use anyhow::{Context, Result};
@@ -49,8 +50,6 @@ use semioscan::GasCostCalculator;
 use std::env;
 use tracing::{info, Level};
 use tracing_subscriber::FmtSubscriber;
-
-const BLOB_GAS_PER_BLOB: u64 = 131_072;
 
 /// Demonstrate blob gas calculation on recent Ethereum blocks
 ///
@@ -101,13 +100,13 @@ async fn demonstrate_blob_gas() -> Result<()> {
     let example_blob_count = 2;
     let example_max_fee_per_blob_gas = U256::from(10_000_000_000u64); // 10 gwei
 
-    let blob_gas_used = U256::from(example_blob_count * BLOB_GAS_PER_BLOB as usize);
+    let blob_gas_used = U256::from(example_blob_count * DATA_GAS_PER_BLOB as usize);
     let blob_gas_cost = blob_gas_used.saturating_mul(example_max_fee_per_blob_gas);
 
     println!("\n  Blob count: {}", example_blob_count);
     println!(
         "  Blob gas used: {} (= {} blobs * {} gas/blob)",
-        blob_gas_used, example_blob_count, BLOB_GAS_PER_BLOB
+        blob_gas_used, example_blob_count, DATA_GAS_PER_BLOB
     );
     println!(
         "  Max fee per blob gas: {} wei (10 gwei)",
@@ -178,14 +177,14 @@ async fn explain_blob_gas() -> Result<()> {
     println!("2. Blob gas: Cost of data availability");
     println!(
         "   Cost = blob_count * {} * max_fee_per_blob_gas",
-        BLOB_GAS_PER_BLOB
+        DATA_GAS_PER_BLOB
     );
     println!();
     println!("3. Total cost = Execution cost + Blob cost");
     println!();
 
     println!("Key Constants:");
-    println!("- BLOB_GAS_PER_BLOB: {} gas", BLOB_GAS_PER_BLOB);
+    println!("- DATA_GAS_PER_BLOB: {} gas", DATA_GAS_PER_BLOB);
     println!("- MAX_BLOBS_PER_BLOCK: 6 blobs");
     println!("- BLOB_SIZE: 131,072 bytes (128 KB)");
     println!();

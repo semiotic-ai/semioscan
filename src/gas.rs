@@ -1,4 +1,5 @@
 use alloy_chains::NamedChain;
+use alloy_eips::eip4844::DATA_GAS_PER_BLOB;
 use alloy_network::{Ethereum, Network};
 use alloy_primitives::{Address, BlockNumber, B256, U256};
 use alloy_provider::{network::eip2718::Typed2718, Provider};
@@ -12,9 +13,6 @@ use crate::{
     spans, Approval, GasCostCalculator, GasCostResult, GasForTx, Transfer,
 };
 use tracing::{error, info, trace};
-
-// Constants for gas calculations
-const BLOB_GAS_PER_BLOB: u64 = 131_072;
 
 /// Type of ERC-20 event for gas calculation
 ///
@@ -104,7 +102,7 @@ mod gas_calc_core {
             .map(|hashes| hashes.len())
             .unwrap_or_default();
 
-        let blob_gas_used = U256::from(blob_count * BLOB_GAS_PER_BLOB as usize);
+        let blob_gas_used = U256::from(blob_count * DATA_GAS_PER_BLOB as usize);
         let blob_gas_price = U256::from(transaction.max_fee_per_blob_gas().unwrap_or_default());
 
         blob_gas_used.saturating_mul(blob_gas_price)
@@ -612,8 +610,8 @@ mod tests {
 
     #[test]
     fn test_blob_gas_per_blob_constant() {
-        // Verify the EIP-4844 constant is correct
-        assert_eq!(BLOB_GAS_PER_BLOB, 131_072);
+        // Verify we're using the correct EIP-4844 constant from alloy-eips
+        assert_eq!(DATA_GAS_PER_BLOB, 131_072);
     }
 
     #[test]
