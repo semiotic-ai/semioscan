@@ -1,6 +1,6 @@
 use alloy_chains::NamedChain;
 use alloy_network::{eip2718::Typed2718, Ethereum, Network};
-use alloy_primitives::{address, keccak256, Address, BlockNumber, TxHash, U256};
+use alloy_primitives::{address, Address, BlockNumber, TxHash, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Filter, Log as RpcLog, TransactionTrait};
 use alloy_sol_types::SolEvent;
@@ -14,7 +14,7 @@ use tracing::{error, info, trace, warn};
 
 use crate::{
     spans, EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter, SemioscanConfig,
-    Transfer, TRANSFER_EVENT_SIGNATURE,
+    Transfer,
 };
 
 const BLOB_GAS_PER_BLOB: u64 = 131_072; // EIP-4844 blob gas per blob
@@ -61,7 +61,7 @@ impl GasCalculationCore {
         from_address: Address, // topic1
         to_address: Address,   // topic2
     ) -> Filter {
-        let transfer_topic_hash = keccak256(TRANSFER_EVENT_SIGNATURE.as_bytes());
+        let transfer_topic_hash = Transfer::SIGNATURE_HASH;
         Filter::new()
             .from_block(current_block)
             .to_block(to_block)

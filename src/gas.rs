@@ -1,6 +1,6 @@
 use alloy_chains::NamedChain;
 use alloy_network::{Ethereum, Network};
-use alloy_primitives::{keccak256, Address, BlockNumber, B256, U256};
+use alloy_primitives::{Address, BlockNumber, B256, U256};
 use alloy_provider::{network::eip2718::Typed2718, Provider};
 use alloy_rpc_types::{Filter, Log, TransactionTrait};
 use alloy_sol_types::SolEvent;
@@ -10,7 +10,6 @@ use tokio::time::sleep;
 use crate::{
     adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter},
     spans, Approval, GasCostCalculator, GasCostResult, GasForTx, Transfer,
-    APPROVAL_EVENT_SIGNATURE, TRANSFER_EVENT_SIGNATURE,
 };
 use tracing::{error, info, trace};
 
@@ -30,11 +29,11 @@ pub enum EventType {
 }
 
 impl EventType {
-    /// Get the event signature string
-    pub fn signature(&self) -> &'static str {
+    /// Get the event signature hash (B256)
+    pub fn signature_hash(&self) -> B256 {
         match self {
-            EventType::Transfer => TRANSFER_EVENT_SIGNATURE,
-            EventType::Approval => APPROVAL_EVENT_SIGNATURE,
+            EventType::Transfer => Transfer::SIGNATURE_HASH,
+            EventType::Approval => Approval::SIGNATURE_HASH,
         }
     }
 
@@ -135,7 +134,7 @@ mod gas_calc_core {
         topic1: Address,
         topic2: Address,
     ) -> Filter {
-        let event_topic = B256::from_slice(&*keccak256(event_type.signature().as_bytes()));
+        let event_topic = event_type.signature_hash();
 
         Filter::new()
             .from_block(current_block)
@@ -653,9 +652,15 @@ mod tests {
     }
 
     #[test]
-    fn test_event_type_signature() {
-        assert_eq!(EventType::Transfer.signature(), TRANSFER_EVENT_SIGNATURE);
-        assert_eq!(EventType::Approval.signature(), APPROVAL_EVENT_SIGNATURE);
+    fn test_event_type_signature_hash() {
+        assert_eq!(
+            EventType::Transfer.signature_hash(),
+            Transfer::SIGNATURE_HASH
+        );
+        assert_eq!(
+            EventType::Approval.signature_hash(),
+            Approval::SIGNATURE_HASH
+        );
     }
 
     #[test]

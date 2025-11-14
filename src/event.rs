@@ -45,36 +45,28 @@
 //! }
 //! ```
 //!
-//! # Example: Using event signatures for filters
+//! # Example: Using auto-generated event signatures for filters
 //!
-//! ```rust
-//! use semioscan::TRANSFER_EVENT_SIGNATURE;
-//! use alloy_primitives::keccak256;
+//! The `sol!` macro automatically generates `SIGNATURE` (string) and `SIGNATURE_HASH` (B256)
+//! constants for each event. Use these instead of manually computing hashes:
 //!
-//! // Create event topic hash for RPC filters
-//! let transfer_topic = keccak256(TRANSFER_EVENT_SIGNATURE.as_bytes());
+//! ```rust,ignore
+//! use semioscan::Transfer;
+//! use alloy_rpc_types::Filter;
+//!
+//! // Use the pre-computed signature hash (no runtime hashing needed!)
+//! let filter = Filter::new()
+//!     .event_signature(Transfer::SIGNATURE_HASH)
+//!     .address(token_address);
+//!
+//! // Access the signature string if needed
+//! println!("Event signature: {}", Transfer::SIGNATURE);
+//! // Prints: "Transfer(address,address,uint256)"
 //! ```
 
 use std::fmt::Debug;
 
 use alloy_sol_types::sol;
-
-/// The canonical ERC-20 Transfer event signature
-///
-/// This constant contains the string representation of the Transfer event
-/// signature as defined in the ERC-20 specification. Use this with `keccak256`
-/// to create event topic filters for RPC queries.
-///
-/// # Example
-///
-/// ```rust
-/// use semioscan::TRANSFER_EVENT_SIGNATURE;
-/// use alloy_primitives::keccak256;
-///
-/// let topic = keccak256(TRANSFER_EVENT_SIGNATURE.as_bytes());
-/// // Use topic in RPC filter to query Transfer events
-/// ```
-pub const TRANSFER_EVENT_SIGNATURE: &str = "Transfer(address,address,uint256)";
 
 sol! {
     /// ERC-20 Transfer event
@@ -112,23 +104,6 @@ impl Debug for Transfer {
         )
     }
 }
-
-/// The canonical ERC-20 Approval event signature
-///
-/// This constant contains the string representation of the Approval event
-/// signature as defined in the ERC-20 specification. Use this with `keccak256`
-/// to create event topic filters for RPC queries.
-///
-/// # Example
-///
-/// ```rust
-/// use semioscan::APPROVAL_EVENT_SIGNATURE;
-/// use alloy_primitives::keccak256;
-///
-/// let topic = keccak256(APPROVAL_EVENT_SIGNATURE.as_bytes());
-/// // Use topic in RPC filter to query Approval events
-/// ```
-pub const APPROVAL_EVENT_SIGNATURE: &str = "Approval(address,address,uint256)";
 
 sol! {
     /// ERC-20 Approval event

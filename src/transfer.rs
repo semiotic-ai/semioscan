@@ -29,14 +29,14 @@
 //! ```
 
 use alloy_chains::NamedChain;
-use alloy_primitives::{keccak256, Address, BlockNumber, B256, U256};
+use alloy_primitives::{Address, BlockNumber, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
 use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
-use crate::{SemioscanConfig, Transfer, TRANSFER_EVENT_SIGNATURE};
+use crate::{SemioscanConfig, Transfer};
 
 /// Result of transfer amount calculation
 ///
@@ -191,7 +191,7 @@ impl<P: Provider> AmountCalculator<P> {
 
         let contract_address = token;
 
-        let transfer_topic = B256::from_slice(&*keccak256(TRANSFER_EVENT_SIGNATURE.as_bytes()));
+        let transfer_topic = Transfer::SIGNATURE_HASH;
 
         // Get rate limit configuration for this chain
         let rate_limit = self.config.get_rate_limit_delay(chain);
