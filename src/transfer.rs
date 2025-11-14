@@ -29,14 +29,14 @@
 //! ```
 
 use alloy_chains::NamedChain;
-use alloy_primitives::{Address, BlockNumber, U256};
+use alloy_primitives::{Address, BlockNumber};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
 use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
-use crate::{SemioscanConfig, Transfer};
+use crate::{SemioscanConfig, TokenAmount, Transfer};
 
 /// Result of transfer amount calculation
 ///
@@ -51,8 +51,11 @@ use crate::{SemioscanConfig, Transfer};
 /// # Example
 ///
 /// ```rust,ignore
-/// // For USDC (6 decimals), raw amount of 1_000_000 = 1.0 USDC
-/// let human_readable = result.amount / U256::from(10u128.pow(6));
+/// use semioscan::TokenDecimals;
+///
+/// // For USDC (6 decimals), normalize to get human-readable amount
+/// let normalized = result.amount.normalize(TokenDecimals::USDC);
+/// // normalized.as_f64() gives the human-readable value (e.g., 1.0 for 1 USDC)
 /// ```
 pub struct AmountResult {
     /// Chain ID where the transfers occurred
@@ -62,7 +65,7 @@ pub struct AmountResult {
     /// Token contract address
     pub token: Address,
     /// Total amount transferred (raw, not normalized for decimals)
-    pub amount: U256,
+    pub amount: TokenAmount,
 }
 
 /// Calculator for ERC-20 token transfer amounts
@@ -186,7 +189,7 @@ impl<P: Provider> AmountCalculator<P> {
             chain,
             to,
             token,
-            amount: U256::ZERO,
+            amount: TokenAmount::ZERO,
         };
 
         let contract_address = token;
@@ -223,7 +226,7 @@ impl<P: Provider> AmountCalculator<P> {
                             current_total_amount = ?result.amount,
                             "Adding transfer amount to result"
                         );
-                        result.amount = result.amount.saturating_add(event.value);
+                        result.amount = result.amount + TokenAmount::from(event.value);
                     }
                     Err(e) => {
                         warn!(error = ?e, "Failed to decode Transfer log");
@@ -275,13 +278,13 @@ mod tests {
             chain,
             to,
             token,
-            amount: U256::ZERO,
+            amount: TokenAmount::ZERO,
         };
 
         assert_eq!(result.chain, chain);
         assert_eq!(result.to, to);
         assert_eq!(result.token, token);
-        assert_eq!(result.amount, U256::ZERO);
+        assert_eq!(result.amount, TokenAmount::ZERO);
     }
 
     #[test]
@@ -346,18 +349,20 @@ mod tests {
             chain,
             to,
             token,
-            amount: U256::ZERO,
+            amount: TokenAmount::ZERO,
         };
 
-        // Add amounts using saturating_add (as done in calculate_transfer_amount_between_blocks)
-        result.amount = result.amount.saturating_add(U256::from(1_000_000u64)); // 1 USDC (6 decimals)
-        result.amount = result.amount.saturating_add(U256::from(2_500_000u64)); // 2.5 USDC
+        // Add amounts using the Add trait (uses saturating_add internally)
+        result.amount = result.amount + TokenAmount::from(1_000_000u64); // 1 USDC (6 decimals)
+        result.amount = result.amount + TokenAmount::from(2_500_000u64); // 2.5 USDC
 
-        assert_eq!(result.amount, U256::from(3_500_000u64)); // 3.5 USDC total
+        assert_eq!(result.amount, TokenAmount::from(3_500_000u64)); // 3.5 USDC total
     }
 
     #[test]
     fn test_amount_overflow_protection() {
+        use alloy_primitives::U256;
+
         let chain = NamedChain::Mainnet;
         let to = address!("1111111111111111111111111111111111111111");
         let token = address!("2222222222222222222222222222222222222222");
@@ -366,13 +371,13 @@ mod tests {
             chain,
             to,
             token,
-            amount: U256::MAX - U256::from(100u64),
+            amount: TokenAmount::from(U256::MAX - U256::from(100u64)),
         };
 
         // Add amount that would overflow - should saturate at U256::MAX
-        result.amount = result.amount.saturating_add(U256::from(200u64));
+        result.amount = result.amount + TokenAmount::from(200u64);
 
-        assert_eq!(result.amount, U256::MAX);
+        assert_eq!(result.amount, TokenAmount::from(U256::MAX));
     }
 
     #[test]
@@ -385,14 +390,17 @@ mod tests {
             chain,
             to,
             token,
-            amount: U256::ZERO,
+            amount: TokenAmount::ZERO,
         };
 
         // Test with 18-decimal token (like WETH): 1 ETH = 1e18 wei
-        let one_eth = U256::from(1_000_000_000_000_000_000u64);
-        result.amount = result.amount.saturating_add(one_eth);
-        result.amount = result.amount.saturating_add(one_eth);
+        let one_eth = TokenAmount::from(1_000_000_000_000_000_000u64);
+        result.amount = result.amount + one_eth;
+        result.amount = result.amount + one_eth;
 
-        assert_eq!(result.amount, U256::from(2_000_000_000_000_000_000u64)); // 2 ETH
+        assert_eq!(
+            result.amount,
+            TokenAmount::from(2_000_000_000_000_000_000u64)
+        ); // 2 ETH
     }
 }
