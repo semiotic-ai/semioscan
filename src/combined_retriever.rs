@@ -477,8 +477,8 @@ where
         Ok(Some(GasAndAmountForTx {
             tx_hash,
             block_number,
-            gas_used: GasAmount::from_u256(gas_used),
-            effective_gas_price: GasPrice::from_u256(effective_gas_price),
+            gas_used: GasAmount::from(gas_used),
+            effective_gas_price: GasPrice::from(effective_gas_price),
             l1_fee,
             transferred_amount: transfer_event.value,
             blob_gas_cost,

@@ -95,12 +95,6 @@ impl From<U256> for TokenAmount {
     }
 }
 
-impl From<TokenAmount> for U256 {
-    fn from(value: TokenAmount) -> Self {
-        value.0
-    }
-}
-
 impl Add for TokenAmount {
     type Output = Self;
 
@@ -200,12 +194,6 @@ impl From<u8> for TokenDecimals {
     }
 }
 
-impl From<TokenDecimals> for u8 {
-    fn from(value: TokenDecimals) -> Self {
-        value.0
-    }
-}
-
 impl std::fmt::Display for TokenDecimals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} decimals", self.0)
@@ -282,12 +270,6 @@ impl NormalizedAmount {
 impl From<f64> for NormalizedAmount {
     fn from(value: f64) -> Self {
         Self(value)
-    }
-}
-
-impl From<NormalizedAmount> for f64 {
-    fn from(value: NormalizedAmount) -> Self {
-        value.0
     }
 }
 
@@ -490,19 +472,19 @@ mod tests {
         // TokenAmount conversions
         let u256_val = U256::from(12345u64);
         let amount: TokenAmount = u256_val.into();
-        let back: U256 = amount.into();
+        let back: U256 = amount.as_u256();
         assert_eq!(u256_val, back);
 
         // TokenDecimals conversions
         let u8_val: u8 = 18;
         let decimals: TokenDecimals = u8_val.into();
-        let back: u8 = decimals.into();
+        let back: u8 = decimals.as_u8();
         assert_eq!(u8_val, back);
 
         // NormalizedAmount conversions
         let f64_val = 1.5;
         let normalized: NormalizedAmount = f64_val.into();
-        let back: f64 = normalized.into();
+        let back: f64 = normalized.as_f64();
         assert_eq!(f64_val, back);
     }
 

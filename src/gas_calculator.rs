@@ -71,8 +71,8 @@ pub struct L1Gas {
 impl From<(U256, U256)> for L1Gas {
     fn from((gas_used, effective_gas_price): (U256, U256)) -> Self {
         Self {
-            gas_used: GasAmount::from_u256(gas_used),
-            effective_gas_price: GasPrice::from_u256(effective_gas_price),
+            gas_used: GasAmount::from(gas_used),
+            effective_gas_price: GasPrice::from(effective_gas_price),
         }
     }
 }
@@ -96,8 +96,8 @@ pub struct L2Gas {
 impl From<(U256, U256, U256)> for L2Gas {
     fn from((gas_used, effective_gas_price, l1_data_fee): (U256, U256, U256)) -> Self {
         Self {
-            gas_used: GasAmount::from_u256(gas_used),
-            effective_gas_price: GasPrice::from_u256(effective_gas_price),
+            gas_used: GasAmount::from(gas_used),
+            effective_gas_price: GasPrice::from(effective_gas_price),
             l1_data_fee: L1DataFee::new(l1_data_fee),
         }
     }

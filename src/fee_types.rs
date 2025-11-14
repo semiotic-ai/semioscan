@@ -139,12 +139,6 @@ impl From<U256> for L1DataFee {
     }
 }
 
-impl From<L1DataFee> for U256 {
-    fn from(value: L1DataFee) -> Self {
-        value.0
-    }
-}
-
 impl Add for L1DataFee {
     type Output = Self;
 
@@ -266,7 +260,7 @@ mod tests {
     fn test_conversions() {
         let u256_val = U256::from(12345u64);
         let fee: L1DataFee = u256_val.into();
-        let back: U256 = fee.into();
+        let back: U256 = fee.as_u256();
         assert_eq!(u256_val, back);
 
         let u64_val = 12345u64;

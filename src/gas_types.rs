@@ -30,11 +30,6 @@ impl GasAmount {
         Self(U256::from_limbs([amount, 0, 0, 0]))
     }
 
-    /// Create from U256
-    pub const fn from_u256(amount: U256) -> Self {
-        Self(amount)
-    }
-
     /// Get the inner U256 value
     pub const fn as_u256(&self) -> U256 {
         self.0
@@ -62,12 +57,6 @@ impl From<u64> for GasAmount {
 impl From<U256> for GasAmount {
     fn from(value: U256) -> Self {
         Self(value)
-    }
-}
-
-impl From<GasAmount> for U256 {
-    fn from(value: GasAmount) -> Self {
-        value.0
     }
 }
 
@@ -109,11 +98,6 @@ impl GasPrice {
         Self(U256::from_limbs([price_wei, 0, 0, 0]))
     }
 
-    /// Create from U256
-    pub const fn from_u256(price: U256) -> Self {
-        Self(price)
-    }
-
     /// Create from gwei (convenience constructor)
     pub fn from_gwei(gwei: u64) -> Self {
         Self(U256::from(gwei).saturating_mul(U256::from(1_000_000_000u64)))
@@ -151,15 +135,14 @@ impl From<U256> for GasPrice {
     }
 }
 
-impl From<GasPrice> for U256 {
-    fn from(value: GasPrice) -> Self {
-        value.0
-    }
-}
-
 impl std::fmt::Display for GasPrice {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} wei", self.0)
+        let gwei = self.as_gwei_f64();
+        if gwei >= 1.0 {
+            write!(f, "{:.2} gwei", gwei)
+        } else {
+            write!(f, "{} wei", self.0)
+        }
     }
 }
 
@@ -236,7 +219,7 @@ mod tests {
 
     #[test]
     fn test_saturating_arithmetic() {
-        let max_gas = GasAmount::from_u256(U256::MAX);
+        let max_gas = GasAmount::from(U256::MAX);
         let price = GasPrice::from_gwei(1);
 
         // Should saturate, not panic
@@ -249,8 +232,11 @@ mod tests {
         let gas = GasAmount::new(21000);
         assert_eq!(format!("{}", gas), "21000");
 
-        let price = GasPrice::new(50_000_000_000);
-        assert!(format!("{}", price).contains("50000000000"));
+        let price = GasPrice::new(50_000_000_000); // 50 gwei
+        assert_eq!(format!("{}", price), "50.00 gwei");
+
+        let small_price = GasPrice::new(100); // < 1 gwei
+        assert_eq!(format!("{}", small_price), "100 wei");
     }
 
     #[test]
@@ -266,11 +252,11 @@ mod tests {
         let value = U256::from(12345u64);
 
         let gas: GasAmount = value.into();
-        let back: U256 = gas.into();
+        let back: U256 = gas.as_u256();
         assert_eq!(value, back);
 
         let price: GasPrice = value.into();
-        let back: U256 = price.into();
+        let back: U256 = price.as_u256();
         assert_eq!(value, back);
     }
 }

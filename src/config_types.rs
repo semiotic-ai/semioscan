@@ -114,12 +114,6 @@ impl From<u64> for MaxBlockRange {
     }
 }
 
-impl From<MaxBlockRange> for u64 {
-    fn from(value: MaxBlockRange) -> Self {
-        value.0
-    }
-}
-
 impl std::fmt::Display for MaxBlockRange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} blocks", self.0)
@@ -298,7 +292,7 @@ mod tests {
     fn test_conversions() {
         let u64_val = 2000u64;
         let range: MaxBlockRange = u64_val.into();
-        let back: u64 = range.into();
+        let back: u64 = range.as_u64();
         assert_eq!(u64_val, back);
     }
 
