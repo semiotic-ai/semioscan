@@ -30,7 +30,7 @@ use alloy_provider::Provider;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::{DecimalPrecision, GasAmount, GasCache, GasPrice, SemioscanConfig};
+use crate::{DecimalPrecision, GasAmount, GasCache, GasPrice, L1DataFee, SemioscanConfig};
 
 /// Gas data for a single transaction
 ///
@@ -89,8 +89,8 @@ pub struct L2Gas {
     pub gas_used: GasAmount,
     /// Effective L2 gas price paid per unit of gas (in wei)
     pub effective_gas_price: GasPrice,
-    /// L1 data fee for posting transaction to L1 chain (in wei)
-    pub l1_data_fee: U256,
+    /// L1 data fee for posting transaction to L1 chain
+    pub l1_data_fee: L1DataFee,
 }
 
 impl From<(U256, U256, U256)> for L2Gas {
@@ -98,7 +98,7 @@ impl From<(U256, U256, U256)> for L2Gas {
         Self {
             gas_used: GasAmount::from_u256(gas_used),
             effective_gas_price: GasPrice::from_u256(effective_gas_price),
-            l1_data_fee,
+            l1_data_fee: L1DataFee::new(l1_data_fee),
         }
     }
 }
@@ -141,8 +141,8 @@ impl GasCostResult {
         }
     }
 
-    pub fn add_l1_fee(&mut self, l1_fee: U256) {
-        self.total_gas_cost = self.total_gas_cost.saturating_add(l1_fee);
+    pub fn add_l1_fee(&mut self, l1_fee: L1DataFee) {
+        self.total_gas_cost = self.total_gas_cost.saturating_add(l1_fee.as_u256());
     }
 
     /// Add a transaction to the gas cost result
@@ -163,7 +163,7 @@ impl GasCostResult {
             }
             GasForTx::L2(gas) => {
                 let l2_gas_cost = gas.gas_used * gas.effective_gas_price;
-                let l1_data_fee = gas.l1_data_fee;
+                let l1_data_fee = gas.l1_data_fee.as_u256();
                 let total_gas_cost = l2_gas_cost.saturating_add(l1_data_fee);
                 self.total_gas_cost = self.total_gas_cost.saturating_add(total_gas_cost);
                 self.transaction_count += 1;
@@ -284,7 +284,7 @@ mod tests {
         result.add_transaction(GasForTx::L2(L2Gas {
             gas_used: GasAmount::new(150000),
             effective_gas_price: GasPrice::new(100_000_000), // 0.1 gwei
-            l1_data_fee: U256::from(5_000_000_000_000_000u64), // 0.005 ETH
+            l1_data_fee: L1DataFee::new(U256::from(5_000_000_000_000_000u64)), // 0.005 ETH
         }));
 
         assert_eq!(result.transaction_count, 1);
@@ -411,10 +411,10 @@ mod tests {
         let to = address!("2222222222222222222222222222222222222222");
         let mut result = GasCostResult::new(NamedChain::Arbitrum, from, to);
 
-        result.add_l1_fee(U256::from(1_000_000_000_000_000u64));
+        result.add_l1_fee(L1DataFee::new(U256::from(1_000_000_000_000_000u64)));
         assert_eq!(result.total_gas_cost, U256::from(1_000_000_000_000_000u64));
 
-        result.add_l1_fee(U256::from(500_000_000_000_000u64));
+        result.add_l1_fee(L1DataFee::new(U256::from(500_000_000_000_000u64)));
         assert_eq!(result.total_gas_cost, U256::from(1_500_000_000_000_000u64));
     }
 
