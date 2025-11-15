@@ -14,24 +14,27 @@ use super::RpcError;
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use semioscan::{CombinedCalculator, RetrievalError};
+/// use alloy_chains::NamedChain;
 ///
-/// # async fn example() -> Result<(), RetrievalError> {
-/// let calculator = CombinedCalculator::new(/* provider */);
+/// async fn example() -> Result<(), RetrievalError> {
+///     let calculator = CombinedCalculator::new(provider);
 ///
-/// match calculator.calculate_combined_data_ethereum(/* params */).await {
-///     Ok(result) => println!("Retrieved data: {:?}", result),
-///     Err(RetrievalError::MissingBlockchainData { field }) => {
-///         eprintln!("Missing required field: {}", field);
+///     match calculator.calculate_combined_data_ethereum(
+///         NamedChain::Arbitrum, from_address, to_address, token_address, start_block, end_block
+///     ).await {
+///         Ok(result) => println!("Retrieved data: {:?}", result),
+///         Err(RetrievalError::MissingBlockchainData { field }) => {
+///             eprintln!("Missing required field: {}", field);
+///         }
+///         Err(RetrievalError::ConversionFailed { details }) => {
+///             eprintln!("Conversion failed: {}", details);
+///         }
+///         Err(e) => eprintln!("Other error: {}", e),
 ///     }
-///     Err(RetrievalError::ConversionFailed { details }) => {
-///         eprintln!("Conversion failed: {}", details);
-///     }
-///     Err(e) => eprintln!("Other error: {}", e),
+///     Ok(())
 /// }
-/// # Ok(())
-/// # }
 /// ```
 #[derive(Debug, thiserror::Error)]
 pub enum RetrievalError {

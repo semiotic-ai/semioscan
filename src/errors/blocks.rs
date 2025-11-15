@@ -13,27 +13,27 @@ use super::RpcError;
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use semioscan::{BlockWindowCalculator, BlockWindowError};
 /// use alloy_chains::NamedChain;
 /// use chrono::NaiveDate;
 ///
-/// # async fn example() -> Result<(), BlockWindowError> {
-/// let calculator = BlockWindowCalculator::new(/* provider */);
-/// let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+/// async fn example() -> Result<(), BlockWindowError> {
+///     let calculator = BlockWindowCalculator::new(provider, "cache.json");
+///     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
 ///
-/// match calculator.get_daily_window(NamedChain::Arbitrum, date).await {
-///     Ok(window) => println!("Success: {:?}", window),
-///     Err(BlockWindowError::InvalidRange { reason }) => {
-///         eprintln!("Invalid block range: {}", reason);
+///     match calculator.get_daily_window(NamedChain::Arbitrum, date).await {
+///         Ok(window) => println!("Success: {:?}", window),
+///         Err(BlockWindowError::InvalidRange { reason }) => {
+///             eprintln!("Invalid block range: {}", reason);
+///         }
+///         Err(BlockWindowError::Rpc(e)) => {
+///             eprintln!("RPC error, will retry: {}", e);
+///         }
+///         Err(e) => eprintln!("Other error: {}", e),
 ///     }
-///     Err(BlockWindowError::Rpc(e)) => {
-///         eprintln!("RPC error, will retry: {}", e);
-///     }
-///     Err(e) => eprintln!("Other error: {}", e),
+///     Ok(())
 /// }
-/// # Ok(())
-/// # }
 /// ```
 #[derive(Debug, thiserror::Error)]
 pub enum BlockWindowError {

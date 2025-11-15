@@ -13,26 +13,27 @@ use super::RpcError;
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use semioscan::{GasCostCalculator, GasCalculationError};
+/// use alloy_chains::NamedChain;
 ///
-/// # async fn example() -> Result<(), GasCalculationError> {
-/// let calculator = GasCostCalculator::new(/* provider */);
+/// async fn example() -> Result<(), GasCalculationError> {
+///     let calculator = GasCostCalculator::new(provider);
 ///
-/// match calculator.calculate_gas_cost_for_transfers_between_blocks(
-///     /* params */
-/// ).await {
-///     Ok(result) => println!("Gas cost: {:?}", result),
-///     Err(GasCalculationError::EventDecodeFailed { log_index, .. }) => {
-///         eprintln!("Failed to decode event at log {}", log_index);
+///     match calculator.calculate_gas_cost_for_transfers_between_blocks(
+///         NamedChain::Arbitrum, from_address, to_address, token_address, start_block, end_block
+///     ).await {
+///         Ok(result) => println!("Gas cost: {:?}", result),
+///         Err(GasCalculationError::EventDecodeFailed { log_index, .. }) => {
+///             eprintln!("Failed to decode event at log {}", log_index);
+///         }
+///         Err(GasCalculationError::MissingData { field }) => {
+///             eprintln!("Missing required field: {}", field);
+///         }
+///         Err(e) => eprintln!("Other error: {}", e),
 ///     }
-///     Err(GasCalculationError::MissingData { field }) => {
-///         eprintln!("Missing required field: {}", field);
-///     }
-///     Err(e) => eprintln!("Other error: {}", e),
+///     Ok(())
 /// }
-/// # Ok(())
-/// # }
 /// ```
 #[derive(Debug, thiserror::Error)]
 pub enum GasCalculationError {

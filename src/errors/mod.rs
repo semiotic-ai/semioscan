@@ -23,40 +23,43 @@
 //!
 //! ## Fine-grained error handling
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use semioscan::{BlockWindowCalculator, BlockWindowError};
 //! use alloy_chains::NamedChain;
 //! use chrono::NaiveDate;
 //!
-//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let calculator = BlockWindowCalculator::new(/* provider */);
-//! let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+//! async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//!     let calculator = BlockWindowCalculator::new(provider, "cache.json");
+//!     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
 //!
-//! match calculator.get_daily_window(NamedChain::Arbitrum, date).await {
-//!     Ok(window) => println!("Block window: {:?}", window),
-//!     Err(BlockWindowError::InvalidRange { reason }) => {
-//!         eprintln!("Invalid range: {}", reason);
+//!     match calculator.get_daily_window(NamedChain::Arbitrum, date).await {
+//!         Ok(window) => println!("Block window: {:?}", window),
+//!         Err(BlockWindowError::InvalidRange { reason }) => {
+//!             eprintln!("Invalid range: {}", reason);
+//!         }
+//!         Err(BlockWindowError::Rpc(rpc_err)) => {
+//!             eprintln!("RPC failure, retrying...: {}", rpc_err);
+//!         }
+//!         Err(e) => eprintln!("Other error: {}", e),
 //!     }
-//!     Err(BlockWindowError::Rpc(rpc_err)) => {
-//!         eprintln!("RPC failure, retrying...: {}", rpc_err);
-//!     }
-//!     Err(e) => eprintln!("Other error: {}", e),
+//!     Ok(())
 //! }
-//! # Ok(())
-//! # }
 //! ```
 //!
 //! ## Using the unified error type
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use semioscan::{SemioscanError, BlockWindowCalculator};
+//! use alloy_chains::NamedChain;
+//! use chrono::NaiveDate;
 //!
-//! # async fn example() -> Result<(), SemioscanError> {
-//! let calculator = BlockWindowCalculator::new(/* provider */);
-//! let window = calculator.get_daily_window(/* ... */).await?;
-//! // Errors automatically convert to SemioscanError via From implementations
-//! # Ok(())
-//! # }
+//! async fn example() -> Result<(), SemioscanError> {
+//!     let calculator = BlockWindowCalculator::new(provider, "cache.json");
+//!     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+//!     let window = calculator.get_daily_window(NamedChain::Arbitrum, date).await?;
+//!     // Errors automatically convert to SemioscanError via From implementations
+//!     Ok(())
+//! }
 //! ```
 
 mod blocks;
@@ -83,16 +86,21 @@ pub use rpc::RpcError;
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use semioscan::{SemioscanError, BlockWindowCalculator, GasCostCalculator};
+/// use alloy_chains::NamedChain;
+/// use chrono::NaiveDate;
 ///
 /// async fn process_data() -> Result<(), SemioscanError> {
-///     let block_calc = BlockWindowCalculator::new(/* provider */);
-///     let gas_calc = GasCostCalculator::new(/* provider */);
+///     let block_calc = BlockWindowCalculator::new(provider, "cache.json");
+///     let gas_calc = GasCostCalculator::new(provider);
 ///
 ///     // Both error types automatically convert to SemioscanError
-///     let window = block_calc.get_daily_window(/* ... */).await?;
-///     let gas_cost = gas_calc.calculate_gas_cost_for_transfers_between_blocks(/* ... */).await?;
+///     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
+///     let window = block_calc.get_daily_window(NamedChain::Arbitrum, date).await?;
+///     let gas_cost = gas_calc.calculate_gas_cost_for_transfers_between_blocks(
+///         NamedChain::Arbitrum, from_address, to_address, token_address, start_block, end_block
+///     ).await?;
 ///
 ///     Ok(())
 /// }

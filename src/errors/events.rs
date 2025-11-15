@@ -13,22 +13,23 @@ use super::RpcError;
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use semioscan::{extract_transferred_to_tokens, EventProcessingError};
+/// use alloy_chains::NamedChain;
 ///
-/// # async fn example() -> Result<(), EventProcessingError> {
-/// match extract_transferred_to_tokens(/* params */).await {
-///     Ok(tokens) => println!("Found {} tokens", tokens.len()),
-///     Err(EventProcessingError::ConfigurationMissing { field }) => {
-///         eprintln!("Missing configuration: {}", field);
+/// async fn example() -> Result<(), EventProcessingError> {
+///     match extract_transferred_to_tokens(&provider, NamedChain::Arbitrum, router_address, start_block, end_block).await {
+///         Ok(tokens) => println!("Found {} tokens", tokens.len()),
+///         Err(EventProcessingError::ConfigurationMissing { field }) => {
+///             eprintln!("Missing configuration: {}", field);
+///         }
+///         Err(EventProcessingError::Rpc(e)) => {
+///             eprintln!("RPC error: {}", e);
+///         }
+///         Err(e) => eprintln!("Other error: {}", e),
 ///     }
-///     Err(EventProcessingError::Rpc(e)) => {
-///         eprintln!("RPC error: {}", e);
-///     }
-///     Err(e) => eprintln!("Other error: {}", e),
+///     Ok(())
 /// }
-/// # Ok(())
-/// # }
 /// ```
 #[derive(Debug, thiserror::Error)]
 pub enum EventProcessingError {

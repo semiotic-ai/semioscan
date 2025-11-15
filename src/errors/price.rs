@@ -17,24 +17,25 @@ use super::RpcError;
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use semioscan::{PriceCalculator, PriceCalculationError};
+/// use alloy_chains::NamedChain;
 ///
-/// # async fn example() -> Result<(), PriceCalculationError> {
-/// let calculator = PriceCalculator::new(/* provider */, /* source */);
+/// async fn example() -> Result<(), PriceCalculationError> {
+///     let calculator = PriceCalculator::new(provider, NamedChain::Arbitrum, usdc_address, price_source);
 ///
-/// match calculator.calculate_price_between_blocks(/* params */).await {
-///     Ok(result) => println!("Price data: {:?}", result),
-///     Err(PriceCalculationError::MetadataFetchFailed { token, .. }) => {
-///         eprintln!("Failed to fetch metadata for token {}", token);
+///     match calculator.calculate_price_between_blocks(token_address, start_block, end_block).await {
+///         Ok(result) => println!("Price data: {:?}", result),
+///         Err(PriceCalculationError::MetadataFetchFailed { token, .. }) => {
+///             eprintln!("Failed to fetch metadata for token {}", token);
+///         }
+///         Err(PriceCalculationError::Rpc(e)) => {
+///             eprintln!("RPC error, will retry: {}", e);
+///         }
+///         Err(e) => eprintln!("Other error: {}", e),
 ///     }
-///     Err(PriceCalculationError::Rpc(e)) => {
-///         eprintln!("RPC error, will retry: {}", e);
-///     }
-///     Err(e) => eprintln!("Other error: {}", e),
+///     Ok(())
 /// }
-/// # Ok(())
-/// # }
 /// ```
 #[derive(Debug, thiserror::Error)]
 pub enum PriceCalculationError {
