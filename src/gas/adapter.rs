@@ -172,39 +172,133 @@ impl ReceiptAdapter<Optimism> for OptimismReceiptAdapter {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_ethereum_adapter_has_no_l1_fee() {
-        // The Ethereum adapter should always return None for L1 data fee
-        // since Ethereum L1 doesn't have L1 data fees
-        // This is a business logic test of the adapter trait implementation
+    /// Create an Ethereum receipt with known gas values for testing
+    fn create_ethereum_receipt(
+        gas_used: u64,
+        effective_gas_price: u128,
+    ) -> <Ethereum as Network>::ReceiptResponse {
+        let json = serde_json::json!({
+            "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "blockNumber": "0x1",
+            "transactionIndex": "0x0",
+            "from": "0x0000000000000000000000000000000000000000",
+            "to": "0x0000000000000000000000000000000000000000",
+            "cumulativeGasUsed": format!("0x{:x}", gas_used),
+            "gasUsed": format!("0x{:x}", gas_used),
+            "effectiveGasPrice": format!("0x{:x}", effective_gas_price),
+            "logs": [],
+            "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "status": "0x1",
+            "type": "0x2"
+        });
 
-        // We can't easily create a mock receipt here without pulling in test dependencies,
-        // but we can document the expected behavior:
-        // - Ethereum adapter should return None for l1_data_fee
-        // - Arbitrum and Polygon chains also don't have L1 data fees (use Ethereum adapter)
-        // - Optimism Stack chains (Base, Optimism, Mode, etc.) have L1 data fees
+        serde_json::from_value(json).expect("Failed to create test Ethereum receipt")
+    }
 
-        let _adapter = EthereumReceiptAdapter;
-        // The l1_data_fee method signature guarantees it returns Option<U256>
-        // and the implementation always returns None for Ethereum
+    /// Create an Optimism receipt with known gas values and L1 fee for testing
+    fn create_optimism_receipt(
+        gas_used: u64,
+        effective_gas_price: u128,
+        l1_fee: Option<u128>,
+    ) -> <Optimism as Network>::ReceiptResponse {
+        let json = serde_json::json!({
+            "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "blockNumber": "0x1",
+            "transactionIndex": "0x0",
+            "from": "0x0000000000000000000000000000000000000000",
+            "to": "0x0000000000000000000000000000000000000000",
+            "cumulativeGasUsed": format!("0x{:x}", gas_used),
+            "gasUsed": format!("0x{:x}", gas_used),
+            "effectiveGasPrice": format!("0x{:x}", effective_gas_price),
+            "logs": [],
+            "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "status": "0x1",
+            "type": "0x2",
+            "l1Fee": l1_fee.map(|fee| format!("0x{:x}", fee)),
+            "l1GasUsed": "0x0",
+            "l1GasPrice": "0x0",
+            "l1FeeScalar": "1.0"
+        });
+
+        serde_json::from_value(json).expect("Failed to create test Optimism receipt")
     }
 
     #[test]
-    fn test_optimism_adapter_has_l1_fee() {
-        // The Optimism adapter should always return Some(U256) for L1 data fee
-        // even if the fee is 0
-        // This is a business logic test of the adapter trait implementation
+    fn ethereum_adapter_extracts_gas_used() {
+        let adapter = EthereumReceiptAdapter;
+        let receipt = create_ethereum_receipt(50_000, 30_000_000_000);
 
-        let _adapter = OptimismReceiptAdapter;
-        // The l1_data_fee method signature guarantees it returns Option<U256>
-        // and the implementation always returns Some for Optimism Stack chains
+        let gas_used = adapter.gas_used(&receipt);
+
+        assert_eq!(gas_used, U256::from(50_000));
     }
 
     #[test]
-    fn test_adapter_trait_object_safety() {
-        // Test that ReceiptAdapter is object-safe by creating a trait object
-        // This ensures the trait can be used dynamically
+    fn ethereum_adapter_extracts_effective_gas_price() {
+        let adapter = EthereumReceiptAdapter;
+        let receipt = create_ethereum_receipt(50_000, 30_000_000_000);
 
+        let price = adapter.effective_gas_price(&receipt);
+
+        assert_eq!(price, U256::from(30_000_000_000_u128));
+    }
+
+    #[test]
+    fn ethereum_adapter_returns_none_for_l1_fee() {
+        let adapter = EthereumReceiptAdapter;
+        let receipt = create_ethereum_receipt(50_000, 30_000_000_000);
+
+        let l1_fee = adapter.l1_data_fee(&receipt);
+
+        assert_eq!(l1_fee, None);
+    }
+
+    #[test]
+    fn optimism_adapter_extracts_gas_used() {
+        let adapter = OptimismReceiptAdapter;
+        let receipt = create_optimism_receipt(75_000, 20_000_000_000, Some(1_000_000));
+
+        let gas_used = adapter.gas_used(&receipt);
+
+        assert_eq!(gas_used, U256::from(75_000));
+    }
+
+    #[test]
+    fn optimism_adapter_extracts_effective_gas_price() {
+        let adapter = OptimismReceiptAdapter;
+        let receipt = create_optimism_receipt(75_000, 20_000_000_000, Some(1_000_000));
+
+        let price = adapter.effective_gas_price(&receipt);
+
+        assert_eq!(price, U256::from(20_000_000_000_u128));
+    }
+
+    #[test]
+    fn optimism_adapter_extracts_l1_fee_when_present() {
+        let adapter = OptimismReceiptAdapter;
+        let receipt = create_optimism_receipt(75_000, 20_000_000_000, Some(1_500_000));
+
+        let l1_fee = adapter.l1_data_fee(&receipt);
+
+        assert_eq!(l1_fee, Some(U256::from(1_500_000)));
+    }
+
+    #[test]
+    fn optimism_adapter_returns_zero_when_l1_fee_is_none() {
+        let adapter = OptimismReceiptAdapter;
+        let receipt = create_optimism_receipt(75_000, 20_000_000_000, None);
+
+        let l1_fee = adapter.l1_data_fee(&receipt);
+
+        // Implementation returns Some(0) when l1_fee is None in receipt
+        assert_eq!(l1_fee, Some(U256::ZERO));
+    }
+
+    #[test]
+    fn adapter_trait_object_safety() {
+        // Verify that ReceiptAdapter can be used as a trait object (dynamic dispatch)
         let _ethereum_adapter: &dyn ReceiptAdapter<Ethereum> = &EthereumReceiptAdapter;
         let _optimism_adapter: &dyn ReceiptAdapter<Optimism> = &OptimismReceiptAdapter;
     }
