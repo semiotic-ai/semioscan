@@ -32,7 +32,7 @@ use tokio::sync::Mutex;
 
 use crate::config::SemioscanConfig;
 use crate::gas::cache::GasCache;
-use crate::retrieval::combined::DecimalPrecision;
+use crate::retrieval::DecimalPrecision;
 use crate::types::config::TransactionCount;
 use crate::types::fees::L1DataFee;
 use crate::types::gas::{GasAmount, GasPrice};
