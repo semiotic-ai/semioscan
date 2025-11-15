@@ -6,6 +6,37 @@
 
 **Semioscan** is a Rust library for blockchain analytics, providing production-grade tools for calculating gas costs, extracting price data from DEX swaps, and working with block ranges across multiple EVM-compatible chains.
 
+**Key differentiator**: Semioscan is a **library-only crate** with no CLI, API server, or database dependencies. You bring your own infrastructure and integrate semioscan into your existing systems.
+
+Built on [Alloy](https://github.com/alloy-rs/alloy), the modern Ethereum library for Rust, semioscan provides type-safe blockchain interactions with zero-copy parsing and excellent performance.
+
+## Table of Contents
+
+- [Features](#features)
+- [Use Cases](#use-cases)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+  - [1. Calculate Gas Costs](#1-calculate-gas-costs)
+  - [2. Calculate Daily Block Windows](#2-calculate-daily-block-windows)
+  - [3. Extract DEX Price Data](#3-extract-dex-price-data)
+- [Examples and Tutorials](#examples-and-tutorials)
+- [Core Concepts](#core-concepts)
+  - [Block Windows](#block-windows)
+  - [L1 Data Fees (L2 Chains)](#l1-data-fees-l2-chains)
+  - [Caching](#caching)
+- [Implementing Custom Price Sources](#implementing-custom-price-sources)
+- [Library Architecture](#library-architecture)
+- [Multi-Chain Support](#multi-chain-support)
+- [Advanced Configuration](#advanced-configuration)
+- [Performance Considerations](#performance-considerations)
+- [Running Tests and Examples](#running-tests-and-examples)
+- [Troubleshooting](#troubleshooting)
+- [When NOT to Use Semioscan](#when-not-to-use-semioscan)
+- [Production Usage](#production-usage)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgments](#acknowledgments)
+
 ## Features
 
 - **Gas Cost Calculation**: Accurately calculate transaction gas costs for both L1 (Ethereum) and L2 (Optimism Stack) chains, including L1 data fees
@@ -14,6 +45,18 @@
 - **Multi-Chain Support**: Works with 12+ EVM chains including Ethereum, Arbitrum, Base, Optimism, Polygon, and more
 - **Event Scanning**: Extract transfer amounts and events from blockchain transaction logs
 - **Production-Ready**: Battle-tested in production for automated trading and DeFi applications processing millions of dollars in swaps
+
+## Use Cases
+
+Semioscan is ideal for:
+
+- **DeFi Liquidation Bots**: Calculate profitability accounting for accurate gas costs across L1/L2 chains
+- **Trading Automation**: Extract real-time price data from DEX swaps for arbitrage detection
+- **Blockchain Analytics**: Map calendar dates to block ranges for historical analysis and reporting
+- **Token Discovery**: Scan chains for tokens transferred to specific addresses (e.g., router contracts)
+- **Financial Reporting**: Calculate transaction costs for accounting and tax purposes
+- **MEV Research**: Analyze gas costs and swap prices for MEV opportunity detection
+- **Multi-Chain Operations**: Consistent API across 12+ EVM chains with automatic L2 fee handling
 
 ## Installation
 
@@ -146,6 +189,74 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
+## Examples and Tutorials
+
+The [`examples/`](examples/) directory contains complete, production-ready examples demonstrating semioscan's capabilities. **See [examples/README.md](examples/README.md) for comprehensive documentation, setup instructions, and troubleshooting.**
+
+### Quick Reference
+
+| Example | Use Case | Difficulty |
+|---------|----------|------------|
+| [`daily_block_window.rs`](examples/daily_block_window.rs) | Map UTC dates to block ranges | Beginner |
+| [`router_token_discovery.rs`](examples/router_token_discovery.rs) | Discover tokens sent to router contracts | Intermediate |
+| [`eip4844_blob_gas.rs`](examples/eip4844_blob_gas.rs) | Calculate EIP-4844 blob gas for L2 rollups | Advanced |
+| [`custom_dex_integration.rs`](examples/custom_dex_integration.rs) | Implement `PriceSource` for any DEX | Advanced |
+
+### Shell Script Workflows
+
+Production-ready scripts for multi-chain operations:
+- **`multi_chain_daily_report.sh`** - Generate liquidation reports across all chains
+- **`generate_daily_report.sh`** - Single-chain financial reporting
+- **`collect_data_only.sh`** - Data collection without report generation
+- **`generate_report_from_json.sh`** - Report from cached data
+
+### Running Examples
+
+```bash
+# Basic usage
+RPC_URL=https://arb1.arbitrum.io/rpc cargo run --example daily_block_window
+
+# With chain-specific environment variables
+ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc cargo run --example router_token_discovery -- arbitrum
+
+# With logging for debugging
+RUST_LOG=debug cargo run --example eip4844_blob_gas
+```
+
+**For detailed setup, configuration, performance tips, and troubleshooting, see [examples/README.md](examples/README.md).**
+
+## Core Concepts
+
+### Block Windows
+
+A block window maps a calendar date (in UTC) to the range of blocks produced during that day. Different chains have different block production rates:
+
+- **Arbitrum**: ~4 blocks/second (~345,600 blocks/day)
+- **Ethereum**: ~12 seconds/block (~7,200 blocks/day)
+- **Base**: ~2 seconds/block (~43,200 blocks/day)
+
+Block windows enable date-based queries for analytics, reporting, and historical analysis.
+
+### L1 Data Fees (L2 Chains)
+
+L2 chains like Arbitrum, Base, and Optimism post transaction data to Ethereum for security. This creates two separate gas costs:
+
+- **Execution gas**: Cost of running the transaction on L2 (cheap, uses L2 gas price)
+- **L1 data fee**: Cost of posting transaction data to Ethereum (expensive, varies by calldata size and L1 gas price)
+
+Semioscan automatically detects L2 chains and calculates both components for accurate total costs. This is critical for profitability calculations in liquidation bots and trading systems.
+
+### Caching
+
+Block windows and gas calculations are cached to disk to avoid repeated expensive RPC calls:
+
+- **Block windows**: Cached by chain and date (immutable once a day ends)
+- **Gas calculations**: Cached by chain, address pair, and block range
+- **Cache format**: JSON files on disk
+- **Cache invalidation**: Automatic for incomplete date ranges
+
+Caching dramatically reduces RPC usage and improves performance for repeated queries.
+
 ## Implementing Custom Price Sources
 
 Semioscan uses a trait-based architecture that allows you to implement price extraction for **any DEX protocol**. The `PriceSource` trait is object-safe and designed for easy extensibility.
@@ -220,21 +331,6 @@ Semioscan is a **library-only crate** with no binaries, CLI tools, or API server
 
 This design makes semioscan highly composable and easy to integrate into existing systems.
 
-## Examples
-
-The `examples/` directory contains complete working examples:
-
-- **`daily_block_window.rs`**: Calculate block windows for specific dates
-- **Shell scripts**: Multi-chain reporting and data collection workflows
-
-Run an example:
-
-```bash
-RPC_URL=https://arb1.arbitrum.io/rpc/ \
-API_KEY=your_api_key \
-cargo run --package semioscan --example daily_block_window
-```
-
 ## Multi-Chain Support
 
 Semioscan works with any EVM-compatible chain. Chains with L2-specific features (like L1 data fees) are automatically detected and handled correctly.
@@ -266,25 +362,38 @@ let config = SemioscanConfigBuilder::default()
 let calculator = GasCalculator::with_config(provider.clone(), Some(config.clone()));
 ```
 
-## Development
+## Performance Considerations
 
-### Building
+### Block Range Chunking
 
-```bash
-# Build library
-cargo build --package semioscan
+Large block ranges are automatically chunked to prevent RPC timeouts:
+- **Default**: 5,000 blocks per chunk (configurable per chain)
+- **Benefits**: Prevents timeouts, enables progress tracking, reduces memory usage
 
-# Build with Odos example
-cargo build --package semioscan --features odos-example
+### Rate Limiting
 
-# Run tests
-cargo test --package semioscan --lib
+Automatic rate limiting protects against RPC provider limits:
+- **Default**: 100 requests/second (configurable per chain)
+- **Recommendation**: Use paid RPC providers for production (300-1000+ req/s)
 
-# Check code quality
-cargo clippy --package semioscan --all-targets --all-features -- -D warnings
-```
+### Memory Usage
 
-### Testing
+- **Minimal**: Caches are written to disk, not held in memory
+- **Typical cache size**: 1-10 MB per chain
+- **Concurrency**: Safe to run multiple queries concurrently
+
+### Query Performance
+
+Typical performance characteristics (depends on RPC provider):
+- **Block window calculation**: 5-15 seconds (first query), <1ms (cached)
+- **Gas calculation** (1,000 blocks): 10-30 seconds
+- **Token discovery** (10,000 blocks): 2-5 minutes
+
+**See [examples/README.md#performance-tips](examples/README.md#performance-tips) for optimization strategies.**
+
+## Running Tests and Examples
+
+### Running Tests
 
 Semioscan has comprehensive unit tests for all business logic:
 
@@ -297,15 +406,63 @@ cargo test --package semioscan --lib
 
 # Run specific test file
 cargo test --package semioscan --test gas_calculator_tests
+
+# Run with logging
+RUST_LOG=debug cargo test --package semioscan
 ```
 
-**Testing Strategy**:
+### Running Examples
 
-- **Unit Tests** (`tests/`): Test business logic, edge cases, and error handling without external dependencies
-- **Examples** (`examples/`): Validate integration with real blockchain networks (requires RPC access)
-- **Mock Infrastructure**: `tests/helpers/` provides `MockPriceSource` for testing price extraction logic
+Examples demonstrate real-world usage with live blockchain connections:
 
-See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for detailed testing principles and best practices.
+```bash
+# Run example with environment variables
+RPC_URL=https://arb1.arbitrum.io/rpc cargo run --package semioscan --example daily_block_window
+
+# Run with logging
+RUST_LOG=info RPC_URL=https://arb1.arbitrum.io/rpc cargo run --package semioscan --example router_token_discovery
+
+# Run with chain-specific configuration
+ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc \
+API_KEY=your_api_key \
+cargo run --package semioscan --example router_token_discovery -- arbitrum
+```
+
+**For detailed example documentation, see [examples/README.md](examples/README.md).**
+
+## Troubleshooting
+
+### Common Issues
+
+**Rate Limiting (`429 Too Many Requests`)**
+- **Solution**: Use a paid RPC provider or increase rate limit delay in config
+- **See**: [examples/README.md#rpc-errors](examples/README.md#rpc-errors)
+
+**Block Range Too Large**
+- **Solution**: Reduce `max_block_range` in config (default: 5,000)
+- **Cause**: Some RPC providers have stricter limits
+
+**Missing Data / No Logs Found**
+- **Possible causes**: Wrong contract address, invalid block range, chain reorganization
+- **Solution**: Verify addresses and block range using a block explorer
+
+**Chain ID Issues**
+- **Solution**: Set `CHAIN_ID` environment variable for chains without `eth_chainId` support
+- **Affected chains**: Some Avalanche RPC endpoints
+
+**For comprehensive troubleshooting, see [examples/README.md#troubleshooting](examples/README.md#troubleshooting).**
+
+## When NOT to Use Semioscan
+
+Semioscan may not be the best choice for:
+
+- **Real-time price feeds**: Use WebSocket-based oracles (Chainlink, Pyth, etc.) for sub-second price updates
+- **Non-EVM chains**: Semioscan is EVM-specific (Solana, Cosmos, etc. are not supported)
+- **Simple balance queries**: Use lighter libraries like `ethers-rs` for basic token balances
+- **Indexing entire chains**: Use The Graph or custom indexers for comprehensive blockchain indexing
+- **High-frequency trading**: RPC-based queries have latency; use WebSocket streams or MEV infrastructure
+
+Semioscan excels at **batch analytics**, **historical queries**, and **multi-chain operations** where accurate gas cost calculation and flexible price extraction are required.
 
 ## Production Usage
 
