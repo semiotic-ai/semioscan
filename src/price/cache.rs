@@ -3,6 +3,51 @@ use alloy_primitives::{Address, BlockNumber};
 use crate::cache::block_range::{BlockRangeCache, Mergeable};
 use crate::price::calculator::TokenPriceResult;
 
+/// A range of blocks with start and end inclusive
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockRange {
+    pub start: BlockNumber,
+    pub end: BlockNumber,
+}
+
+impl BlockRange {
+    /// Create a new block range
+    pub const fn new(start: BlockNumber, end: BlockNumber) -> Self {
+        Self { start, end }
+    }
+
+    /// Get the length of this block range (inclusive)
+    pub fn len(&self) -> u64 {
+        if self.end >= self.start {
+            self.end - self.start + 1
+        } else {
+            0
+        }
+    }
+
+    /// Check if this range is empty
+    pub fn is_empty(&self) -> bool {
+        self.end < self.start
+    }
+
+    /// Check if this range contains a specific block
+    pub fn contains(&self, block: BlockNumber) -> bool {
+        block >= self.start && block <= self.end
+    }
+}
+
+impl From<(u64, u64)> for BlockRange {
+    fn from((start, end): (u64, u64)) -> Self {
+        Self { start, end }
+    }
+}
+
+impl From<BlockRange> for (u64, u64) {
+    fn from(range: BlockRange) -> Self {
+        (range.start, range.end)
+    }
+}
+
 // Implement Mergeable for TokenPriceResult
 impl Mergeable for TokenPriceResult {
     fn merge(&mut self, other: &Self) {
@@ -55,17 +100,22 @@ impl PriceCache {
     ///
     /// Returns a tuple of:
     /// - `Option<TokenPriceResult>`: Merged data from all overlapping cached entries
-    /// - `Vec<(u64, u64)>`: Sorted list of uncached ranges (gaps) to scan
+    /// - `Vec<BlockRange>`: Sorted list of uncached ranges (gaps) to scan
     pub fn calculate_gaps(
         &self,
         token_address: Address,
         start_block: BlockNumber,
         end_block: BlockNumber,
-    ) -> (Option<TokenPriceResult>, Vec<(u64, u64)>) {
-        self.inner
-            .calculate_gaps(&token_address, start_block, end_block, || {
-                TokenPriceResult::new(token_address)
-            })
+    ) -> (Option<TokenPriceResult>, Vec<BlockRange>) {
+        let (result, gaps) =
+            self.inner
+                .calculate_gaps(&token_address, start_block, end_block, || {
+                    TokenPriceResult::new(token_address)
+                });
+
+        // Convert Vec<(u64, u64)> to Vec<BlockRange>
+        let typed_gaps = gaps.into_iter().map(BlockRange::from).collect();
+        (result, typed_gaps)
     }
 }
 
@@ -80,14 +130,14 @@ mod tests {
         token_amount: f64,
         usdc_amount: f64,
     ) -> TokenPriceResult {
-        let mut result = TokenPriceResult::new(token);
-        result.merge(&TokenPriceResult {
+        use crate::{NormalizedAmount, TransactionCount, UsdValue};
+
+        TokenPriceResult {
             token_address: token,
-            total_token_amount: token_amount,
-            total_usdc_amount: usdc_amount,
-            transaction_count: 1,
-        });
-        result
+            total_token_amount: NormalizedAmount::new(token_amount),
+            total_usdc_amount: UsdValue::new(usdc_amount),
+            transaction_count: TransactionCount::new(1),
+        }
     }
 
     #[test]
@@ -110,8 +160,14 @@ mod tests {
         let result = cache.get(token, 100, 200);
         assert!(result.is_some(), "Should find exact match");
         let retrieved = result.unwrap();
-        assert_eq!(retrieved.total_token_amount, expected.total_token_amount);
-        assert_eq!(retrieved.total_usdc_amount, expected.total_usdc_amount);
+        assert_eq!(
+            retrieved.total_token_amount.as_f64(),
+            expected.total_token_amount.as_f64()
+        );
+        assert_eq!(
+            retrieved.total_usdc_amount.as_f64(),
+            expected.total_usdc_amount.as_f64()
+        );
     }
 
     #[test]
@@ -127,8 +183,14 @@ mod tests {
         let result = cache.get(token, 100, 200);
         assert!(result.is_some(), "Should find contained range");
         let retrieved = result.unwrap();
-        assert_eq!(retrieved.total_token_amount, expected.total_token_amount);
-        assert_eq!(retrieved.total_usdc_amount, expected.total_usdc_amount);
+        assert_eq!(
+            retrieved.total_token_amount.as_f64(),
+            expected.total_token_amount.as_f64()
+        );
+        assert_eq!(
+            retrieved.total_usdc_amount.as_f64(),
+            expected.total_usdc_amount.as_f64()
+        );
     }
 
     #[test]
@@ -170,7 +232,7 @@ mod tests {
 
         assert!(result.is_none(), "Empty cache should return None result");
         assert_eq!(gaps.len(), 1, "Should have one gap covering entire range");
-        assert_eq!(gaps[0], (100, 200));
+        assert_eq!(gaps[0], BlockRange::new(100, 200));
     }
 
     #[test]
@@ -185,8 +247,14 @@ mod tests {
 
         assert!(result.is_some(), "Should return cached result");
         let retrieved = result.unwrap();
-        assert_eq!(retrieved.total_token_amount, expected.total_token_amount);
-        assert_eq!(retrieved.total_usdc_amount, expected.total_usdc_amount);
+        assert_eq!(
+            retrieved.total_token_amount.as_f64(),
+            expected.total_token_amount.as_f64()
+        );
+        assert_eq!(
+            retrieved.total_usdc_amount.as_f64(),
+            expected.total_usdc_amount.as_f64()
+        );
         assert_eq!(gaps.len(), 0, "No gaps when fully cached");
     }
 
@@ -204,7 +272,11 @@ mod tests {
 
         assert!(result.is_some(), "Should merge cached data");
         assert_eq!(gaps.len(), 1, "Should have gap at start");
-        assert_eq!(gaps[0], (100, 149), "Gap should be from 100 to 149");
+        assert_eq!(
+            gaps[0],
+            BlockRange::new(100, 149),
+            "Gap should be from 100 to 149"
+        );
     }
 
     #[test]
@@ -221,7 +293,11 @@ mod tests {
 
         assert!(result.is_some(), "Should merge cached data");
         assert_eq!(gaps.len(), 1, "Should have gap at end");
-        assert_eq!(gaps[0], (151, 200), "Gap should be from 151 to 200");
+        assert_eq!(
+            gaps[0],
+            BlockRange::new(151, 200),
+            "Gap should be from 151 to 200"
+        );
     }
 
     #[test]
@@ -240,12 +316,16 @@ mod tests {
 
         // Should have a gap in the middle
         assert_eq!(gaps.len(), 1, "Should have one gap in middle");
-        assert_eq!(gaps[0], (151, 199), "Gap should be from 151 to 199");
+        assert_eq!(
+            gaps[0],
+            BlockRange::new(151, 199),
+            "Gap should be from 151 to 199"
+        );
 
         // Verify merged result has combined amounts
         let merged = result.unwrap();
-        assert_eq!(merged.total_token_amount, 1300.0); // 500 + 800
-        assert_eq!(merged.total_usdc_amount, 650.0); // 250 + 400
+        assert_eq!(merged.total_token_amount.as_f64(), 1300.0); // 500 + 800
+        assert_eq!(merged.total_usdc_amount.as_f64(), 650.0); // 250 + 400
     }
 
     #[test]
@@ -265,13 +345,13 @@ mod tests {
 
         // Should have two gaps: 151-199 and 251-299
         assert_eq!(gaps.len(), 2, "Should have two gaps");
-        assert_eq!(gaps[0], (151, 199));
-        assert_eq!(gaps[1], (251, 299));
+        assert_eq!(gaps[0], BlockRange::new(151, 199));
+        assert_eq!(gaps[1], BlockRange::new(251, 299));
 
         // Verify merged result
         let merged = result.unwrap();
-        assert_eq!(merged.total_token_amount, 600.0); // 100+200+300
-        assert_eq!(merged.total_usdc_amount, 300.0); // 50+100+150
+        assert_eq!(merged.total_token_amount.as_f64(), 600.0); // 100+200+300
+        assert_eq!(merged.total_usdc_amount.as_f64(), 300.0); // 50+100+150
     }
 
     #[test]
@@ -287,8 +367,12 @@ mod tests {
 
         assert!(result.is_some(), "Should include cached data");
         assert_eq!(gaps.len(), 2, "Should have gaps at start and end");
-        assert_eq!(gaps[0], (100, 199), "Gap before cached range");
-        assert_eq!(gaps[1], (301, 400), "Gap after cached range");
+        assert_eq!(
+            gaps[0],
+            BlockRange::new(100, 199),
+            "Gap before cached range"
+        );
+        assert_eq!(gaps[1], BlockRange::new(301, 400), "Gap after cached range");
     }
 
     #[test]
@@ -305,8 +389,8 @@ mod tests {
 
         assert!(result1.is_some(), "First range should be cached");
         assert!(result2.is_some(), "Second range should be cached");
-        assert_eq!(result1.unwrap().total_token_amount, 100.0);
-        assert_eq!(result2.unwrap().total_token_amount, 200.0);
+        assert_eq!(result1.unwrap().total_token_amount.as_f64(), 100.0);
+        assert_eq!(result2.unwrap().total_token_amount.as_f64(), 200.0);
     }
 
     #[test]
@@ -325,8 +409,8 @@ mod tests {
         assert!(result.is_some(), "Should find merged range");
 
         let merged = result.unwrap();
-        assert_eq!(merged.total_token_amount, 1300.0); // 500 + 800
-        assert_eq!(merged.total_usdc_amount, 650.0); // 250 + 400
+        assert_eq!(merged.total_token_amount.as_f64(), 1300.0); // 500 + 800
+        assert_eq!(merged.total_usdc_amount.as_f64(), 650.0); // 250 + 400
 
         // Original individual ranges should not be separately cached
         let (_, gaps) = cache.calculate_gaps(token, 100, 250);
@@ -359,8 +443,8 @@ mod tests {
 
         // Verify the merged result has combined amounts
         let merged = merged_result.unwrap();
-        assert_eq!(merged.total_token_amount, 300.0); // 100 + 200
-        assert_eq!(merged.total_usdc_amount, 150.0); // 50 + 100
+        assert_eq!(merged.total_token_amount.as_f64(), 300.0); // 100 + 200
+        assert_eq!(merged.total_usdc_amount.as_f64(), 150.0); // 50 + 100
     }
 
     #[test]
@@ -382,9 +466,9 @@ mod tests {
 
         let merged = result.unwrap();
         // Total: 100 + 200 + 300 + 500 = 1100
-        assert_eq!(merged.total_token_amount, 1100.0);
+        assert_eq!(merged.total_token_amount.as_f64(), 1100.0);
         // Total: 50 + 100 + 150 + 250 = 550
-        assert_eq!(merged.total_usdc_amount, 550.0);
+        assert_eq!(merged.total_usdc_amount.as_f64(), 550.0);
 
         // No gaps in the merged range
         let (_, gaps) = cache.calculate_gaps(token, 100, 350);
@@ -401,7 +485,11 @@ mod tests {
 
         assert!(result.is_none(), "Empty cache returns None");
         assert_eq!(gaps.len(), 1, "Should have one gap");
-        assert_eq!(gaps[0], (100, 100), "Gap covers the single block");
+        assert_eq!(
+            gaps[0],
+            BlockRange::new(100, 100),
+            "Gap covers the single block"
+        );
     }
 
     #[test]
@@ -438,8 +526,8 @@ mod tests {
         assert!(result2.is_some(), "Token 2 should be cached");
 
         // Verify they have different values
-        assert_eq!(result1.unwrap().total_token_amount, 100.0);
-        assert_eq!(result2.unwrap().total_token_amount, 200.0);
+        assert_eq!(result1.unwrap().total_token_amount.as_f64(), 100.0);
+        assert_eq!(result2.unwrap().total_token_amount.as_f64(), 200.0);
     }
 
     mod proptests {
@@ -491,7 +579,7 @@ mod tests {
                 let (_, gaps) = cache.calculate_gaps(token, query_start, query_end);
 
                 // Verify no gap overlaps with any cached range
-                for (gap_start, gap_end) in &gaps {
+                for gap in &gaps {
                     for (cached_start, cached_end) in &cached_ranges {
                         // Skip ranges outside the query window
                         if *cached_end < query_start || *cached_start > query_end {
@@ -499,10 +587,11 @@ mod tests {
                         }
 
                         // Check for no overlap: gap ends before cached starts OR gap starts after cached ends
-                        let no_overlap = *gap_end < *cached_start || *gap_start > *cached_end;
+                        let no_overlap = gap.end < *cached_start || gap.start > *cached_end;
                         prop_assert!(
                             no_overlap,
-                            "Gap [{gap_start}, {gap_end}] overlaps with cached range [{cached_start}, {cached_end}]"
+                            "Gap [{}, {}] overlaps with cached range [{cached_start}, {cached_end}]",
+                            gap.start, gap.end
                         );
                     }
                 }
@@ -528,7 +617,7 @@ mod tests {
                 // Verify gaps are sorted
                 for i in 1..gaps.len() {
                     prop_assert!(
-                        gaps[i - 1].0 < gaps[i].0,
+                        gaps[i - 1].start < gaps[i].start,
                         "Gaps not sorted: gap[{i_prev}] = {prev:?}, gap[{i}] = {curr:?}",
                         i_prev = i - 1,
                         prev = gaps[i - 1],
@@ -569,8 +658,8 @@ mod tests {
                 }
 
                 // Add gap blocks
-                for (gap_start, gap_end) in &gaps {
-                    for block in *gap_start..=*gap_end {
+                for gap in &gaps {
+                    for block in gap.start..=gap.end {
                         covered_blocks.insert(block);
                     }
                 }
@@ -604,13 +693,14 @@ mod tests {
                 // Verify no gap overlaps with another gap
                 for i in 0..gaps.len() {
                     for j in (i + 1)..gaps.len() {
-                        let (gap_i_start, gap_i_end) = gaps[i];
-                        let (gap_j_start, gap_j_end) = gaps[j];
+                        let gap_i = gaps[i];
+                        let gap_j = gaps[j];
 
-                        let no_overlap = gap_i_end < gap_j_start || gap_j_end < gap_i_start;
+                        let no_overlap = gap_i.end < gap_j.start || gap_j.end < gap_i.start;
                         prop_assert!(
                             no_overlap,
-                            "Gap {i} [{gap_i_start}, {gap_i_end}] overlaps with gap {j} [{gap_j_start}, {gap_j_end}]"
+                            "Gap {i} [{}, {}] overlaps with gap {j} [{}, {}]",
+                            gap_i.start, gap_i.end, gap_j.start, gap_j.end
                         );
                     }
                 }
@@ -628,7 +718,7 @@ mod tests {
 
                 prop_assert!(result.is_none(), "Empty cache should return None result");
                 prop_assert_eq!(gaps.len(), 1, "Empty cache should return exactly one gap");
-                prop_assert_eq!(gaps[0], (query_start, query_end), "Gap should cover entire query range");
+                prop_assert_eq!(gaps[0], BlockRange::new(query_start, query_end), "Gap should cover entire query range");
             }
 
             /// Property: When query range is fully cached, should return no gaps
