@@ -99,15 +99,13 @@ impl DailyBlockWindow {
         end_ts_exclusive: UnixTimestamp,
     ) -> Result<Self, BlockWindowError> {
         if end_block < start_block {
-            return Err(BlockWindowError::invalid_range(format!(
-                "end_block={end_block} < start_block={start_block}"
-            )));
+            return Err(BlockWindowError::invalid_range(start_block, end_block));
         }
         if end_ts_exclusive.0 <= start_ts.0 {
-            return Err(BlockWindowError::timestamp_error(format!(
-                "end_ts={} <= start_ts={}",
-                end_ts_exclusive.0, start_ts.0
-            )));
+            return Err(BlockWindowError::invalid_timestamp_range(
+                start_ts,
+                end_ts_exclusive,
+            ));
         }
         Ok(Self {
             start_block,
@@ -163,33 +161,24 @@ impl BlockWindowCache {
             return Ok(Self::default());
         }
 
-        let data = tokio::fs::read(path).await.map_err(|e| {
-            BlockWindowError::cache_io_error(
-                path.display().to_string(),
-                "Failed to read cache file".to_string(),
-                Some(e),
-            )
-        })?;
+        let data = tokio::fs::read(path)
+            .await
+            .map_err(|e| BlockWindowError::cache_io_error(path.display().to_string(), e))?;
 
-        let cache: Self = serde_json::from_slice(&data).map_err(|e| {
-            BlockWindowError::serialization_error("Failed to deserialize cache file", e)
-        })?;
+        let cache: Self =
+            serde_json::from_slice(&data).map_err(BlockWindowError::serialization_error)?;
 
         info!(path = %path.display(), entries = cache.windows.len(), "Loaded block window cache");
         Ok(cache)
     }
 
     async fn save(&self, path: &Path) -> Result<(), BlockWindowError> {
-        let data = serde_json::to_vec_pretty(self)
-            .map_err(|e| BlockWindowError::serialization_error("Failed to serialize cache", e))?;
+        let data =
+            serde_json::to_vec_pretty(self).map_err(BlockWindowError::serialization_error)?;
 
-        tokio::fs::write(path, data).await.map_err(|e| {
-            BlockWindowError::cache_io_error(
-                path.display().to_string(),
-                "Failed to write cache file".to_string(),
-                Some(e),
-            )
-        })?;
+        tokio::fs::write(path, data)
+            .await
+            .map_err(|e| BlockWindowError::cache_io_error(path.display().to_string(), e))?;
 
         debug!(path = %path.display(), entries = self.windows.len(), "Saved block window cache");
         Ok(())
@@ -339,21 +328,11 @@ impl<P: Provider> BlockWindowCalculator<P> {
         let start_dt = Utc
             .with_ymd_and_hms(date.year(), date.month(), date.day(), 0, 0, 0)
             .single()
-            .ok_or_else(|| {
-                BlockWindowError::timestamp_error(format!(
-                    "Invalid date for UTC conversion: {}",
-                    date
-                ))
-            })?;
+            .ok_or_else(|| BlockWindowError::invalid_date_conversion(date))?;
 
         let end_dt = start_dt
             .checked_add_signed(chrono::TimeDelta::days(1))
-            .ok_or_else(|| {
-                BlockWindowError::timestamp_error(format!(
-                    "Date overflow when adding 1 day to {}",
-                    date
-                ))
-            })?;
+            .ok_or_else(|| BlockWindowError::date_arithmetic_overflow(date))?;
 
         let start_ts = UnixTimestamp::from_datetime(start_dt);
         let end_ts_exclusive = UnixTimestamp::from_datetime(end_dt);
@@ -487,12 +466,18 @@ mod tests {
         // Error: end_ts <= start_ts (equal)
         let result = DailyBlockWindow::new(1000, 2000, start_ts, start_ts);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Timestamp error"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid timestamp range"));
 
         // Error: end_ts < start_ts (reversed)
         let result = DailyBlockWindow::new(1000, 2000, end_ts, start_ts);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Timestamp error"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Invalid timestamp range"));
     }
 
     #[test]
