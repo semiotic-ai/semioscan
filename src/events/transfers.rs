@@ -37,6 +37,7 @@ use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
 use crate::config::SemioscanConfig;
+use crate::errors::{EventProcessingError, RpcError};
 use crate::events::definitions::Transfer;
 use crate::types::tokens::TokenAmount;
 
@@ -186,7 +187,7 @@ impl<P: Provider> AmountCalculator<P> {
         token: Address,
         from_block: BlockNumber,
         to_block: BlockNumber,
-    ) -> anyhow::Result<AmountResult> {
+    ) -> Result<AmountResult, EventProcessingError> {
         let mut result = AmountResult {
             chain,
             to,
@@ -214,7 +215,15 @@ impl<P: Provider> AmountCalculator<P> {
                 .topic1(from)
                 .topic2(to);
 
-            let logs = self.provider.get_logs(&filter).await?;
+            let logs = self.provider.get_logs(&filter).await.map_err(|e| {
+                RpcError::get_logs_failed(
+                    format!(
+                        "Transfer events from block {} to {}",
+                        current_block, end_chunk_block
+                    ),
+                    e,
+                )
+            })?;
 
             for log in logs {
                 match Transfer::decode_log(&log.into()) {

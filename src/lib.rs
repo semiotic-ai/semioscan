@@ -22,6 +22,7 @@
 mod blocks;
 mod cache;
 pub mod config;
+pub mod errors;
 mod events;
 mod gas;
 pub mod price;
@@ -41,6 +42,12 @@ pub use types::wei::WeiAmount;
 // === Configuration (from config/) ===
 pub use config::constants;
 pub use config::{ChainConfig, SemioscanConfig, SemioscanConfigBuilder};
+
+// === Error Types (from errors/) ===
+pub use errors::{
+    BlockWindowError, EventProcessingError, GasCalculationError, PriceCalculationError,
+    RetrievalError, RpcError, SemioscanError,
+};
 
 // === Gas Calculation (from gas/) ===
 pub use gas::adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter};

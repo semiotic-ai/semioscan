@@ -46,6 +46,7 @@ use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 use crate::config::SemioscanConfig;
+use crate::errors::EventProcessingError;
 use crate::events::definitions::Transfer;
 use crate::types::tokens::TokenSet;
 
@@ -100,7 +101,7 @@ pub async fn extract_transferred_to_tokens<T: Provider>(
     router: Address,
     start_block: BlockNumber,
     end_block: BlockNumber,
-) -> anyhow::Result<TokenSet> {
+) -> Result<TokenSet, EventProcessingError> {
     extract_transferred_to_tokens_with_config(
         provider,
         chain,
@@ -167,7 +168,7 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
     start_block: BlockNumber,
     end_block: BlockNumber,
     config: &SemioscanConfig,
-) -> anyhow::Result<TokenSet> {
+) -> Result<TokenSet, EventProcessingError> {
     info!(
         chain = %chain,
         router = %router,

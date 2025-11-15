@@ -6,6 +6,7 @@ use bigdecimal::BigDecimal;
 use std::str::FromStr;
 
 use crate::config::constants::stablecoins::BSC_BINANCE_PEG_USDC;
+use crate::errors::RetrievalError;
 
 use super::decimal_precision::DecimalPrecision;
 
@@ -102,14 +103,26 @@ pub fn get_token_decimal_precision(chain: NamedChain, token_address: Address) ->
 /// * `precision` - The decimal precision (Usdc = 6, BinancePegUsdc = 18, NativeToken = 18)
 ///
 /// # Returns
-/// A BigDecimal representing the human-readable value
+/// A Result containing the BigDecimal representing the human-readable value, or a RetrievalError
+/// if the conversion fails.
+///
+/// # Errors
+/// Returns `RetrievalError::ConversionFailed` if the U256 value cannot be converted to BigDecimal.
+/// This typically indicates invalid data that should not be silently masked.
 ///
 /// # Example
 /// ```ignore
+/// use semioscan::u256_to_bigdecimal;
+/// use semioscan::DecimalPrecision;
+/// use alloy_primitives::U256;
+///
 /// let wei = U256::from(1_000_000_000_000_000_000u128); // 1 ETH in wei
-/// let eth = u256_to_bigdecimal(wei, DecimalPrecision::NativeToken); // Returns BigDecimal "1.0"
+/// let eth = u256_to_bigdecimal(wei, DecimalPrecision::NativeToken)?; // Returns Ok(BigDecimal "1.0")
 /// ```
-pub fn u256_to_bigdecimal(value: U256, precision: DecimalPrecision) -> BigDecimal {
+pub fn u256_to_bigdecimal(
+    value: U256,
+    precision: DecimalPrecision,
+) -> Result<BigDecimal, RetrievalError> {
     // Use U256 divisor to avoid i64 overflow for large exponents
     let divisor = match precision {
         DecimalPrecision::Usdc => U256::from(1_000_000u64), // 10^6
@@ -122,15 +135,17 @@ pub fn u256_to_bigdecimal(value: U256, precision: DecimalPrecision) -> BigDecima
     let whole = value / divisor;
     let fractional = value % divisor;
 
-    // Convert to BigDecimal
-    let whole_decimal =
-        BigDecimal::from_str(&whole.to_string()).unwrap_or_else(|_| BigDecimal::from(0));
-    let fractional_decimal =
-        BigDecimal::from_str(&fractional.to_string()).unwrap_or_else(|_| BigDecimal::from(0));
-    let divisor_decimal =
-        BigDecimal::from_str(&divisor.to_string()).unwrap_or_else(|_| BigDecimal::from(1));
+    // Convert to BigDecimal with proper error handling
+    let whole_decimal = BigDecimal::from_str(&whole.to_string())
+        .map_err(|_| RetrievalError::bigdecimal_conversion_failed(whole))?;
 
-    whole_decimal + (fractional_decimal / divisor_decimal)
+    let fractional_decimal = BigDecimal::from_str(&fractional.to_string())
+        .map_err(|_| RetrievalError::bigdecimal_conversion_failed(fractional))?;
+
+    let divisor_decimal = BigDecimal::from_str(&divisor.to_string())
+        .map_err(|_| RetrievalError::bigdecimal_conversion_failed(divisor))?;
+
+    Ok(whole_decimal + (fractional_decimal / divisor_decimal))
 }
 
 #[cfg(test)]
@@ -309,7 +324,7 @@ mod tests {
     #[test]
     fn u256_to_bigdecimal_with_usdc_precision() {
         let value = U256::from(1_000_000u64); // 1 USDC
-        let result = u256_to_bigdecimal(value, DecimalPrecision::Usdc);
+        let result = u256_to_bigdecimal(value, DecimalPrecision::Usdc).unwrap();
         let expected = BigDecimal::from_str("1.0").unwrap();
         assert_eq!(result, expected);
     }
@@ -317,7 +332,7 @@ mod tests {
     #[test]
     fn u256_to_bigdecimal_with_native_token_precision() {
         let value = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
-        let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken);
+        let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken).unwrap();
         let expected = BigDecimal::from_str("1.0").unwrap();
         assert_eq!(result, expected);
     }
@@ -325,7 +340,7 @@ mod tests {
     #[test]
     fn u256_to_bigdecimal_with_bsc_binance_peg_usdc_precision() {
         let value = U256::from(1_500_000_000_000_000_000u128); // 1.5 tokens (18 decimals)
-        let result = u256_to_bigdecimal(value, DecimalPrecision::BinancePegUsdc);
+        let result = u256_to_bigdecimal(value, DecimalPrecision::BinancePegUsdc).unwrap();
         let expected = BigDecimal::from_str("1.5").unwrap();
         assert_eq!(result, expected);
     }
@@ -333,7 +348,7 @@ mod tests {
     #[test]
     fn u256_to_bigdecimal_with_fractional_usdc() {
         let value = U256::from(123_456u64); // 0.123456 USDC
-        let result = u256_to_bigdecimal(value, DecimalPrecision::Usdc);
+        let result = u256_to_bigdecimal(value, DecimalPrecision::Usdc).unwrap();
         let expected = BigDecimal::from_str("0.123456").unwrap();
         assert_eq!(result, expected);
     }
@@ -341,7 +356,7 @@ mod tests {
     #[test]
     fn u256_to_bigdecimal_with_zero() {
         let value = U256::ZERO;
-        let result = u256_to_bigdecimal(value, DecimalPrecision::Usdc);
+        let result = u256_to_bigdecimal(value, DecimalPrecision::Usdc).unwrap();
         let expected = BigDecimal::from_str("0").unwrap();
         assert_eq!(result, expected);
     }
@@ -349,7 +364,7 @@ mod tests {
     #[test]
     fn u256_to_bigdecimal_with_large_value() {
         let value = U256::from(1_000_000_000_000_000_000_000u128); // 1000 ETH
-        let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken);
+        let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken).unwrap();
         let expected = BigDecimal::from_str("1000.0").unwrap();
         assert_eq!(result, expected);
     }
@@ -358,7 +373,7 @@ mod tests {
     fn u256_to_bigdecimal_preserves_precision() {
         // Test that we maintain decimal precision accurately
         let value = U256::from(123_456_789_012_345_678u128); // 0.123456789012345678 ETH
-        let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken);
+        let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken).unwrap();
         let expected = BigDecimal::from_str("0.123456789012345678").unwrap();
         assert_eq!(result, expected);
     }

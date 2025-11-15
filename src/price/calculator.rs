@@ -9,6 +9,7 @@ use std::sync::Mutex;
 use tracing::{error, info};
 
 use crate::config::SemioscanConfig;
+use crate::errors::PriceCalculationError;
 use crate::price::cache::PriceCache;
 use crate::price::{PriceSource, PriceSourceError};
 use crate::{NormalizedAmount, TokenAmount, TokenDecimals, TokenPrice, TransactionCount, UsdValue};
@@ -160,13 +161,18 @@ impl<P: Provider + Clone> PriceCalculator<P> {
     async fn get_token_decimals(
         &mut self,
         token_address: Address,
-    ) -> anyhow::Result<TokenDecimals> {
+    ) -> Result<TokenDecimals, PriceCalculationError> {
         if let Some(&decimals) = self.token_decimals_cache.get(&token_address) {
             return Ok(decimals);
         }
 
         let token_contract = Erc20::new(token_address, self.provider.clone());
-        let decimals_raw = token_contract.decimals().await?;
+        let decimals_raw = token_contract.decimals().await.map_err(|e| {
+            PriceCalculationError::metadata_fetch_failed(
+                format!("{:?}", token_address),
+                format!("Failed to fetch decimals: {}", e),
+            )
+        })?;
         let decimals = TokenDecimals::new(decimals_raw);
         self.token_decimals_cache.insert(token_address, decimals);
 
@@ -187,7 +193,7 @@ impl<P: Provider + Clone> PriceCalculator<P> {
         &mut self,
         swap: &crate::price::SwapData,
         token_address: Address,
-    ) -> anyhow::Result<Option<SwapAmounts>> {
+    ) -> Result<Option<SwapAmounts>, PriceCalculationError> {
         // Check if this swap involves our target token being sold for USDC
         if swap.token_in == token_address && swap.token_out == self.usdc_address {
             let token_decimals = self.get_token_decimals(token_address).await?;
@@ -225,7 +231,7 @@ impl<P: Provider + Clone> PriceCalculator<P> {
         token_address: Address,
         start_block: BlockNumber,
         end_block: BlockNumber,
-    ) -> anyhow::Result<TokenPriceResult> {
+    ) -> Result<TokenPriceResult, PriceCalculationError> {
         info!(
             token_address = ?token_address,
             start_block = start_block,

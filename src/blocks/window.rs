@@ -29,12 +29,12 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::BlockNumber;
 use alloy_provider::Provider;
-use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 use tracing::{debug, info};
 
+use crate::errors::{BlockWindowError, RpcError};
 use crate::tracing::spans;
 use crate::types::config::BlockCount;
 
@@ -97,16 +97,17 @@ impl DailyBlockWindow {
         end_block: BlockNumber,
         start_ts: UnixTimestamp,
         end_ts_exclusive: UnixTimestamp,
-    ) -> Result<Self> {
+    ) -> Result<Self, BlockWindowError> {
         if end_block < start_block {
-            anyhow::bail!("Invalid block range: end_block={end_block} < start_block={start_block}");
+            return Err(BlockWindowError::invalid_range(format!(
+                "end_block={end_block} < start_block={start_block}"
+            )));
         }
         if end_ts_exclusive.0 <= start_ts.0 {
-            anyhow::bail!(
-                "Invalid timestamp range: end_ts={} <= start_ts={}",
-                end_ts_exclusive.0,
-                start_ts.0
-            );
+            return Err(BlockWindowError::timestamp_error(format!(
+                "end_ts={} <= start_ts={}",
+                end_ts_exclusive.0, start_ts.0
+            )));
         }
         Ok(Self {
             start_block,
@@ -156,29 +157,39 @@ struct BlockWindowCache {
 }
 
 impl BlockWindowCache {
-    async fn load(path: &Path) -> Result<Self> {
+    async fn load(path: &Path) -> Result<Self, BlockWindowError> {
         if !path.exists() {
             debug!(path = %path.display(), "Cache file does not exist, creating new cache");
             return Ok(Self::default());
         }
 
-        let data = tokio::fs::read(path)
-            .await
-            .context("Failed to read cache file")?;
+        let data = tokio::fs::read(path).await.map_err(|e| {
+            BlockWindowError::cache_io_error(
+                path.display().to_string(),
+                "Failed to read cache file".to_string(),
+                Some(e),
+            )
+        })?;
 
-        let cache: Self =
-            serde_json::from_slice(&data).context("Failed to deserialize cache file")?;
+        let cache: Self = serde_json::from_slice(&data).map_err(|e| {
+            BlockWindowError::serialization_error("Failed to deserialize cache file", e)
+        })?;
 
         info!(path = %path.display(), entries = cache.windows.len(), "Loaded block window cache");
         Ok(cache)
     }
 
-    async fn save(&self, path: &Path) -> Result<()> {
-        let data = serde_json::to_vec_pretty(self).context("Failed to serialize cache")?;
+    async fn save(&self, path: &Path) -> Result<(), BlockWindowError> {
+        let data = serde_json::to_vec_pretty(self)
+            .map_err(|e| BlockWindowError::serialization_error("Failed to serialize cache", e))?;
 
-        tokio::fs::write(path, data)
-            .await
-            .context("Failed to write cache file")?;
+        tokio::fs::write(path, data).await.map_err(|e| {
+            BlockWindowError::cache_io_error(
+                path.display().to_string(),
+                "Failed to write cache file".to_string(),
+                Some(e),
+            )
+        })?;
 
         debug!(path = %path.display(), entries = self.windows.len(), "Saved block window cache");
         Ok(())
@@ -209,7 +220,10 @@ impl<P: Provider> BlockWindowCalculator<P> {
     }
 
     /// Fetches the timestamp of a specific block
-    async fn get_block_timestamp(&self, block_number: BlockNumber) -> Result<UnixTimestamp> {
+    async fn get_block_timestamp(
+        &self,
+        block_number: BlockNumber,
+    ) -> Result<UnixTimestamp, BlockWindowError> {
         let span = spans::get_block_timestamp(block_number);
         let _guard = span.enter();
 
@@ -217,8 +231,8 @@ impl<P: Provider> BlockWindowCalculator<P> {
             .provider
             .get_block_by_number(block_number.into())
             .await
-            .context("Failed to fetch block")?
-            .context("Block not found")?;
+            .map_err(|e| RpcError::get_block_failed(block_number, e))?
+            .ok_or_else(|| RpcError::BlockNotFound { block_number })?;
 
         Ok(UnixTimestamp::from_u64(block.header.timestamp))
     }
@@ -230,7 +244,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
         &self,
         target_ts: UnixTimestamp,
         latest_block: BlockNumber,
-    ) -> Result<BlockNumber> {
+    ) -> Result<BlockNumber, BlockWindowError> {
         let span = spans::find_first_block_at_or_after(target_ts.as_u64(), latest_block);
         let _guard = span.enter();
 
@@ -264,7 +278,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
         &self,
         target_ts: UnixTimestamp,
         latest_block: BlockNumber,
-    ) -> Result<BlockNumber> {
+    ) -> Result<BlockNumber, BlockWindowError> {
         let span = spans::find_last_block_at_or_before(target_ts.as_u64(), latest_block);
         let _guard = span.enter();
 
@@ -308,7 +322,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
         &self,
         chain: NamedChain,
         date: NaiveDate,
-    ) -> Result<DailyBlockWindow> {
+    ) -> Result<DailyBlockWindow, BlockWindowError> {
         let span = spans::get_daily_window(chain, date);
         let _guard = span.enter();
 
@@ -325,11 +339,21 @@ impl<P: Provider> BlockWindowCalculator<P> {
         let start_dt = Utc
             .with_ymd_and_hms(date.year(), date.month(), date.day(), 0, 0, 0)
             .single()
-            .context("Invalid date for UTC conversion")?;
+            .ok_or_else(|| {
+                BlockWindowError::timestamp_error(format!(
+                    "Invalid date for UTC conversion: {}",
+                    date
+                ))
+            })?;
 
         let end_dt = start_dt
             .checked_add_signed(chrono::TimeDelta::days(1))
-            .context("Date overflow when adding 1 day")?;
+            .ok_or_else(|| {
+                BlockWindowError::timestamp_error(format!(
+                    "Date overflow when adding 1 day to {}",
+                    date
+                ))
+            })?;
 
         let start_ts = UnixTimestamp::from_datetime(start_dt);
         let end_ts_exclusive = UnixTimestamp::from_datetime(end_dt);
@@ -339,7 +363,7 @@ impl<P: Provider> BlockWindowCalculator<P> {
             .provider
             .get_block_number()
             .await
-            .context("Failed to get latest block number")?;
+            .map_err(RpcError::get_block_number_failed)?;
 
         info!(
             chain = %chain,
@@ -463,18 +487,12 @@ mod tests {
         // Error: end_ts <= start_ts (equal)
         let result = DailyBlockWindow::new(1000, 2000, start_ts, start_ts);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid timestamp range"));
+        assert!(result.unwrap_err().to_string().contains("Timestamp error"));
 
         // Error: end_ts < start_ts (reversed)
         let result = DailyBlockWindow::new(1000, 2000, end_ts, start_ts);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Invalid timestamp range"));
+        assert!(result.unwrap_err().to_string().contains("Timestamp error"));
     }
 
     #[test]

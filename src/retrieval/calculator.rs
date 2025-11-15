@@ -19,6 +19,7 @@ use crate::types::gas::{GasAmount, GasPrice};
 
 use super::gas_calculation::GasCalculationCore;
 use super::types::{CombinedDataResult, GasAndAmountForTx};
+use crate::errors::RetrievalError;
 
 pub struct CombinedCalculator<N: Network, P: Provider<N> + Send + Sync + Clone + 'static>
 where
@@ -56,10 +57,10 @@ where
         rpc_log_entry: &RpcLog,
         adapter: &A,
         transfer_event: &Transfer, // Decoded event
-    ) -> anyhow::Result<Option<GasAndAmountForTx>> {
-        let tx_hash = rpc_log_entry.transaction_hash.ok_or_else(|| {
-            anyhow::anyhow!("Transaction hash not found for log: {:?}", rpc_log_entry)
-        })?;
+    ) -> Result<Option<GasAndAmountForTx>, RetrievalError> {
+        let tx_hash = rpc_log_entry
+            .transaction_hash
+            .ok_or_else(RetrievalError::missing_transaction_hash)?;
 
         let span = spans::process_log_for_combined_data(tx_hash);
         let _guard = span.enter();
@@ -69,10 +70,23 @@ where
 
         let (transaction_res, receipt_res) = tokio::join!(transaction_fut, receipt_fut);
 
-        let transaction = transaction_res?
-            .ok_or_else(|| anyhow::anyhow!("Transaction not found for hash: {}", tx_hash))?;
-        let receipt = receipt_res?
-            .ok_or_else(|| anyhow::anyhow!("Receipt not found for hash: {}", tx_hash))?;
+        let transaction = transaction_res
+            .map_err(|e| {
+                RetrievalError::Rpc(crate::errors::RpcError::ChainConnectionFailed {
+                    operation: format!("get_transaction_by_hash({})", tx_hash),
+                    source: Box::new(e),
+                })
+            })?
+            .ok_or_else(|| RetrievalError::missing_transaction(&tx_hash.to_string()))?;
+
+        let receipt = receipt_res
+            .map_err(|e| {
+                RetrievalError::Rpc(crate::errors::RpcError::ChainConnectionFailed {
+                    operation: format!("get_transaction_receipt({})", tx_hash),
+                    source: Box::new(e),
+                })
+            })?
+            .ok_or_else(|| RetrievalError::missing_receipt(&tx_hash.to_string()))?;
 
         let gas_used = adapter.gas_used(&receipt);
         let receipt_effective_gas_price = adapter.effective_gas_price(&receipt);
@@ -85,9 +99,9 @@ where
 
         let blob_gas_cost = GasCalculationCore::calculate_blob_gas_cost::<N>(&transaction);
 
-        let block_number = rpc_log_entry.block_number.ok_or_else(|| {
-            anyhow::anyhow!("Block number not found for log: {:?}", rpc_log_entry)
-        })?;
+        let block_number = rpc_log_entry
+            .block_number
+            .ok_or_else(RetrievalError::missing_block_number)?;
 
         Ok(Some(GasAndAmountForTx {
             tx_hash,
@@ -110,7 +124,7 @@ where
         from_block: BlockNumber,
         to_block: BlockNumber,
         adapter: &A,
-    ) -> anyhow::Result<CombinedDataResult> {
+    ) -> Result<CombinedDataResult, RetrievalError> {
         let span = spans::process_block_range_for_combined_data(
             chain,
             from_address,
@@ -140,7 +154,15 @@ where
             );
 
             trace!(?filter, current_block, chunk_end, "Fetching logs");
-            let logs: Vec<RpcLog> = self.provider.get_logs(&filter).await?;
+            let logs: Vec<RpcLog> = self.provider.get_logs(&filter).await.map_err(|e| {
+                RetrievalError::Rpc(crate::errors::RpcError::GetLogsFailed {
+                    operation: format!(
+                        "get_logs for blocks {}-{} on {:?}",
+                        current_block, chunk_end, chain
+                    ),
+                    source: Box::new(e),
+                })
+            })?;
             trace!(
                 logs_count = logs.len(),
                 current_block,
@@ -211,7 +233,7 @@ where
         from_block: BlockNumber,
         to_block: BlockNumber,
         adapter: &A,
-    ) -> anyhow::Result<CombinedDataResult> {
+    ) -> Result<CombinedDataResult, RetrievalError> {
         let span = spans::calculate_combined_data_with_adapter(
             chain,
             from_address,
@@ -255,7 +277,7 @@ where
         token_address: Address,
         from_block: BlockNumber,
         to_block: BlockNumber,
-    ) -> anyhow::Result<CombinedDataResult> {
+    ) -> Result<CombinedDataResult, RetrievalError> {
         let adapter = EthereumReceiptAdapter;
         self.calculate_combined_data_with_adapter(
             chain,
@@ -285,7 +307,7 @@ where
         token_address: Address,
         from_block: BlockNumber,
         to_block: BlockNumber,
-    ) -> anyhow::Result<CombinedDataResult> {
+    ) -> Result<CombinedDataResult, RetrievalError> {
         let adapter = OptimismReceiptAdapter;
         self.calculate_combined_data_with_adapter(
             chain,

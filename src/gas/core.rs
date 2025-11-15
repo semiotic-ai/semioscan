@@ -7,6 +7,7 @@ use alloy_sol_types::SolEvent;
 use op_alloy_network::Optimism;
 use tokio::time::sleep;
 
+use crate::errors::{GasCalculationError, RpcError};
 use crate::events::definitions::{Approval, Transfer};
 use crate::gas::adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter};
 use crate::gas::calculator::{GasCostCalculator, GasCostResult, GasForTx};
@@ -47,7 +48,12 @@ impl EventType {
     ///
     /// Returns Ok(true) if decode succeeded, Ok(false) if log doesn't match this event,
     /// Err if decode failed.
-    fn decode_and_log(&self, log: &Log, current_block: BlockNumber) -> Result<bool, anyhow::Error> {
+    fn decode_and_log(
+        &self,
+        log: &Log,
+        current_block: BlockNumber,
+    ) -> Result<bool, GasCalculationError> {
+        let log_index = log.log_index.unwrap_or(0);
         match self {
             EventType::Transfer => match Transfer::decode_log(&log.inner) {
                 Ok(event) => {
@@ -59,8 +65,9 @@ impl EventType {
                 }
                 Err(e) => {
                     error!(error = ?e, "Failed to decode Transfer log for gas");
-                    Err(anyhow::anyhow!(
-                        "Failed to decode Transfer log for gas: {e:?}"
+                    Err(GasCalculationError::event_decode_failed(
+                        log_index,
+                        format!("Failed to decode Transfer log: {e:?}"),
                     ))
                 }
             },
@@ -74,8 +81,9 @@ impl EventType {
                 }
                 Err(e) => {
                     error!(error = ?e, "Failed to decode Approval log for gas");
-                    Err(anyhow::anyhow!(
-                        "Failed to decode Approval log for gas: {e:?}"
+                    Err(GasCalculationError::event_decode_failed(
+                        log_index,
+                        format!("Failed to decode Approval log: {e:?}"),
                     ))
                 }
             },
@@ -156,25 +164,32 @@ where
         &self,
         log: &Log,
         adapter: &A,
-    ) -> anyhow::Result<Option<GasForTx>> {
+    ) -> Result<Option<GasForTx>, GasCalculationError> {
         let tx_hash = log
             .transaction_hash
-            .ok_or_else(|| anyhow::anyhow!("Transaction hash not found for log: {:?}", log))?;
+            .ok_or_else(GasCalculationError::missing_transaction_hash)?;
 
         let span = spans::process_event_log(tx_hash);
         let _guard = span.enter();
 
+        let tx_hash_str = format!("{:?}", tx_hash);
         let transaction = self
             .provider
             .get_transaction_by_hash(tx_hash)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Transaction not found for hash: {:?}", tx_hash))?;
+            .await
+            .map_err(|e| RpcError::chain_connection_failed("get_transaction_by_hash", e))?
+            .ok_or_else(|| RpcError::TransactionNotFound {
+                tx_hash: tx_hash_str.clone(),
+            })?;
 
         let receipt = self
             .provider
             .get_transaction_receipt(tx_hash)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Receipt not found for hash: {:?}", tx_hash))?;
+            .await
+            .map_err(|e| RpcError::chain_connection_failed("get_transaction_receipt", e))?
+            .ok_or_else(|| RpcError::ReceiptNotFound {
+                tx_hash: tx_hash_str,
+            })?;
 
         let gas_used = adapter.gas_used(&receipt);
         let receipt_effective_gas_price = adapter.effective_gas_price(&receipt);
@@ -236,7 +251,7 @@ where
         from_block: BlockNumber,
         to_block: BlockNumber,
         adapter: &A,
-    ) -> anyhow::Result<GasCostResult> {
+    ) -> Result<GasCostResult, GasCalculationError> {
         let span = spans::process_logs_in_range(
             event_type,
             chain,
@@ -277,7 +292,17 @@ where
                 topic2_addr,
             );
 
-            let logs = self.provider.get_logs(&filter).await?;
+            let logs = self.provider.get_logs(&filter).await.map_err(|e| {
+                RpcError::get_logs_failed(
+                    format!(
+                        "{} events from block {} to {}",
+                        event_type.name(),
+                        current_block,
+                        chunk_end
+                    ),
+                    e,
+                )
+            })?;
             total_logs += logs.len();
 
             trace!(
@@ -323,7 +348,7 @@ where
         log: &Log,
         result: &mut GasCostResult,
         adapter: &A,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), GasCalculationError> {
         match self.process_event_log(log, adapter).await {
             Ok(Some(gas)) => {
                 result.add_transaction(gas);
@@ -356,7 +381,7 @@ where
         start_block: BlockNumber,
         end_block: BlockNumber,
         adapter: &A,
-    ) -> anyhow::Result<GasCostResult> {
+    ) -> Result<GasCostResult, GasCalculationError> {
         let span = spans::calculate_gas_cost_with_adapter(
             event_type,
             chain,
@@ -503,7 +528,7 @@ impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
         token: Address,
         start_block: u64,
         end_block: u64,
-    ) -> anyhow::Result<GasCostResult> {
+    ) -> Result<GasCostResult, GasCalculationError> {
         let adapter = EthereumReceiptAdapter;
         self.calculate_gas_cost_with_adapter(
             EventType::Transfer,
@@ -532,7 +557,7 @@ impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
         token: Address,
         start_block: u64,
         end_block: BlockNumber,
-    ) -> anyhow::Result<GasCostResult> {
+    ) -> Result<GasCostResult, GasCalculationError> {
         let adapter = OptimismReceiptAdapter;
         self.calculate_gas_cost_with_adapter(
             EventType::Transfer,
@@ -561,7 +586,7 @@ impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
         token: Address,
         start_block: BlockNumber,
         end_block: BlockNumber,
-    ) -> anyhow::Result<GasCostResult> {
+    ) -> Result<GasCostResult, GasCalculationError> {
         let adapter = EthereumReceiptAdapter;
         self.calculate_gas_cost_with_adapter(
             EventType::Approval,
@@ -590,7 +615,7 @@ impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
         token: Address,
         start_block: BlockNumber,
         end_block: BlockNumber,
-    ) -> anyhow::Result<GasCostResult> {
+    ) -> Result<GasCostResult, GasCalculationError> {
         let adapter = OptimismReceiptAdapter;
         self.calculate_gas_cost_with_adapter(
             EventType::Approval,
