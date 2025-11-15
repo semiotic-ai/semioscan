@@ -80,8 +80,9 @@ Semioscan uses a pragmatic testing approach:
 
 **Production Validation**:
 
-- Battle-tested in likwid-v3 and likwid-accounting (multi-million dollar liquidation systems)
+- Battle-tested in production financial systems processing millions of dollars
 - Real-world usage across 12+ chains
+- Proven in high-stakes environments requiring precision and reliability
 
 ## Adding Support for a New DEX Protocol
 
@@ -217,7 +218,7 @@ For detailed guidance, see [`docs/PRICESOURCE_GUIDE.md`](docs/PRICESOURCE_GUIDE.
 
 ## Project Structure
 
-```
+```text
 crates/semioscan/
 ├── src/
 │   ├── lib.rs               # Public API exports

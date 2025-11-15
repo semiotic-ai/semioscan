@@ -13,7 +13,7 @@
 - **DEX Price Extraction**: Extensible trait-based system for extracting price data from on-chain swap events
 - **Multi-Chain Support**: Works with 12+ EVM chains including Ethereum, Arbitrum, Base, Optimism, Polygon, and more
 - **Event Scanning**: Extract transfer amounts and events from blockchain transaction logs
-- **Production-Ready**: Battle-tested in production for automated liquidation systems processing millions of dollars in swaps
+- **Production-Ready**: Battle-tested in production for automated trading and DeFi applications processing millions of dollars in swaps
 
 ## Installation
 
@@ -311,7 +311,7 @@ See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for detailed testing principles an
 
 Semioscan is battle-tested in production for:
 
-- **Automated liquidation systems** processing millions of dollars in swaps across 12+ chains
+- **Automated trading and DeFi applications** processing millions of dollars in swaps across 12+ chains
 - **Financial reporting** for blockchain transaction accounting
 - **Token analytics** for discovering and tracking token transfers
 
