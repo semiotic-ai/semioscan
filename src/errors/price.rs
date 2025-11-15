@@ -5,10 +5,6 @@
 
 use super::RpcError;
 
-// Note: PriceSourceError is defined in crate::price and will be re-exported
-// from the errors module after migration is complete. For now, we reference
-// it via the full path in the migration phase.
-
 /// Errors that can occur during price calculations.
 ///
 /// This error type wraps [`crate::price::PriceSourceError`] (which handles

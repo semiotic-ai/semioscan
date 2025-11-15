@@ -1,7 +1,56 @@
 //! Shared RPC error types for blockchain provider operations.
 //!
 //! This module provides error types for common RPC failures that can occur
-//! across different modules when interacting with blockchain providers.
+//! when interacting with blockchain providers.
+//!
+//! # When RPC Errors Occur
+//!
+//! RPC errors typically occur due to:
+//! - **Network issues**: Connectivity problems, timeouts, or DNS failures
+//! - **Rate limiting**: Provider has throttled your requests
+//! - **Invalid parameters**: Block number out of range, invalid transaction hash
+//! - **Provider issues**: Node is down, syncing, or experiencing problems
+//! - **Chain reorganizations**: Requested block was reorged
+//!
+//! # Handling RPC Errors
+//!
+//! RPC errors include context about what operation was being performed to help
+//! with debugging and retry logic:
+//!
+//! ```rust,ignore
+//! use semioscan::{GasCostCalculator, GasCalculationError, RpcError};
+//!
+//! match calculator.calculate_gas_cost(...).await {
+//!     Ok(result) => println!("Success: {:?}", result),
+//!     Err(GasCalculationError::Rpc(RpcError::BlockNotFound { block_number })) => {
+//!         eprintln!("Block {block_number} not found - may be beyond chain tip");
+//!     }
+//!     Err(GasCalculationError::Rpc(RpcError::ChainConnectionFailed { operation, .. })) => {
+//!         eprintln!("Network error during {operation} - retrying...");
+//!     }
+//!     Err(e) => eprintln!("Other error: {e}"),
+//! }
+//! ```
+//!
+//! # Accessing Underlying Provider Errors
+//!
+//! Several variants preserve the underlying provider error in their `source` field.
+//! Access it using the standard `Error::source()` method:
+//!
+//! ```rust,ignore
+//! use std::error::Error;
+//!
+//! if let Err(e) = calculator.calculate_gas_cost(...).await {
+//!     eprintln!("Error: {e}");
+//!
+//!     // Walk the error chain
+//!     let mut source = e.source();
+//!     while let Some(err) = source {
+//!         eprintln!("  Caused by: {err}");
+//!         source = err.source();
+//!     }
+//! }
+//! ```
 
 /// Errors that can occur during blockchain RPC operations.
 ///

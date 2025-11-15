@@ -77,14 +77,14 @@ pub enum BlockWindowError {
     /// Error serializing or deserializing block window data.
     ///
     /// This occurs when reading cached block windows or writing new ones
-    /// to the cache.
+    /// to the cache using JSON serialization.
     #[error("Serialization error: {details}")]
     SerializationError {
         /// Details about the serialization error
         details: String,
-        /// The underlying serialization error
+        /// The underlying serde_json error
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: serde_json::Error,
     },
 
     /// RPC error when communicating with blockchain provider.
@@ -123,14 +123,11 @@ impl BlockWindowError {
         }
     }
 
-    /// Create a `SerializationError` from any serialization error.
-    pub fn serialization_error(
-        details: impl Into<String>,
-        source: impl std::error::Error + Send + Sync + 'static,
-    ) -> Self {
+    /// Create a `SerializationError` from a serde_json error.
+    pub fn serialization_error(details: impl Into<String>, source: serde_json::Error) -> Self {
         BlockWindowError::SerializationError {
             details: details.into(),
-            source: Box::new(source),
+            source,
         }
     }
 }
