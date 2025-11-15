@@ -12,11 +12,13 @@ use std::sync::Arc;
 use tokio::time::sleep;
 use tracing::{error, info, trace, warn};
 
-use crate::{
-    constants::stablecoins::BSC_BINANCE_PEG_USDC, spans, BlobCount, EthereumReceiptAdapter,
-    GasAmount, GasPrice, OptimismReceiptAdapter, ReceiptAdapter, SemioscanConfig, TransactionCount,
-    Transfer,
-};
+use crate::config::constants::stablecoins::BSC_BINANCE_PEG_USDC;
+use crate::config::SemioscanConfig;
+use crate::events::definitions::Transfer;
+use crate::gas::adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter};
+use crate::tracing::spans;
+use crate::types::config::TransactionCount;
+use crate::types::gas::{BlobCount, GasAmount, GasPrice};
 
 /// Core gas calculation logic (adapted from gas.rs)
 pub struct GasCalculationCore;

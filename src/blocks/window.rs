@@ -35,7 +35,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 use tracing::{debug, info};
 
-use crate::{spans, BlockCount};
+use crate::tracing::spans;
+use crate::types::config::BlockCount;
 
 /// Unix timestamp in seconds (always UTC)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

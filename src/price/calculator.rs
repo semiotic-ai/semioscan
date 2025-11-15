@@ -8,8 +8,9 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tracing::{error, info};
 
+use crate::config::SemioscanConfig;
+use crate::price::cache::PriceCache;
 use crate::price::{PriceSource, PriceSourceError};
-use crate::{PriceCache, SemioscanConfig};
 
 // Price calculation result
 #[derive(Default, Debug, Clone, Serialize)]

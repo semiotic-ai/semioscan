@@ -1,7 +1,7 @@
 use alloy_primitives::{Address, BlockNumber};
 
-use crate::block_range_cache::{BlockRangeCache, Mergeable};
-use crate::TokenPriceResult;
+use crate::cache::block_range::{BlockRangeCache, Mergeable};
+use crate::price::calculator::TokenPriceResult;
 
 // Implement Mergeable for TokenPriceResult
 impl Mergeable for TokenPriceResult {

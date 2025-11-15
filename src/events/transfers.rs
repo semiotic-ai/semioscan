@@ -36,7 +36,9 @@ use alloy_sol_types::SolEvent;
 use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
-use crate::{SemioscanConfig, TokenAmount, Transfer};
+use crate::config::SemioscanConfig;
+use crate::events::definitions::Transfer;
+use crate::types::tokens::TokenAmount;
 
 /// Result of transfer amount calculation
 ///

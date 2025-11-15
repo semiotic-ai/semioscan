@@ -30,10 +30,13 @@ use alloy_provider::Provider;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::{
-    DecimalPrecision, GasAmount, GasCache, GasPrice, L1DataFee, SemioscanConfig, TransactionCount,
-    WeiAmount,
-};
+use crate::config::SemioscanConfig;
+use crate::gas::cache::GasCache;
+use crate::retrieval::combined::DecimalPrecision;
+use crate::types::config::TransactionCount;
+use crate::types::fees::L1DataFee;
+use crate::types::gas::{GasAmount, GasPrice};
+use crate::types::wei::WeiAmount;
 
 /// Gas data for a single transaction
 ///

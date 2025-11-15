@@ -45,7 +45,9 @@ use alloy_sol_types::SolEvent;
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
-use crate::{SemioscanConfig, TokenSet, Transfer};
+use crate::config::SemioscanConfig;
+use crate::events::definitions::Transfer;
+use crate::types::tokens::TokenSet;
 
 /// Extract tokens transferred to a router contract using default configuration
 ///

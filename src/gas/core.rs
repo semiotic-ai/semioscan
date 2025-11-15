@@ -7,10 +7,11 @@ use alloy_sol_types::SolEvent;
 use op_alloy_network::Optimism;
 use tokio::time::sleep;
 
-use crate::{
-    adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter},
-    spans, Approval, BlobCount, GasCostCalculator, GasCostResult, GasForTx, Transfer,
-};
+use crate::events::definitions::{Approval, Transfer};
+use crate::gas::adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter};
+use crate::gas::calculator::{GasCostCalculator, GasCostResult, GasForTx};
+use crate::tracing::spans;
+use crate::types::gas::BlobCount;
 use tracing::{error, info, trace};
 
 /// Type of ERC-20 event for gas calculation

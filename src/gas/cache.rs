@@ -60,8 +60,8 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::{Address, BlockNumber};
 
-use crate::block_range_cache::{BlockRangeCache, Mergeable};
-use crate::GasCostResult;
+use crate::cache::block_range::{BlockRangeCache, Mergeable};
+use crate::gas::calculator::GasCostResult;
 
 // Implement Mergeable for GasCostResult
 impl Mergeable for GasCostResult {

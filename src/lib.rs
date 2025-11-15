@@ -1,47 +1,76 @@
-mod adapter;
-mod block_range_cache;
-mod block_window;
-mod combined_retriever;
-mod config;
-mod config_types;
-pub mod constants;
-mod event;
-mod fee_types;
-mod gas;
-mod gas_cache;
-mod gas_calculator;
-mod gas_types;
-pub mod price; // New trait-based architecture
-#[cfg(feature = "odos-example")]
-mod price_cache; // Legacy price cache for Odos example
-#[cfg(feature = "odos-example")]
-mod price_calculator; // Generic price calculator using PriceSource trait
-mod spans;
-mod token_types;
-mod tokens_to;
-mod transfer;
-mod wei_types;
+//! Semioscan: Blockchain analytics library for EVM chains
+//!
+//! Semioscan provides production-grade tools for:
+//! - Gas cost calculation (L1 and L2 chains)
+//! - Price extraction from DEX events
+//! - Block window calculations
+//! - Token event processing
+//!
+//! # Domain Organization
+//!
+//! - `types` - Strong types for type safety
+//! - `config` - Configuration system
+//! - `gas` - Gas calculation domain
+//! - `price` - Price extraction domain
+//! - `blocks` - Block window calculations
+//! - `events` - Event processing
+//! - `cache` - Caching infrastructure (internal)
+//! - `retrieval` - Data orchestration (internal)
+//! - `tracing` - Observability (internal)
 
-pub use adapter::*;
-pub use block_window::*;
-pub use combined_retriever::*;
-pub use config::*;
-pub use config_types::*;
-pub use event::*;
-pub use fee_types::*;
-pub use gas::EventType; // Re-export for public API
-pub use gas_cache::*;
-pub use gas_calculator::*;
-pub use gas_types::*;
+// === Module Declarations ===
+mod blocks;
+mod cache;
+pub mod config;
+mod events;
+mod gas;
+pub mod price;
+mod retrieval;
+mod tracing;
+mod types;
+
+// === Core Types (from types/) ===
+pub use types::config::{BlockCount, MaxBlockRange, TransactionCount};
+pub use types::fees::{L1DataFee, Percentage};
+pub use types::gas::{BlobCount, BlobGasAmount, GasAmount, GasPrice};
+pub use types::tokens::{NormalizedAmount, TokenAmount, TokenDecimals, TokenSet, UsdValue};
+pub use types::wei::WeiAmount;
+
+// === Configuration (from config/) ===
+pub use config::constants;
+pub use config::{ChainConfig, SemioscanConfig, SemioscanConfigBuilder};
+
+// === Gas Calculation (from gas/) ===
+pub use gas::adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter};
+pub use gas::cache::GasCache;
+pub use gas::{EventType, GasCostCalculator, GasCostResult, GasForTx};
+
+// === Price Extraction (from price/) ===
+// Core trait and types are always available
+pub use price::{PriceSource, PriceSourceError, SwapData};
+// Calculator is feature-gated
 #[cfg(feature = "odos-example")]
-pub use price_cache::*;
+pub use price::odos::OdosPriceSource;
 #[cfg(feature = "odos-example")]
-pub use price_calculator::*; // Generic price calculator available with odos-example feature
-pub use token_types::*;
-pub use tokens_to::*;
-pub use transfer::*;
-pub use wei_types::*;
+pub use price::{PriceCalculator, TokenPriceResult};
+
+// === Block Windows (from blocks/) ===
+pub use blocks::{BlockWindowCalculator, DailyBlockWindow, UnixTimestamp};
+
+// === Events (from events/) ===
+pub use events::{extract_transferred_to_tokens, extract_transferred_to_tokens_with_config};
+pub use events::{AmountCalculator, AmountResult};
+pub use events::{Approval, Transfer};
+
+// === Retrieval (Data Orchestration) ===
+pub use retrieval::{
+    get_token_decimal_precision, u256_to_bigdecimal, CombinedCalculator, CombinedDataResult,
+    DecimalPrecision,
+};
 
 // Re-export RouterType from odos-sdk for convenience
 #[cfg(feature = "odos-example")]
 pub use odos_sdk::RouterType;
+
+// Note: Cache internals (cache::BlockRangeCache) and tracing spans are NOT re-exported
+// as they are implementation details. Users can access them via fully-qualified paths if needed.

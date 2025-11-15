@@ -39,7 +39,9 @@ use std::time::Duration;
 
 use alloy_chains::NamedChain;
 
-use crate::MaxBlockRange;
+use crate::types::config::MaxBlockRange;
+
+pub mod constants;
 
 /// Configuration for semioscan operations
 ///

@@ -85,7 +85,15 @@ use alloy_primitives::{Address, B256, U256};
 use alloy_rpc_types::Log;
 
 #[cfg(feature = "odos-example")]
+pub mod cache;
+#[cfg(feature = "odos-example")]
+pub mod calculator;
+#[cfg(feature = "odos-example")]
 pub mod odos;
+
+// Re-export calculator types when feature is enabled
+#[cfg(feature = "odos-example")]
+pub use calculator::*;
 
 /// Represents a single token swap extracted from on-chain events
 ///
