@@ -132,3 +132,234 @@ pub fn u256_to_bigdecimal(value: U256, precision: DecimalPrecision) -> BigDecima
 
     whole_decimal + (fractional_decimal / divisor_decimal)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_chains::NamedChain;
+    use alloy_primitives::{address, U256};
+
+    // ========== format_wei_to_eth tests ==========
+
+    #[test]
+    fn format_wei_to_eth_with_zero() {
+        let wei = U256::ZERO;
+        let result = format_wei_to_eth(wei);
+        assert_eq!(result, "0");
+    }
+
+    #[test]
+    fn format_wei_to_eth_with_one_eth() {
+        let wei = U256::from(1_000_000_000_000_000_000u128); // 1 ETH in wei
+        let result = format_wei_to_eth(wei);
+        assert_eq!(result, "1");
+    }
+
+    #[test]
+    fn format_wei_to_eth_with_fractional_value() {
+        let wei = U256::from(1_500_000_000_000_000_000u128); // 1.5 ETH
+        let result = format_wei_to_eth(wei);
+        assert_eq!(result, "1.5");
+    }
+
+    #[test]
+    fn format_wei_to_eth_removes_trailing_zeros() {
+        let wei = U256::from(1_200_000_000_000_000_000u128); // 1.2 ETH
+        let result = format_wei_to_eth(wei);
+        assert_eq!(result, "1.2"); // Not "1.200000000000000000"
+    }
+
+    #[test]
+    fn format_wei_to_eth_with_small_fractional() {
+        let wei = U256::from(123_456_789_012_345_678u128); // 0.123456789012345678 ETH
+        let result = format_wei_to_eth(wei);
+        assert_eq!(result, "0.123456789012345678");
+    }
+
+    #[test]
+    fn format_wei_to_eth_with_large_value() {
+        let wei = U256::from(100_000_000_000_000_000_000u128); // 100 ETH
+        let result = format_wei_to_eth(wei);
+        assert_eq!(result, "100");
+    }
+
+    // ========== format_wei_to_gwei tests ==========
+
+    #[test]
+    fn format_wei_to_gwei_with_zero() {
+        let wei = U256::ZERO;
+        let result = format_wei_to_gwei(wei);
+        assert_eq!(result, "0");
+    }
+
+    #[test]
+    fn format_wei_to_gwei_with_whole_gwei() {
+        let wei = U256::from(30_000_000_000u64); // 30 Gwei
+        let result = format_wei_to_gwei(wei);
+        assert_eq!(result, "30");
+    }
+
+    #[test]
+    fn format_wei_to_gwei_with_fractional() {
+        let wei = U256::from(30_500_000_000u64); // 30.5 Gwei
+        let result = format_wei_to_gwei(wei);
+        assert_eq!(result, "30.5");
+    }
+
+    #[test]
+    fn format_wei_to_gwei_removes_trailing_zeros() {
+        let wei = U256::from(20_100_000_000u64); // 20.1 Gwei
+        let result = format_wei_to_gwei(wei);
+        assert_eq!(result, "20.1"); // Not "20.100000000"
+    }
+
+    #[test]
+    fn format_wei_to_gwei_with_small_fractional() {
+        let wei = U256::from(1_234_567_890u64); // 1.23456789 Gwei
+        let result = format_wei_to_gwei(wei);
+        assert_eq!(result, "1.23456789");
+    }
+
+    // ========== format_token_amount tests ==========
+
+    #[test]
+    fn format_token_amount_with_zero_decimals() {
+        let amount = U256::from(1000u64);
+        let result = format_token_amount(amount, DecimalPrecision::Usdc);
+        // Treating as 6 decimals: 1000 / 10^6 = 0.001
+        let expected = "0.001";
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn format_token_amount_with_six_decimals_usdc() {
+        let amount = U256::from(1_000_000u64); // 1 USDC (6 decimals)
+        let result = format_token_amount(amount, DecimalPrecision::Usdc);
+        assert_eq!(result, "1");
+    }
+
+    #[test]
+    fn format_token_amount_with_eighteen_decimals() {
+        let amount = U256::from(1_000_000_000_000_000_000u128); // 1 token (18 decimals)
+        let result = format_token_amount(amount, DecimalPrecision::NativeToken);
+        assert_eq!(result, "1");
+    }
+
+    #[test]
+    fn format_token_amount_removes_trailing_zeros() {
+        let amount = U256::from(1_200_000u64); // 1.2 USDC (6 decimals)
+        let result = format_token_amount(amount, DecimalPrecision::Usdc);
+        assert_eq!(result, "1.2"); // Not "1.200000"
+    }
+
+    #[test]
+    fn format_token_amount_with_bsc_binance_peg_usdc() {
+        let amount = U256::from(1_500_000_000_000_000_000u128); // 1.5 tokens (18 decimals)
+        let result = format_token_amount(amount, DecimalPrecision::BinancePegUsdc);
+        assert_eq!(result, "1.5");
+    }
+
+    #[test]
+    fn format_token_amount_with_fractional_usdc() {
+        let amount = U256::from(123_456u64); // 0.123456 USDC
+        let result = format_token_amount(amount, DecimalPrecision::Usdc);
+        assert_eq!(result, "0.123456");
+    }
+
+    // ========== get_token_decimal_precision tests ==========
+
+    #[test]
+    fn get_token_decimal_precision_for_native_token() {
+        let precision = get_token_decimal_precision(NamedChain::Arbitrum, Address::ZERO);
+        assert_eq!(precision, DecimalPrecision::NativeToken);
+    }
+
+    #[test]
+    fn get_token_decimal_precision_for_bsc_binance_peg_usdc() {
+        let bsc_binance_peg_usdc = address!("8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d");
+        let precision =
+            get_token_decimal_precision(NamedChain::BinanceSmartChain, bsc_binance_peg_usdc);
+        assert_eq!(precision, DecimalPrecision::BinancePegUsdc);
+    }
+
+    #[test]
+    fn get_token_decimal_precision_for_standard_usdc_on_arbitrum() {
+        let arbitrum_usdc = address!("af88d065e77c8cC2239327C5EDb3A432268e5831");
+        let precision = get_token_decimal_precision(NamedChain::Arbitrum, arbitrum_usdc);
+        assert_eq!(precision, DecimalPrecision::Usdc);
+    }
+
+    #[test]
+    fn get_token_decimal_precision_for_standard_usdc_on_base() {
+        let base_usdc = address!("833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+        let precision = get_token_decimal_precision(NamedChain::Base, base_usdc);
+        assert_eq!(precision, DecimalPrecision::Usdc);
+    }
+
+    #[test]
+    fn get_token_decimal_precision_for_non_usdc_on_bsc() {
+        // Random token address on BSC (not Binance-Peg USDC)
+        let other_token = address!("1111111111111111111111111111111111111111");
+        let precision = get_token_decimal_precision(NamedChain::BinanceSmartChain, other_token);
+        assert_eq!(precision, DecimalPrecision::Usdc); // Defaults to USDC precision
+    }
+
+    // ========== u256_to_bigdecimal tests ==========
+
+    #[test]
+    fn u256_to_bigdecimal_with_usdc_precision() {
+        let value = U256::from(1_000_000u64); // 1 USDC
+        let result = u256_to_bigdecimal(value, DecimalPrecision::Usdc);
+        let expected = BigDecimal::from_str("1.0").unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn u256_to_bigdecimal_with_native_token_precision() {
+        let value = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
+        let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken);
+        let expected = BigDecimal::from_str("1.0").unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn u256_to_bigdecimal_with_bsc_binance_peg_usdc_precision() {
+        let value = U256::from(1_500_000_000_000_000_000u128); // 1.5 tokens (18 decimals)
+        let result = u256_to_bigdecimal(value, DecimalPrecision::BinancePegUsdc);
+        let expected = BigDecimal::from_str("1.5").unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn u256_to_bigdecimal_with_fractional_usdc() {
+        let value = U256::from(123_456u64); // 0.123456 USDC
+        let result = u256_to_bigdecimal(value, DecimalPrecision::Usdc);
+        let expected = BigDecimal::from_str("0.123456").unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn u256_to_bigdecimal_with_zero() {
+        let value = U256::ZERO;
+        let result = u256_to_bigdecimal(value, DecimalPrecision::Usdc);
+        let expected = BigDecimal::from_str("0").unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn u256_to_bigdecimal_with_large_value() {
+        let value = U256::from(1_000_000_000_000_000_000_000u128); // 1000 ETH
+        let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken);
+        let expected = BigDecimal::from_str("1000.0").unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn u256_to_bigdecimal_preserves_precision() {
+        // Test that we maintain decimal precision accurately
+        let value = U256::from(123_456_789_012_345_678u128); // 0.123456789012345678 ETH
+        let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken);
+        let expected = BigDecimal::from_str("0.123456789012345678").unwrap();
+        assert_eq!(result, expected);
+    }
+}

@@ -299,3 +299,24 @@ where
         .await
     }
 }
+
+// Usage and Validation:
+//
+// CombinedCalculator collects gas costs and transfer amounts for blockchain transactions.
+// To understand usage patterns and validate functionality:
+//
+// - See examples/base_oct15_2025.rs - demonstrates collecting combined gas and
+//   transfer data for a specific block range on Base
+// - See examples/daily_block_window.rs - shows calculating costs across daily
+//   block windows
+//
+// The calculator uses well-tested components:
+// - ReceiptAdapter - extracts gas data from receipts (see gas/adapter.rs)
+// - GasCalculationCore - calculates blob gas and effective prices (see gas_calculation.rs)
+// - CombinedDataResult - accumulates transaction data (see types.rs)
+//
+// For Ethereum-compatible chains, use calculate_combined_data_ethereum().
+// For Optimism and other L2s with L1 data fees, use calculate_combined_data_optimism().
+//
+// Both methods handle rate limiting, block range chunking, and error recovery
+// automatically based on the SemioscanConfig.

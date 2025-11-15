@@ -231,3 +231,21 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
 
     Ok(transferred_to_tokens)
 }
+
+// Usage and Validation:
+//
+// These functions scan blockchain Transfer events to discover tokens. To validate
+// the functionality or understand usage patterns:
+//
+// - See examples/router_token_discovery.rs - demonstrates discovering tokens
+//   transferred to a router contract
+// - See examples/daily_block_window.rs - shows using discovery with block windows
+//   for time-based analysis
+//
+// Both examples connect to real blockchain RPC endpoints and demonstrate:
+// - Configuring rate limiting for different chains
+// - Handling large block ranges with automatic chunking
+// - Processing Transfer events to build token sets
+//
+// The TokenSet return type ensures automatic deduplication and deterministic ordering
+// of discovered tokens.
