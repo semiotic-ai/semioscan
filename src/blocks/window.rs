@@ -229,6 +229,21 @@ impl<P: Provider> BlockWindowCalculator<P> {
     /// Binary search to find the first block at or after the target timestamp
     ///
     /// Returns the block number of the first block with timestamp >= target_ts
+    ///
+    /// # Algorithm
+    ///
+    /// Uses binary search to efficiently locate the boundary block. The search maintains
+    /// the invariant that `result` always points to a block with timestamp >= target_ts.
+    ///
+    /// - **Search space**: [0, latest_block]
+    /// - **Invariant**: All blocks < lo have timestamp < target_ts
+    /// - **Invariant**: All blocks > hi have timestamp >= target_ts (or unknown)
+    /// - **Result**: The smallest block number with timestamp >= target_ts
+    ///
+    /// # Complexity
+    ///
+    /// - Time: O(log n) where n is the number of blocks
+    /// - RPC calls: O(log n) - one `eth_getBlockByNumber` per iteration
     async fn find_first_block_at_or_after(
         &self,
         target_ts: UnixTimestamp,
@@ -237,8 +252,10 @@ impl<P: Provider> BlockWindowCalculator<P> {
         let span = spans::find_first_block_at_or_after(target_ts.as_u64(), latest_block);
         let _guard = span.enter();
 
+        // Initialize search space: [0, latest_block]
         let mut lo = 0u64;
         let mut hi = latest_block;
+        // Default to latest_block if all blocks are >= target_ts
         let mut result = latest_block;
 
         while lo <= hi {
@@ -246,12 +263,16 @@ impl<P: Provider> BlockWindowCalculator<P> {
             let ts = self.get_block_timestamp(mid).await?;
 
             if ts >= target_ts {
+                // Mid block is a candidate - it's at or after target
+                // Keep looking left for earlier blocks that also qualify
                 result = mid;
                 if mid == 0 {
+                    // Can't go lower than block 0
                     break;
                 }
                 hi = mid - 1;
             } else {
+                // Mid block is too early - search right half
                 lo = mid + 1;
             }
         }
@@ -263,6 +284,21 @@ impl<P: Provider> BlockWindowCalculator<P> {
     /// Binary search to find the last block at or before the target timestamp
     ///
     /// Returns the block number of the last block with timestamp <= target_ts
+    ///
+    /// # Algorithm
+    ///
+    /// Uses binary search to efficiently locate the boundary block. The search maintains
+    /// the invariant that `result` always points to a block with timestamp <= target_ts.
+    ///
+    /// - **Search space**: [0, latest_block]
+    /// - **Invariant**: All blocks < lo have timestamp <= target_ts (or unknown)
+    /// - **Invariant**: All blocks > hi have timestamp > target_ts
+    /// - **Result**: The largest block number with timestamp <= target_ts
+    ///
+    /// # Complexity
+    ///
+    /// - Time: O(log n) where n is the number of blocks
+    /// - RPC calls: O(log n) - one `eth_getBlockByNumber` per iteration
     async fn find_last_block_at_or_before(
         &self,
         target_ts: UnixTimestamp,
@@ -271,8 +307,10 @@ impl<P: Provider> BlockWindowCalculator<P> {
         let span = spans::find_last_block_at_or_before(target_ts.as_u64(), latest_block);
         let _guard = span.enter();
 
+        // Initialize search space: [0, latest_block]
         let mut lo = 0u64;
         let mut hi = latest_block;
+        // Default to 0 if all blocks are > target_ts
         let mut result = 0u64;
 
         while lo <= hi {
@@ -280,10 +318,14 @@ impl<P: Provider> BlockWindowCalculator<P> {
             let ts = self.get_block_timestamp(mid).await?;
 
             if ts <= target_ts {
+                // Mid block is a candidate - it's at or before target
+                // Keep looking right for later blocks that also qualify
                 result = mid;
                 lo = mid + 1;
             } else {
+                // Mid block is too late - search left half
                 if mid == 0 {
+                    // Can't go lower than block 0
                     break;
                 }
                 hi = mid - 1;
