@@ -32,10 +32,49 @@
 //! println!("Found {} unique tokens", tokens.len());
 //! ```
 //!
+//! # Typical Workflow
+//!
+//! 1. Scan router for tokens: [`extract_transferred_to_tokens()`]
+//! 2. Check balances for each discovered token
+//! 3. Liquidate tokens with non-zero balances above threshold
+//!
 //! # Performance
 //!
-//! The scanner automatically chunks requests based on chain-specific rate limits
-//! (configured via [`SemioscanConfig`](crate::SemioscanConfig)) to avoid RPC throttling.
+//! - Automatically chunks large block ranges to avoid RPC limits
+//! - Rate-limited by default for chains like Base and Sonic (250ms delay between chunks)
+//! - Returns deduplicated token addresses in deterministic order
+//! - Handles 100k+ block ranges efficiently with progress logging
+//!
+//! Configure behavior via [`SemioscanConfig`](crate::SemioscanConfig).
+//!
+//! # Advanced Usage
+//!
+//! For custom scanning patterns beyond "transfers to a specific address", use
+//! [`EventScanner`](crate::events::scanner::EventScanner) and
+//! [`TransferFilterBuilder`](crate::events::filter::TransferFilterBuilder):
+//!
+//! ```rust,ignore
+//! use semioscan::{EventScanner, TransferFilterBuilder, SemioscanConfigBuilder};
+//! use alloy_chains::NamedChain;
+//! use alloy_primitives::address;
+//! use std::time::Duration;
+//!
+//! // Custom config for premium RPC endpoints
+//! let config = SemioscanConfigBuilder::new()
+//!     .minimal()  // No rate limiting for dedicated endpoints
+//!     .max_block_range(10_000)
+//!     .build();
+//!
+//! let scanner = EventScanner::new(&provider, config);
+//!
+//! // Filter by both sender AND recipient
+//! let filter = TransferFilterBuilder::new()
+//!     .with_sender(sender_address)
+//!     .with_recipient(recipient_address)
+//!     .build();
+//!
+//! let logs = scanner.scan(NamedChain::Arbitrum, filter, 1000, 2000).await?;
+//! ```
 
 use alloy_chains::NamedChain;
 use alloy_primitives::{Address, BlockNumber};
@@ -209,43 +248,3 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
 
     Ok(transferred_to_tokens)
 }
-
-// Production Usage Patterns:
-//
-// This function is battle-tested in production liquidation systems processing
-// millions of dollars in token swaps across 12+ EVM chains.
-//
-// ## Typical Workflow
-//
-// 1. Scan router for tokens: extract_transferred_to_tokens()
-// 2. Check balances for each discovered token
-// 3. Liquidate tokens with non-zero balances above threshold
-//
-// ## Example
-//
-// - examples/router_token_discovery.rs - Complete end-to-end token discovery
-//   on Arbitrum and Base with performance metrics and real RPC usage
-//
-// ## Performance Characteristics
-//
-// - Automatically chunks large block ranges to avoid RPC limits
-//   (configurable via SemioscanConfig::get_max_block_range)
-// - Rate-limited by default for Base/Sonic chains (250ms delay between chunks)
-// - Returns deduplicated token addresses in deterministic order for reproducible results
-// - Handles 100k+ block ranges efficiently with progress logging
-//
-// ## Advanced Usage
-//
-// For custom scanning patterns beyond "transfers to a specific address":
-//
-// - Use EventScanner + TransferFilterBuilder for fine-grained control:
-//   * Filter by sender AND recipient simultaneously
-//   * Specify token contract address
-//   * Custom block range chunking per chain
-//
-// - Tune rate limits via SemioscanConfigBuilder:
-//   * .chain_rate_limit(chain, duration) for specific chains
-//   * .with_common_defaults() for production RPC providers
-//   * .minimal() for premium/dedicated RPC endpoints
-//
-// - See examples/custom_dex_integration.rs for DEX-specific filtering patterns
