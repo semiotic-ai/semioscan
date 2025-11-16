@@ -187,12 +187,10 @@ impl<P: Provider + Clone> PriceCalculator<P> {
         }
 
         let token_contract = Erc20::new(token_address, self.provider.clone());
-        let decimals_raw = token_contract.decimals().await.map_err(|e| {
-            PriceCalculationError::metadata_fetch_failed(
-                format!("{:?}", token_address),
-                format!("Failed to fetch decimals: {}", e),
-            )
-        })?;
+        let decimals_raw = token_contract
+            .decimals()
+            .await
+            .map_err(|e| PriceCalculationError::metadata_fetch_failed(token_address, e))?;
         let decimals = TokenDecimals::new(decimals_raw);
         self.token_decimals_cache.insert(token_address, decimals);
 

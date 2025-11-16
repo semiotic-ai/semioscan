@@ -52,6 +52,11 @@
 //! }
 //! ```
 
+use std::borrow::Cow;
+
+use alloy_primitives::{BlockNumber, TxHash};
+use alloy_transport::TransportError;
+
 /// Errors that can occur during blockchain RPC operations.
 ///
 /// This error type captures common failure modes when interacting with
@@ -62,10 +67,11 @@
 ///
 /// ```rust
 /// use semioscan::RpcError;
+/// use alloy_primitives::TxHash;
 ///
 /// // Example of creating an RPC error with context
 /// let error = RpcError::TransactionNotFound {
-///     tx_hash: "0x123...".to_string(),
+///     tx_hash: TxHash::ZERO,
 /// };
 /// println!("Error: {}", error);
 /// ```
@@ -78,10 +84,10 @@ pub enum RpcError {
     #[error("Failed to fetch logs for {operation}")]
     GetLogsFailed {
         /// Description of the operation that failed (e.g., "Transfer events 100-200")
-        operation: String,
-        /// The underlying provider error
+        operation: Cow<'static, str>,
+        /// The underlying transport error from alloy
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: TransportError,
     },
 
     /// Transaction was not found on the blockchain.
@@ -91,7 +97,7 @@ pub enum RpcError {
     #[error("Transaction not found: {tx_hash}")]
     TransactionNotFound {
         /// The transaction hash that wasn't found
-        tx_hash: String,
+        tx_hash: TxHash,
     },
 
     /// Receipt was not found for a transaction.
@@ -101,7 +107,7 @@ pub enum RpcError {
     #[error("Receipt not found for transaction: {tx_hash}")]
     ReceiptNotFound {
         /// The transaction hash whose receipt wasn't found
-        tx_hash: String,
+        tx_hash: TxHash,
     },
 
     /// Block was not found at the specified block number.
@@ -111,7 +117,7 @@ pub enum RpcError {
     #[error("Block not found: {block_number}")]
     BlockNotFound {
         /// The block number that wasn't found
-        block_number: u64,
+        block_number: BlockNumber,
     },
 
     /// Failed to connect to the blockchain or execute an RPC call.
@@ -121,10 +127,10 @@ pub enum RpcError {
     #[error("Chain connection failed during {operation}")]
     ChainConnectionFailed {
         /// Description of the operation that failed
-        operation: String,
-        /// The underlying error
+        operation: Cow<'static, str>,
+        /// The underlying transport error from alloy
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: TransportError,
     },
 
     /// Failed to fetch block number from the blockchain.
@@ -132,9 +138,9 @@ pub enum RpcError {
     /// This typically indicates a connectivity issue or provider problem.
     #[error("Failed to get current block number")]
     GetBlockNumberFailed {
-        /// The underlying provider error
+        /// The underlying transport error from alloy
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: TransportError,
     },
 
     /// Failed to fetch block details by number.
@@ -144,51 +150,70 @@ pub enum RpcError {
     #[error("Failed to fetch block {block_number} details")]
     GetBlockFailed {
         /// The block number we tried to fetch
-        block_number: u64,
-        /// The underlying provider error
+        block_number: BlockNumber,
+        /// The underlying transport error from alloy
         #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: TransportError,
     },
 }
 
 impl RpcError {
-    /// Helper to create a `GetLogsFailed` error from any error type.
+    /// Helper to create a `GetLogsFailed` error from a transport error.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::RpcError;
+    ///
+    /// // Pass the transport error directly - no boxing!
+    /// match provider.get_logs(&filter).await {
+    ///     Ok(logs) => { /* ... */ },
+    ///     Err(e) => return Err(RpcError::get_logs_failed("Transfer events", e)),
+    /// }
+    /// ```
     pub fn get_logs_failed(
-        operation: impl Into<String>,
-        source: impl std::error::Error + Send + Sync + 'static,
+        operation: impl Into<Cow<'static, str>>,
+        source: TransportError,
     ) -> Self {
         RpcError::GetLogsFailed {
             operation: operation.into(),
-            source: Box::new(source),
+            source,
         }
     }
 
-    /// Helper to create a `ChainConnectionFailed` error from any error type.
+    /// Helper to create a `ChainConnectionFailed` error from a transport error.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::RpcError;
+    ///
+    /// // Pass the transport error directly - no boxing!
+    /// match provider.get_transaction(hash).await {
+    ///     Ok(tx) => { /* ... */ },
+    ///     Err(e) => return Err(RpcError::chain_connection_failed("get_transaction", e)),
+    /// }
+    /// ```
     pub fn chain_connection_failed(
-        operation: impl Into<String>,
-        source: impl std::error::Error + Send + Sync + 'static,
+        operation: impl Into<Cow<'static, str>>,
+        source: TransportError,
     ) -> Self {
         RpcError::ChainConnectionFailed {
             operation: operation.into(),
-            source: Box::new(source),
+            source,
         }
     }
 
-    /// Helper to create a `GetBlockNumberFailed` error from any error type.
-    pub fn get_block_number_failed(source: impl std::error::Error + Send + Sync + 'static) -> Self {
-        RpcError::GetBlockNumberFailed {
-            source: Box::new(source),
-        }
+    /// Helper to create a `GetBlockNumberFailed` error from a transport error.
+    pub fn get_block_number_failed(source: TransportError) -> Self {
+        RpcError::GetBlockNumberFailed { source }
     }
 
-    /// Helper to create a `GetBlockFailed` error from any error type.
-    pub fn get_block_failed(
-        block_number: u64,
-        source: impl std::error::Error + Send + Sync + 'static,
-    ) -> Self {
+    /// Helper to create a `GetBlockFailed` error from a transport error.
+    pub fn get_block_failed(block_number: BlockNumber, source: TransportError) -> Self {
         RpcError::GetBlockFailed {
             block_number,
-            source: Box::new(source),
+            source,
         }
     }
 }

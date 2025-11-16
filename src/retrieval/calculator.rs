@@ -72,19 +72,19 @@ where
 
         let transaction = transaction_res
             .map_err(|e| {
-                RetrievalError::Rpc(crate::errors::RpcError::ChainConnectionFailed {
-                    operation: format!("get_transaction_by_hash({})", tx_hash),
-                    source: Box::new(e),
-                })
+                RetrievalError::Rpc(crate::errors::RpcError::chain_connection_failed(
+                    format!("get_transaction_by_hash({})", tx_hash),
+                    e,
+                ))
             })?
             .ok_or_else(|| RetrievalError::missing_transaction(&tx_hash.to_string()))?;
 
         let receipt = receipt_res
             .map_err(|e| {
-                RetrievalError::Rpc(crate::errors::RpcError::ChainConnectionFailed {
-                    operation: format!("get_transaction_receipt({})", tx_hash),
-                    source: Box::new(e),
-                })
+                RetrievalError::Rpc(crate::errors::RpcError::chain_connection_failed(
+                    format!("get_transaction_receipt({})", tx_hash),
+                    e,
+                ))
             })?
             .ok_or_else(|| RetrievalError::missing_receipt(&tx_hash.to_string()))?;
 
@@ -155,13 +155,13 @@ where
 
             trace!(?filter, current_block, chunk_end, "Fetching logs");
             let logs: Vec<RpcLog> = self.provider.get_logs(&filter).await.map_err(|e| {
-                RetrievalError::Rpc(crate::errors::RpcError::GetLogsFailed {
-                    operation: format!(
+                RetrievalError::Rpc(crate::errors::RpcError::get_logs_failed(
+                    format!(
                         "get_logs for blocks {}-{} on {:?}",
                         current_block, chunk_end, chain
                     ),
-                    source: Box::new(e),
-                })
+                    e,
+                ))
             })?;
             trace!(
                 logs_count = logs.len(),

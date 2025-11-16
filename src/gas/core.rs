@@ -65,10 +65,7 @@ impl EventType {
                 }
                 Err(e) => {
                     error!(error = ?e, "Failed to decode Transfer log for gas");
-                    Err(GasCalculationError::event_decode_failed(
-                        log_index,
-                        format!("Failed to decode Transfer log: {e:?}"),
-                    ))
+                    Err(GasCalculationError::event_decode_failed(log_index, e))
                 }
             },
             EventType::Approval => match Approval::decode_log(&log.inner) {
@@ -81,10 +78,7 @@ impl EventType {
                 }
                 Err(e) => {
                     error!(error = ?e, "Failed to decode Approval log for gas");
-                    Err(GasCalculationError::event_decode_failed(
-                        log_index,
-                        format!("Failed to decode Approval log: {e:?}"),
-                    ))
+                    Err(GasCalculationError::event_decode_failed(log_index, e))
                 }
             },
         }
@@ -172,24 +166,19 @@ where
         let span = spans::process_event_log(tx_hash);
         let _guard = span.enter();
 
-        let tx_hash_str = format!("{:?}", tx_hash);
         let transaction = self
             .provider
             .get_transaction_by_hash(tx_hash)
             .await
             .map_err(|e| RpcError::chain_connection_failed("get_transaction_by_hash", e))?
-            .ok_or_else(|| RpcError::TransactionNotFound {
-                tx_hash: tx_hash_str.clone(),
-            })?;
+            .ok_or_else(|| RpcError::TransactionNotFound { tx_hash })?;
 
         let receipt = self
             .provider
             .get_transaction_receipt(tx_hash)
             .await
             .map_err(|e| RpcError::chain_connection_failed("get_transaction_receipt", e))?
-            .ok_or_else(|| RpcError::ReceiptNotFound {
-                tx_hash: tx_hash_str,
-            })?;
+            .ok_or_else(|| RpcError::ReceiptNotFound { tx_hash })?;
 
         let gas_used = adapter.gas_used(&receipt);
         let receipt_effective_gas_price = adapter.effective_gas_price(&receipt);

@@ -41,12 +41,13 @@ pub enum GasCalculationError {
     ///
     /// This occurs when a log entry doesn't match the expected event signature
     /// or contains invalid data that can't be decoded.
-    #[error("Failed to decode event at log index {log_index}: {details}")]
+    #[error("Failed to decode event at log index {log_index}")]
     EventDecodeFailed {
         /// Index of the log that failed to decode
         log_index: u64,
-        /// Details about why the decode failed
-        details: String,
+        /// The underlying decode error from alloy
+        #[source]
+        source: alloy_sol_types::Error,
     },
 
     /// Required data is missing from blockchain response.
@@ -80,11 +81,20 @@ pub enum GasCalculationError {
 
 impl GasCalculationError {
     /// Create an `EventDecodeFailed` error.
-    pub fn event_decode_failed(log_index: u64, details: impl Into<String>) -> Self {
-        GasCalculationError::EventDecodeFailed {
-            log_index,
-            details: details.into(),
-        }
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::GasCalculationError;
+    ///
+    /// // Pass the typed decode error directly - no formatting!
+    /// match event.decode_log(&log) {
+    ///     Ok(decoded) => { /* ... */ },
+    ///     Err(e) => return Err(GasCalculationError::event_decode_failed(log_index, e)),
+    /// }
+    /// ```
+    pub fn event_decode_failed(log_index: u64, source: alloy_sol_types::Error) -> Self {
+        GasCalculationError::EventDecodeFailed { log_index, source }
     }
 
     /// Create a `MissingData` error for a specific field.

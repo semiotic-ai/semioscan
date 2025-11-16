@@ -3,6 +3,8 @@
 //! This module provides error types for operations in the `price` module,
 //! particularly for calculating token prices from swap events.
 
+use alloy_primitives::Address;
+
 use super::RpcError;
 
 /// Errors that can occur during price calculations.
@@ -47,12 +49,13 @@ pub enum PriceCalculationError {
     /// This typically occurs when fetching token decimals from the token
     /// contract. It may indicate the contract doesn't implement the standard
     /// ERC20 interface, or there's an RPC issue.
-    #[error("Failed to fetch token metadata for {token}: {details}")]
+    #[error("Failed to fetch token metadata for {token}")]
     MetadataFetchFailed {
-        /// Address of the token (as string)
-        token: String,
-        /// Details about the failure
-        details: String,
+        /// Address of the token
+        token: Address,
+        /// The underlying error from the contract call
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
     },
 
     /// Swap data processing failed.
@@ -75,14 +78,38 @@ pub enum PriceCalculationError {
 
 impl PriceCalculationError {
     /// Create a `MetadataFetchFailed` error for a specific token.
-    pub fn metadata_fetch_failed(token: impl Into<String>, details: impl Into<String>) -> Self {
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::PriceCalculationError;
+    /// use alloy_primitives::Address;
+    ///
+    /// let addr = Address::ZERO;
+    /// // Pass the typed error directly - no formatting!
+    /// let err = PriceCalculationError::metadata_fetch_failed(addr, contract_error);
+    /// ```
+    pub fn metadata_fetch_failed(
+        token: Address,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
         PriceCalculationError::MetadataFetchFailed {
-            token: token.into(),
-            details: details.into(),
+            token,
+            source: Box::new(source),
         }
     }
 
     /// Create a `ProcessingFailed` error with details.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use semioscan::PriceCalculationError;
+    ///
+    /// let err = PriceCalculationError::processing_failed(
+    ///     format!("Invalid swap data: {}", "missing price"),
+    /// );
+    /// ```
     pub fn processing_failed(details: impl Into<String>) -> Self {
         PriceCalculationError::ProcessingFailed {
             details: details.into(),
