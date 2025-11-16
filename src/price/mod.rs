@@ -49,8 +49,7 @@
 //!     }
 //!
 //!     fn extract_swap_from_log(&self, log: &Log) -> Result<Option<SwapData>, PriceSourceError> {
-//!         let event = SwapV3::decode_log(&log.into())
-//!             .map_err(|e| PriceSourceError::DecodeError(e.to_string()))?;
+//!         let event = SwapV3::decode_log(&log.into())?;  // From trait automatically converts
 //!
 //!         // Determine direction based on sign of amounts
 //!         let (token_in, token_in_amount, token_out, token_out_amount) = if event.amount0.is_negative() {
@@ -83,6 +82,9 @@
 
 use alloy_primitives::{Address, B256, U256};
 use alloy_rpc_types::Log;
+
+// Re-export PriceSourceError from types module
+pub use crate::types::price::PriceSourceError;
 
 #[cfg(feature = "odos-example")]
 pub mod cache;
@@ -190,21 +192,4 @@ pub trait PriceSource: Send + Sync {
     fn should_include_swap(&self, _swap: &SwapData) -> bool {
         true // Accept all swaps by default
     }
-}
-
-/// Errors that can occur when extracting price data from logs
-#[derive(Debug, thiserror::Error)]
-pub enum PriceSourceError {
-    /// Failed to decode an event from the log data
-    ///
-    /// This typically means the log doesn't match the expected event signature,
-    /// or the event data is corrupted.
-    #[error("Failed to decode event: {0}")]
-    DecodeError(String),
-
-    /// Event was decoded but the data is invalid
-    ///
-    /// Examples: empty token arrays, zero amounts, mismatched array lengths.
-    #[error("Invalid swap data: {0}")]
-    InvalidSwapData(String),
 }

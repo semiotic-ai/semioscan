@@ -158,21 +158,21 @@ impl OdosPriceSource {
     ///
     /// Future enhancement: Handle complex multi-token swaps by returning Vec<SwapData>
     fn extract_swap_multi(&self, log: &Log) -> Result<Option<SwapData>, PriceSourceError> {
-        let event = SwapMulti::decode_log(&log.clone().into())
-            .map_err(|e| PriceSourceError::DecodeError(e.to_string()))?;
+        let event = SwapMulti::decode_log(&log.clone().into())?;
 
         // Validate event data
         if event.tokensIn.is_empty() || event.tokensOut.is_empty() {
-            return Err(PriceSourceError::InvalidSwapData(
-                "SwapMulti event has empty token arrays".to_string(),
-            ));
+            return Err(PriceSourceError::empty_token_arrays());
         }
 
         if event.amountsIn.len() != event.tokensIn.len()
             || event.amountsOut.len() != event.tokensOut.len()
         {
-            return Err(PriceSourceError::InvalidSwapData(
-                "Token and amount array lengths don't match".to_string(),
+            return Err(PriceSourceError::array_length_mismatch(
+                event.tokensIn.len(),
+                event.amountsIn.len(),
+                event.tokensOut.len(),
+                event.amountsOut.len(),
             ));
         }
 
@@ -195,8 +195,7 @@ impl OdosPriceSource {
 
     /// Extract swap data from a single Swap event
     fn extract_swap_single(&self, log: &Log) -> Result<Option<SwapData>, PriceSourceError> {
-        let event = Swap::decode_log(&log.clone().into())
-            .map_err(|e| PriceSourceError::DecodeError(e.to_string()))?;
+        let event = Swap::decode_log(&log.clone().into())?;
 
         Ok(Some(SwapData {
             token_in: event.inputToken,

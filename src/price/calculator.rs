@@ -269,10 +269,14 @@ impl<P: Provider + Clone> PriceCalculator<P> {
                 Ok(None) => {
                     // Log is not a relevant swap event
                 }
-                Err(PriceSourceError::DecodeError(e)) => {
+                Err(e @ PriceSourceError::DecodeError(_)) => {
                     error!(error = ?e, "Failed to decode log");
                 }
-                Err(PriceSourceError::InvalidSwapData(e)) => {
+                Err(
+                    e @ (PriceSourceError::EmptyTokenArrays
+                    | PriceSourceError::ArrayLengthMismatch { .. }
+                    | PriceSourceError::InvalidSwapData { .. }),
+                ) => {
                     error!(error = ?e, "Invalid swap data in log");
                 }
             }

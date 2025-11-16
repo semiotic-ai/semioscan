@@ -150,9 +150,8 @@ impl PriceSource for UniswapV3PriceSource {
     /// 3. Convert signed amounts to unsigned
     /// 4. Create SwapData with correct token ordering
     fn extract_swap_from_log(&self, log: &Log) -> Result<Option<SwapData>, PriceSourceError> {
-        // Decode the Uniswap V3 Swap event
-        let event = UniswapV3Swap::decode_log(&log.clone().into())
-            .map_err(|e| PriceSourceError::DecodeError(e.to_string()))?;
+        // Decode the Uniswap V3 Swap event - From trait auto-converts decode errors
+        let event = UniswapV3Swap::decode_log(&log.clone().into())?;
 
         // Determine swap direction based on amount signs
         // In Uniswap V3:
@@ -181,9 +180,7 @@ impl PriceSource for UniswapV3PriceSource {
 
         // Validate amounts are non-zero
         if token_in_amount.is_zero() || token_out_amount.is_zero() {
-            return Err(PriceSourceError::InvalidSwapData(
-                "Zero amount in swap".to_string(),
-            ));
+            return Err(PriceSourceError::invalid_swap_data("Zero amount in swap"));
         }
 
         Ok(Some(SwapData {
