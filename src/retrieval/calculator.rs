@@ -1,4 +1,56 @@
 //! Combined calculator for gas costs and transfer amounts
+//!
+//! This module provides [`CombinedCalculator`], which retrieves both gas cost data
+//! and transfer amounts for blockchain transactions in a single operation. This is
+//! more efficient than separate queries when you need both pieces of information.
+//!
+//! # Usage
+//!
+//! Create a calculator with a provider for your target chain:
+//!
+//! ```ignore
+//! use semioscan::retrieval::calculator::CombinedCalculator;
+//! use alloy_provider::ProviderBuilder;
+//!
+//! let provider = ProviderBuilder::new().on_http(rpc_url);
+//! let calculator = CombinedCalculator::new(provider);
+//! ```
+//!
+//! For Ethereum-compatible chains (Ethereum, Arbitrum, Polygon, etc.), use
+//! [`calculate_combined_data_ethereum`](CombinedCalculator::calculate_combined_data_ethereum):
+//!
+//! ```ignore
+//! let result = calculator.calculate_combined_data_ethereum(
+//!     chain,
+//!     from_address,
+//!     to_address,
+//!     token_address,
+//!     from_block,
+//!     to_block,
+//! ).await?;
+//! ```
+//!
+//! For Optimism-based chains with L1 data fees (Optimism, Base, etc.), use
+//! [`calculate_combined_data_optimism`](CombinedCalculator::calculate_combined_data_optimism):
+//!
+//! ```ignore
+//! let result = calculator.calculate_combined_data_optimism(
+//!     chain,
+//!     from_address,
+//!     to_address,
+//!     token_address,
+//!     from_block,
+//!     to_block,
+//! ).await?;
+//! ```
+//!
+//! The calculator automatically handles:
+//! - Rate limiting based on chain-specific configuration
+//! - Block range chunking for large queries
+//! - Parallel fetching of transaction and receipt data
+//! - Error recovery (skips failed transactions and continues)
+//!
+//! See the `examples/` directory for complete usage examples.
 
 use alloy_chains::NamedChain;
 use alloy_network::{Ethereum, Network};
@@ -321,24 +373,3 @@ where
         .await
     }
 }
-
-// Usage and Validation:
-//
-// CombinedCalculator collects gas costs and transfer amounts for blockchain transactions.
-// To understand usage patterns and validate functionality:
-//
-// - See examples/base_oct15_2025.rs - demonstrates collecting combined gas and
-//   transfer data for a specific block range on Base
-// - See examples/daily_block_window.rs - shows calculating costs across daily
-//   block windows
-//
-// The calculator uses well-tested components:
-// - ReceiptAdapter - extracts gas data from receipts (see gas/adapter.rs)
-// - GasCalculationCore - calculates blob gas and effective prices (see gas_calculation.rs)
-// - CombinedDataResult - accumulates transaction data (see types.rs)
-//
-// For Ethereum-compatible chains, use calculate_combined_data_ethereum().
-// For Optimism and other L2s with L1 data fees, use calculate_combined_data_optimism().
-//
-// Both methods handle rate limiting, block range chunking, and error recovery
-// automatically based on the SemioscanConfig.
