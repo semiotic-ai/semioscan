@@ -38,16 +38,16 @@
 //! (configured via [`SemioscanConfig`](crate::SemioscanConfig)) to avoid RPC throttling.
 
 use alloy_chains::NamedChain;
-use alloy_primitives::{keccak256, Address, BlockNumber, U256};
+use alloy_primitives::{Address, BlockNumber};
 use alloy_provider::Provider;
-use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
-use tokio::time::sleep;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::SemioscanConfig;
 use crate::errors::EventProcessingError;
 use crate::events::definitions::Transfer;
+use crate::events::filter::TransferFilterBuilder;
+use crate::events::scanner::EventScanner;
 use crate::types::tokens::TokenSet;
 
 /// Extract tokens transferred to a router contract using default configuration
@@ -177,56 +177,33 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
         "Fetching Transfer logs"
     );
 
-    let max_block_range = config.get_max_block_range(chain);
-    let rate_limit = config.get_rate_limit_delay(chain);
+    // Create a scanner with the provider and config
+    let scanner = EventScanner::new(provider, config.clone());
 
-    let mut current_block = start_block;
+    // Build a filter for transfers to the router
+    // No need for obscure U256::from_be_bytes conversion - filter builder handles it
+    let filter = TransferFilterBuilder::new().with_recipient(router).build();
+
+    // Scan for all Transfer events to this router
+    let logs = scanner.scan(chain, filter, start_block, end_block).await?;
 
     // TokenSet automatically deduplicates tokens and preserves deterministic order
     let mut transferred_to_tokens = TokenSet::new();
 
-    while current_block <= end_block {
-        let to_block = current_block
-            .saturating_add(max_block_range.as_u64())
-            .saturating_sub(1)
-            .min(end_block);
-
-        let filter = Filter::new()
-            .from_block(current_block)
-            .to_block(to_block)
-            .event_signature(*keccak256(b"Transfer(address,address,uint256)"))
-            .topic2(U256::from_be_bytes(router.into_word().into()));
-
-        match provider.get_logs(&filter).await {
-            Ok(logs) => {
-                for log in logs {
-                    let token_address = log.address();
-                    match Transfer::decode_log(&log.inner) {
-                        Ok(event) if event.to == router => {
-                            debug!(extracted_token = ?token_address);
-                            transferred_to_tokens.insert(token_address);
-                        }
-                        Err(e) => {
-                            // This happens more for some chains than others, so we don't want to error out.
-                            warn!(error = ?e, "Failed to decode Transfer log");
-                            continue;
-                        }
-                        _ => {}
-                    }
-                }
+    // Process the logs to extract unique token addresses
+    for log in logs {
+        let token_address = log.address();
+        match Transfer::decode_log(&log.inner) {
+            Ok(event) if event.to == router => {
+                debug!(extracted_token = ?token_address);
+                transferred_to_tokens.insert(token_address);
             }
             Err(e) => {
-                error!(?e, %current_block, %to_block, "Error fetching logs in range");
+                // This happens more for some chains than others, so we don't want to error out.
+                warn!(error = ?e, "Failed to decode Transfer log");
+                continue;
             }
-        }
-
-        current_block = to_block + 1;
-
-        // Apply rate limiting if configured for this chain
-        if let Some(delay) = rate_limit {
-            if current_block <= end_block {
-                sleep(delay).await;
-            }
+            _ => {}
         }
     }
 

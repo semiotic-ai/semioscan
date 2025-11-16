@@ -10,6 +10,7 @@ use tracing::{error, info};
 
 use crate::config::SemioscanConfig;
 use crate::errors::PriceCalculationError;
+use crate::events::scanner::EventScanner;
 use crate::price::cache::PriceCache;
 use crate::price::{PriceSource, PriceSourceError};
 use crate::{NormalizedAmount, TokenAmount, TokenDecimals, TokenPrice, TransactionCount, UsdValue};
@@ -202,16 +203,10 @@ impl<P: Provider + Clone> PriceCalculator<P> {
         TokenAmount::new(amount).normalize(decimals)
     }
 
-    /// Process a SwapData extracted by the PriceSource trait
+    /// Process a single gap by fetching logs with automatic chunking and rate limiting
     ///
-    /// Checks if the swap involves our target token and USDC, then extracts
-    /// normalized amounts for price calculation.
-    ///
-    /// Returns Some(SwapAmounts) if relevant, None otherwise.
-    /// Process a single gap by fetching logs in chunks with rate limiting
-    ///
-    /// This method handles the chunking of block ranges, rate limiting between RPC calls,
-    /// and accumulation of price data from swap events within the gap.
+    /// Scans the block range for swap events, processes each event to extract price data,
+    /// and accumulates results for the token.
     async fn process_gap_for_price(
         &mut self,
         token_address: Address,
@@ -219,83 +214,68 @@ impl<P: Provider + Clone> PriceCalculator<P> {
         gap_end: BlockNumber,
     ) -> Result<TokenPriceResult, PriceCalculationError> {
         let mut gap_result = TokenPriceResult::new(token_address);
-        let mut current_block = gap_start;
-        let max_block_range = self.config.get_max_block_range(self.chain);
-        let rate_limit = self.config.get_rate_limit_delay(self.chain);
         let event_topics = self.price_source.event_topics();
 
-        while current_block <= gap_end {
-            let to_block = std::cmp::min(current_block + max_block_range.as_u64() - 1, gap_end);
+        // Create a scanner to handle chunking and rate limiting
+        let scanner = EventScanner::new(&self.provider, self.config.clone());
 
-            // Create a filter for swap events from the price source
-            let filter = Filter::new()
-                .from_block(current_block)
-                .to_block(to_block)
-                .address(self.price_source.router_address())
-                .event_signature(event_topics.clone());
+        // Build a filter for swap events from the price source
+        let filter = Filter::new()
+            .address(self.price_source.router_address())
+            .event_signature(event_topics.clone());
 
-            match self.provider.get_logs(&filter).await {
-                Ok(logs) => {
-                    info!(
-                        logs_count = logs.len(),
-                        current_block = current_block,
-                        to_block = to_block,
-                        "Fetched logs for block range"
-                    );
+        // Scan for all swap events in this gap
+        let logs = scanner
+            .scan(self.chain, filter, gap_start, gap_end)
+            .await
+            .map_err(|e| {
+                PriceCalculationError::processing_failed(format!(
+                    "Failed to scan swap events from {} to {}: {}",
+                    gap_start, gap_end, e
+                ))
+            })?;
 
-                    for log in logs {
-                        // Extract swap data using the price source
-                        match self.price_source.extract_swap_from_log(&log) {
-                            Ok(Some(swap_data)) => {
-                                // Apply price source filtering
-                                if !self.price_source.should_include_swap(&swap_data) {
-                                    continue;
-                                }
+        info!(
+            logs_count = logs.len(),
+            gap_start = gap_start,
+            gap_end = gap_end,
+            "Fetched logs for gap"
+        );
 
-                                // Process the swap data
-                                match self.process_swap_data(&swap_data, token_address).await {
-                                    Ok(Some(amounts)) => {
-                                        gap_result.add_swap(
-                                            amounts.token_amount.as_f64(),
-                                            amounts.usdc_amount.as_f64(),
-                                        );
-                                    }
-                                    Ok(None) => {
-                                        // Not relevant for our token
-                                    }
-                                    Err(e) => {
-                                        error!(error = ?e, "Error processing swap data");
-                                    }
-                                }
-                            }
-                            Ok(None) => {
-                                // Log is not a relevant swap event
-                            }
-                            Err(PriceSourceError::DecodeError(e)) => {
-                                error!(error = ?e, "Failed to decode log");
-                            }
-                            Err(PriceSourceError::InvalidSwapData(e)) => {
-                                error!(error = ?e, "Invalid swap data in log");
-                            }
+        // Process each log to extract price information
+        for log in logs {
+            // Extract swap data using the price source
+            match self.price_source.extract_swap_from_log(&log) {
+                Ok(Some(swap_data)) => {
+                    // Apply price source filtering
+                    if !self.price_source.should_include_swap(&swap_data) {
+                        continue;
+                    }
+
+                    // Process the swap data
+                    match self.process_swap_data(&swap_data, token_address).await {
+                        Ok(Some(amounts)) => {
+                            gap_result.add_swap(
+                                amounts.token_amount.as_f64(),
+                                amounts.usdc_amount.as_f64(),
+                            );
+                        }
+                        Ok(None) => {
+                            // Not relevant for our token
+                        }
+                        Err(e) => {
+                            error!(error = ?e, "Error processing swap data");
                         }
                     }
                 }
-                Err(e) => {
-                    error!(
-                        error = ?e,
-                        current_block = current_block,
-                        to_block = to_block,
-                        "Error fetching logs for block range"
-                    );
+                Ok(None) => {
+                    // Log is not a relevant swap event
                 }
-            }
-
-            current_block = to_block + 1;
-
-            // Apply rate limiting if configured for this chain
-            if let Some(delay) = rate_limit {
-                if current_block <= gap_end {
-                    tokio::time::sleep(delay).await;
+                Err(PriceSourceError::DecodeError(e)) => {
+                    error!(error = ?e, "Failed to decode log");
+                }
+                Err(PriceSourceError::InvalidSwapData(e)) => {
+                    error!(error = ?e, "Invalid swap data in log");
                 }
             }
         }

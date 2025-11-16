@@ -31,14 +31,14 @@
 use alloy_chains::NamedChain;
 use alloy_primitives::{Address, BlockNumber};
 use alloy_provider::Provider;
-use alloy_rpc_types::Filter;
 use alloy_sol_types::SolEvent;
-use tokio::time::sleep;
-use tracing::{info, trace, warn};
+use tracing::{info, warn};
 
 use crate::config::SemioscanConfig;
-use crate::errors::{EventProcessingError, RpcError};
+use crate::errors::EventProcessingError;
 use crate::events::definitions::Transfer;
+use crate::events::filter::TransferFilterBuilder;
+use crate::events::scanner::EventScanner;
 use crate::types::tokens::TokenAmount;
 
 /// Result of transfer amount calculation
@@ -195,67 +195,36 @@ impl<P: Provider> AmountCalculator<P> {
             amount: TokenAmount::ZERO,
         };
 
-        let contract_address = token;
+        // Create a scanner with the provider and config
+        let scanner = EventScanner::new(&self.provider, self.config.clone());
 
-        let transfer_topic = Transfer::SIGNATURE_HASH;
+        // Build a filter for transfers between specific addresses
+        // The filter builder handles the topic1/topic2 encoding internally
+        let filter = TransferFilterBuilder::new()
+            .with_token(token)
+            .with_sender(from)
+            .with_recipient(to)
+            .build();
 
-        // Get rate limit configuration for this chain
-        let rate_limit = self.config.get_rate_limit_delay(chain);
+        // Scan for all matching Transfer events
+        let logs = scanner.scan(chain, filter, from_block, to_block).await?;
 
-        let mut current_block = from_block;
-
-        while current_block <= to_block {
-            let end_chunk_block = std::cmp::min(current_block + 499, to_block);
-
-            let filter = Filter::new()
-                .from_block(current_block)
-                .to_block(end_chunk_block)
-                .address(contract_address)
-                .event_signature(vec![transfer_topic])
-                .topic1(from)
-                .topic2(to);
-
-            let logs = self.provider.get_logs(&filter).await.map_err(|e| {
-                RpcError::get_logs_failed(
-                    format!(
-                        "Transfer events from block {} to {}",
-                        current_block, end_chunk_block
-                    ),
-                    e,
-                )
-            })?;
-
-            for log in logs {
-                match Transfer::decode_log(&log.into()) {
-                    Ok(event) => {
-                        info!(
-                            chain = ?chain,
-                            to = ?to,
-                            token = ?token,
-                            amount = ?event.value,
-                            block = ?current_block,
-                            current_total_amount = ?result.amount,
-                            "Adding transfer amount to result"
-                        );
-                        result.amount = result.amount + TokenAmount::from(event.value);
-                    }
-                    Err(e) => {
-                        warn!(error = ?e, "Failed to decode Transfer log");
-                    }
-                }
-            }
-
-            current_block = end_chunk_block + 1;
-
-            // Apply rate limiting if configured (don't sleep after last chunk)
-            if let Some(delay) = rate_limit {
-                if current_block <= to_block {
-                    trace!(
+        // Process the logs to calculate total amount
+        for log in logs {
+            match Transfer::decode_log(&log.into()) {
+                Ok(event) => {
+                    info!(
                         chain = ?chain,
-                        delay_ms = delay.as_millis(),
-                        "Applying rate limit delay between chunks"
+                        to = ?to,
+                        token = ?token,
+                        amount = ?event.value,
+                        current_total_amount = ?result.amount,
+                        "Adding transfer amount to result"
                     );
-                    sleep(delay).await;
+                    result.amount = result.amount + TokenAmount::from(event.value);
+                }
+                Err(e) => {
+                    warn!(error = ?e, "Failed to decode Transfer log");
                 }
             }
         }
