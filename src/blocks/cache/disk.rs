@@ -437,11 +437,18 @@ impl DiskCache {
         let mut evicted = 0;
 
         while data.entries.len() > max_entries {
-            // Find oldest entry by created_at timestamp
+            // Find oldest entry by created_at timestamp, using cache key as stable tiebreaker
             let oldest_key = data
                 .entries
                 .iter()
-                .min_by_key(|(_, entry)| entry.created_at)
+                .min_by(|(key_a, entry_a), (key_b, entry_b)| {
+                    // Primary sort: by timestamp (oldest first)
+                    entry_a
+                        .created_at
+                        .cmp(&entry_b.created_at)
+                        // Secondary sort: by cache key (for deterministic ordering when timestamps equal)
+                        .then_with(|| key_a.to_string().cmp(&key_b.to_string()))
+                })
                 .map(|(key, _)| key.clone());
 
             if let Some(key) = oldest_key {
@@ -639,7 +646,7 @@ mod tests {
             .validate()
             .unwrap();
 
-        // Insert 4 entries
+        // Insert 4 entries (eviction uses stable ordering even if timestamps are equal)
         for day in 1..=4 {
             let key = create_test_key(day);
             let window = create_test_window(day as u64 * 1000, day as u64 * 2000);
@@ -651,13 +658,38 @@ mod tests {
         assert_eq!(stats.entries, 3);
         assert_eq!(stats.evictions, 1);
 
-        // First entry should be gone (oldest)
+        // First entry should be gone (evicted based on timestamp + key ordering)
         assert!(cache.get(&create_test_key(1)).await.is_none());
 
         // Last 3 should still be present
         assert!(cache.get(&create_test_key(2)).await.is_some());
         assert!(cache.get(&create_test_key(3)).await.is_some());
         assert!(cache.get(&create_test_key(4)).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_disk_cache_deterministic_eviction() {
+        let temp_dir = TempDir::new().unwrap();
+        let cache_path = temp_dir.path().join("cache.json");
+        let cache = DiskCache::new(&cache_path)
+            .with_max_entries(2)
+            .validate()
+            .unwrap();
+
+        // Insert 3 entries rapidly (all will have same timestamp)
+        // Keys are: Arbitrum:2025-10-01, Arbitrum:2025-10-02, Arbitrum:2025-10-03
+        // When sorted lexicographically: 2025-10-01 < 2025-10-02 < 2025-10-03
+        for day in 1..=3 {
+            let key = create_test_key(day);
+            let window = create_test_window(day as u64 * 1000, day as u64 * 2000);
+            cache.insert(key, window).await.unwrap();
+        }
+
+        // Should evict deterministically based on cache key ordering when timestamps equal
+        // Expected: 2025-10-01 is evicted (smallest key lexicographically)
+        assert!(cache.get(&create_test_key(1)).await.is_none());
+        assert!(cache.get(&create_test_key(2)).await.is_some());
+        assert!(cache.get(&create_test_key(3)).await.is_some());
     }
 
     #[tokio::test]
