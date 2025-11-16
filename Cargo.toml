@@ -3,7 +3,7 @@ name = "semioscan"
 version = "0.2.0"
 edition = "2021"
 authors = ["Joseph Livesey <joseph@semiotic.ai>"]
-rust-version = "1.73"
+rust-version = "1.89"
 description = "Production-grade Rust library for blockchain analytics: gas calculation, price extraction, and block window calculations for EVM chains"
 license = "Apache-2.0"
 repository = "https://github.com/semiotic-ai/likwid"
@@ -38,6 +38,7 @@ alloy-sol-type-parser = "1.4"
 alloy-transport-http = { version = "1.1", default-features = false, features = [
     "reqwest",
 ] }
+async-trait = "0.1"
 bigdecimal = { version = "0.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 erc20-rs = "0.2.3"
@@ -63,6 +64,7 @@ anyhow = "1.0"
 async-trait = "0.1"
 dotenvy = "0.15"
 proptest = "1.9"
+tempfile = "3.23"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = [
     "ansi",

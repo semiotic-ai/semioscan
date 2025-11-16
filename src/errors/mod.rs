@@ -29,7 +29,7 @@
 //! use chrono::NaiveDate;
 //!
 //! async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//!     let calculator = BlockWindowCalculator::new(provider, "cache.json");
+//!     let calculator = BlockWindowCalculator::with_disk_cache(provider, "cache.json")?;
 //!     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
 //!
 //!     match calculator.get_daily_window(NamedChain::Arbitrum, date).await {
@@ -54,7 +54,7 @@
 //! use chrono::NaiveDate;
 //!
 //! async fn example() -> Result<(), SemioscanError> {
-//!     let calculator = BlockWindowCalculator::new(provider, "cache.json");
+//!     let calculator = BlockWindowCalculator::with_disk_cache(provider, "cache.json")?;
 //!     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
 //!     let window = calculator.get_daily_window(NamedChain::Arbitrum, date).await?;
 //!     // Errors automatically convert to SemioscanError via From implementations
@@ -92,7 +92,7 @@ pub use rpc::RpcError;
 /// use chrono::NaiveDate;
 ///
 /// async fn process_data() -> Result<(), SemioscanError> {
-///     let block_calc = BlockWindowCalculator::new(provider, "cache.json");
+///     let block_calc = BlockWindowCalculator::with_disk_cache(provider, "cache.json")?;
 ///     let gas_calc = GasCostCalculator::new(provider);
 ///
 ///     // Both error types automatically convert to SemioscanError

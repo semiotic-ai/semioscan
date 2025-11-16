@@ -18,7 +18,12 @@
 //! use chrono::NaiveDate;
 //!
 //! let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-//! let calculator = BlockWindowCalculator::new(provider, "cache.json".to_string());
+//!
+//! // With disk cache (recommended for production)
+//! let calculator = BlockWindowCalculator::with_disk_cache(provider, "cache.json")?;
+//!
+//! // Or with memory cache (data lost on exit)
+//! let calculator = BlockWindowCalculator::with_memory_cache(provider);
 //!
 //! let date = NaiveDate::from_ymd_opt(2025, 10, 15).unwrap();
 //! let window = calculator.get_daily_window(NamedChain::Arbitrum, date).await?;
@@ -31,9 +36,10 @@ use alloy_primitives::BlockNumber;
 use alloy_provider::Provider;
 use chrono::{DateTime, Datelike, NaiveDate, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::Path};
+use std::path::Path;
 use tracing::{debug, info};
 
+use crate::blocks::cache::{BlockWindowCache, CacheKey, DiskCache};
 use crate::errors::{BlockWindowError, RpcError};
 use crate::tracing::spans;
 use crate::types::config::BlockCount;
@@ -125,87 +131,158 @@ impl DailyBlockWindow {
     }
 }
 
-/// Key for caching daily block windows
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-struct CacheKey {
-    chain: NamedChain,
-    date: NaiveDate,
-}
-
-impl CacheKey {
-    fn new(chain: NamedChain, date: NaiveDate) -> Self {
-        Self { chain, date }
-    }
-}
-
-impl std::fmt::Display for CacheKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.chain as u64, self.date)
-    }
-}
-
-/// Cache for daily block windows
-///
-/// This cache persists to disk to avoid repeated binary searches across
-/// the blockchain when calculating block ranges for the same days.
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct BlockWindowCache {
-    /// Maps CacheKey (chain + date) to DailyBlockWindow
-    windows: HashMap<CacheKey, DailyBlockWindow>,
-}
-
-impl BlockWindowCache {
-    async fn load(path: &Path) -> Result<Self, BlockWindowError> {
-        if !path.exists() {
-            debug!(path = %path.display(), "Cache file does not exist, creating new cache");
-            return Ok(Self::default());
-        }
-
-        let data = tokio::fs::read(path)
-            .await
-            .map_err(|e| BlockWindowError::cache_io_error(path.display().to_string(), e))?;
-
-        let cache: Self =
-            serde_json::from_slice(&data).map_err(BlockWindowError::serialization_error)?;
-
-        info!(path = %path.display(), entries = cache.windows.len(), "Loaded block window cache");
-        Ok(cache)
-    }
-
-    async fn save(&self, path: &Path) -> Result<(), BlockWindowError> {
-        let data =
-            serde_json::to_vec_pretty(self).map_err(BlockWindowError::serialization_error)?;
-
-        tokio::fs::write(path, data)
-            .await
-            .map_err(|e| BlockWindowError::cache_io_error(path.display().to_string(), e))?;
-
-        debug!(path = %path.display(), entries = self.windows.len(), "Saved block window cache");
-        Ok(())
-    }
-
-    fn get(&self, key: &CacheKey) -> Option<&DailyBlockWindow> {
-        self.windows.get(key)
-    }
-
-    fn insert(&mut self, key: CacheKey, window: DailyBlockWindow) {
-        self.windows.insert(key, window);
-    }
-}
-
 /// Calculates and caches daily block windows for blockchain queries
+///
+/// This calculator uses binary search to find block ranges for specific UTC dates.
+/// Results are cached using a configurable cache backend to avoid repeated RPC calls.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use semioscan::{BlockWindowCalculator, DiskCache, MemoryCache};
+///
+/// // With disk cache (default, backward compatible)
+/// let calculator = BlockWindowCalculator::with_disk_cache(provider, "cache.json")?;
+///
+/// // With memory cache
+/// let calculator = BlockWindowCalculator::with_memory_cache(provider);
+///
+/// // With custom cache backend
+/// let cache = DiskCache::new("cache.json")
+///     .with_ttl(Duration::from_secs(86400 * 7))
+///     .validate()?;
+/// let calculator = BlockWindowCalculator::new(provider, Box::new(cache));
+/// ```
 pub struct BlockWindowCalculator<P> {
     provider: P,
-    cache_path: Box<Path>,
+    cache: Box<dyn BlockWindowCache>,
 }
 
 impl<P: Provider> BlockWindowCalculator<P> {
-    /// Creates a new calculator with the given provider and cache file path
-    pub fn new(provider: P, cache_path: impl AsRef<Path>) -> Self {
-        Self {
-            provider,
-            cache_path: cache_path.as_ref().into(),
-        }
+    /// Creates a new calculator with the given provider and cache backend
+    ///
+    /// This is the most flexible constructor, allowing you to provide any cache implementation.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - The blockchain provider for RPC calls
+    /// * `cache` - The cache backend (DiskCache, MemoryCache, NoOpCache, or custom)
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::{BlockWindowCalculator, DiskCache, MemoryCache, NoOpCache};
+    /// use std::time::Duration;
+    ///
+    /// // Disk cache with TTL
+    /// let cache = DiskCache::new("cache.json")
+    ///     .with_ttl(Duration::from_secs(86400 * 7))
+    ///     .validate()?;
+    /// let calculator = BlockWindowCalculator::new(provider, Box::new(cache));
+    ///
+    /// // Memory cache with size limit
+    /// let cache = MemoryCache::new().with_max_entries(500);
+    /// let calculator = BlockWindowCalculator::new(provider, Box::new(cache));
+    ///
+    /// // No cache
+    /// let calculator = BlockWindowCalculator::new(provider, Box::new(NoOpCache));
+    /// ```
+    pub fn new(provider: P, cache: Box<dyn BlockWindowCache>) -> Self {
+        Self { provider, cache }
+    }
+
+    /// Creates a calculator with a disk cache at the specified path
+    ///
+    /// This is the recommended constructor for most use cases. It provides persistent
+    /// caching with automatic validation and helpful error messages.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - The blockchain provider for RPC calls
+    /// * `cache_path` - Path to the cache file (will be created if it doesn't exist)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The parent directory doesn't exist and cannot be created
+    /// - The parent directory is not writable
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::BlockWindowCalculator;
+    ///
+    /// // Relative path
+    /// let calculator = BlockWindowCalculator::with_disk_cache(provider, "cache.json")?;
+    ///
+    /// // Absolute path
+    /// let calculator = BlockWindowCalculator::with_disk_cache(
+    ///     provider,
+    ///     "/var/cache/block_windows.json"
+    /// )?;
+    /// ```
+    pub fn with_disk_cache(
+        provider: P,
+        cache_path: impl AsRef<Path>,
+    ) -> Result<Self, BlockWindowError> {
+        let cache = DiskCache::new(cache_path.as_ref()).validate()?;
+        Ok(Self::new(provider, Box::new(cache)))
+    }
+
+    /// Creates a calculator with an in-memory cache
+    ///
+    /// The in-memory cache is faster than disk cache but data is lost when the program exits.
+    /// Use this for:
+    /// - Short-lived processes
+    /// - Testing
+    /// - Scenarios where disk I/O is undesirable
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::BlockWindowCalculator;
+    ///
+    /// // Unbounded memory cache
+    /// let calculator = BlockWindowCalculator::with_memory_cache(provider);
+    /// ```
+    pub fn with_memory_cache(provider: P) -> Self {
+        use crate::blocks::cache::MemoryCache;
+        Self::new(provider, Box::new(MemoryCache::new()))
+    }
+
+    /// Creates a calculator without caching
+    ///
+    /// Every call to `get_daily_window()` will perform RPC queries. Use this for:
+    /// - Testing
+    /// - Scenarios where caching is not desired
+    /// - One-time queries
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::BlockWindowCalculator;
+    ///
+    /// let calculator = BlockWindowCalculator::without_cache(provider);
+    /// ```
+    pub fn without_cache(provider: P) -> Self {
+        use crate::blocks::cache::NoOpCache;
+        Self::new(provider, Box::new(NoOpCache))
+    }
+
+    /// Returns current cache statistics
+    ///
+    /// Provides insights into cache performance including hits, misses, evictions,
+    /// and current size. Useful for monitoring and optimization.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// let stats = calculator.cache_stats().await;
+    /// println!("Cache hit rate: {:.1}%", stats.hit_rate());
+    /// println!("Entries: {}, Evictions: {}", stats.entries, stats.evictions);
+    /// ```
+    pub async fn cache_stats(&self) -> crate::blocks::cache::CacheStats {
+        self.cache.stats().await
     }
 
     /// Fetches the timestamp of a specific block
@@ -349,6 +426,21 @@ impl<P: Provider> BlockWindowCalculator<P> {
     ///
     /// # Returns
     /// A `DailyBlockWindow` containing the start/end blocks and timestamps
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::BlockWindowCalculator;
+    /// use alloy_chains::NamedChain;
+    /// use chrono::NaiveDate;
+    ///
+    /// let calculator = BlockWindowCalculator::with_disk_cache(provider, "cache.json")?;
+    /// let date = NaiveDate::from_ymd_opt(2025, 10, 15).unwrap();
+    /// let window = calculator.get_daily_window(NamedChain::Arbitrum, date).await?;
+    ///
+    /// println!("Blocks: {} to {}", window.start_block, window.end_block);
+    /// println!("Count: {}", window.block_count().as_u64());
+    /// ```
     pub async fn get_daily_window(
         &self,
         chain: NamedChain,
@@ -357,13 +449,18 @@ impl<P: Provider> BlockWindowCalculator<P> {
         let span = spans::get_daily_window(chain, date);
         let _guard = span.enter();
 
-        let mut cache = BlockWindowCache::load(&self.cache_path).await?;
         let key = CacheKey::new(chain, date);
 
         // Check cache first
-        if let Some(window) = cache.get(&key) {
-            info!(chain = %chain, date = %date, cached = true, "Retrieved daily block window from cache");
-            return Ok(window.clone());
+        if let Some(window) = self.cache.get(&key).await {
+            info!(
+                chain = %chain,
+                date = %date,
+                cache = %self.cache.name(),
+                cached = true,
+                "Retrieved daily block window from cache"
+            );
+            return Ok(window);
         }
 
         // Calculate UTC day boundaries
@@ -412,12 +509,14 @@ impl<P: Provider> BlockWindowCalculator<P> {
             start_block = window.start_block,
             end_block = window.end_block,
             block_count = window.block_count().as_u64(),
+            cache = %self.cache.name(),
             "Computed daily block window"
         );
 
-        // Save to cache
-        cache.insert(key, window.clone());
-        cache.save(&self.cache_path).await?;
+        // Save to cache (ignore errors - caching is best-effort)
+        if let Err(e) = self.cache.insert(key, window.clone()).await {
+            debug!(error = %e, "Failed to cache block window (continuing anyway)");
+        }
 
         Ok(window)
     }

@@ -64,7 +64,13 @@ pub use price::odos::OdosPriceSource;
 pub use price::{PriceCalculator, TokenPriceResult};
 
 // === Block Windows (from blocks/) ===
-pub use blocks::{BlockWindowCalculator, DailyBlockWindow, UnixTimestamp};
+pub use blocks::{
+    BlockWindowCache, BlockWindowCalculator, CacheKey, CacheStats, DailyBlockWindow, DiskCache,
+    MemoryCache, NoOpCache, UnixTimestamp,
+};
+
+// === Cache Types (from blocks/cache/types, re-exported via types/cache) ===
+pub use types::cache::{AccessSequence, TimestampMillis};
 
 // === Events (from events/) ===
 pub use events::{extract_transferred_to_tokens, extract_transferred_to_tokens_with_config};

@@ -24,7 +24,7 @@ use super::RpcError;
 /// use chrono::NaiveDate;
 ///
 /// async fn example() -> Result<(), BlockWindowError> {
-///     let calculator = BlockWindowCalculator::new(provider, "cache.json");
+///     let calculator = BlockWindowCalculator::with_disk_cache(provider, "cache.json")?;
 ///     let date = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
 ///
 ///     match calculator.get_daily_window(NamedChain::Arbitrum, date).await {

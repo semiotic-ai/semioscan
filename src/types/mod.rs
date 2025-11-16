@@ -5,7 +5,9 @@
 //! - Token amounts and decimals
 //! - Configuration values (block ranges, rate limits)
 //! - Fee calculations
+//! - Cache metadata (timestamps, access sequences)
 
+pub mod cache;
 pub mod config;
 pub mod fees;
 pub mod gas;
