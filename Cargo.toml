@@ -2,6 +2,7 @@
 name = "semioscan"
 version = "0.2.0"
 edition = "2021"
+authors = ["Joseph Livesey <joseph@semiotic.ai>"]
 rust-version = "1.73"
 description = "Production-grade Rust library for blockchain analytics: gas calculation, price extraction, and block window calculations for EVM chains"
 license = "Apache-2.0"

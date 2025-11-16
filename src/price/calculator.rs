@@ -87,6 +87,25 @@ impl TokenPriceResult {
     }
 }
 
+/// Calculates token prices from blockchain swap events using a configurable price source.
+///
+/// This calculator fetches swap events from the blockchain, extracts price information,
+/// and provides caching to minimize RPC calls. It's designed to work with any DEX protocol
+/// through the [`PriceSource`] trait.
+///
+/// # Caching and Thread Safety
+///
+/// The calculator uses an internal cache (protected by a mutex) to store price results
+/// for block ranges. This cache is thread-safe and can be shared across async tasks.
+///
+/// **Panic Behavior**: If a panic occurs while holding the cache mutex lock, the mutex
+/// will become "poisoned" and subsequent operations will panic with a descriptive error
+/// message. This is an intentional fail-fast behavior, as mutex poisoning indicates a
+/// serious bug in the price calculation logic that should be investigated.
+///
+/// # Examples
+///
+/// See [`PriceCalculator::new`] for usage examples.
 pub struct PriceCalculator<P> {
     provider: P,
     price_source: Box<dyn PriceSource>,

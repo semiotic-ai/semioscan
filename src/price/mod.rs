@@ -98,7 +98,7 @@ pub use calculator::*;
 /// Represents a single token swap extracted from on-chain events
 ///
 /// This is the core data structure that [`PriceSource`] implementations must produce.
-/// Token amounts are raw U256 values (not normalized) - the [`PriceCalculator`](crate::PriceCalculator)
+/// Token amounts are raw U256 values (not normalized) - the [`crate::PriceCalculator`]
 /// handles decimal normalization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SwapData {
