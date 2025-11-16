@@ -16,7 +16,7 @@
 //!
 //! ```rust,ignore
 //! use semioscan::price::{PriceSource, SwapData, PriceSourceError};
-//! use alloy_primitives::{Address, B256};
+//! use alloy_primitives::{Address, B256, U256};
 //! use alloy_rpc_types::Log;
 //! use alloy_sol_types::sol;
 //!
@@ -76,7 +76,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! semioscan = { version = "0.1", features = ["odos-example"] }
+//! semioscan = { version = "0.2", features = ["odos-example"] }
 //! ```
 //!
 //! See [`odos::OdosPriceSource`] for implementation details.

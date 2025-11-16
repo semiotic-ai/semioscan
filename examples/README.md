@@ -396,8 +396,8 @@ cargo run --package semioscan --example router_token_discovery -- arbitrum --cus
 ## Further Reading
 
 - **Main README**: `../../README.md` - Library overview and API documentation
-- **Testing Guide**: `../../TESTING.md` - Testing patterns and examples
-- **Contributing**: `../../CONTRIBUTING.md` - How to contribute
+- **Contributing**: `../../CONTRIBUTING.md` - How to contribute and testing guidelines
+- **PriceSource Guide**: `../docs/PRICESOURCE_GUIDE.md` - Detailed guide for implementing DEX integrations
 
 ---
 

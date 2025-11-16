@@ -12,30 +12,44 @@ Built on [Alloy](https://github.com/alloy-rs/alloy), the modern Ethereum library
 
 ## Table of Contents
 
-- [Features](#features)
-- [Use Cases](#use-cases)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-  - [1. Calculate Gas Costs](#1-calculate-gas-costs)
-  - [2. Calculate Daily Block Windows](#2-calculate-daily-block-windows)
-  - [3. Extract DEX Price Data](#3-extract-dex-price-data)
-- [Examples and Tutorials](#examples-and-tutorials)
-- [Core Concepts](#core-concepts)
-  - [Block Windows](#block-windows)
-  - [L1 Data Fees (L2 Chains)](#l1-data-fees-l2-chains)
-  - [Caching](#caching)
-- [Implementing Custom Price Sources](#implementing-custom-price-sources)
-- [Library Architecture](#library-architecture)
-- [Multi-Chain Support](#multi-chain-support)
-- [Advanced Configuration](#advanced-configuration)
-- [Performance Considerations](#performance-considerations)
-- [Running Tests and Examples](#running-tests-and-examples)
-- [Troubleshooting](#troubleshooting)
-- [When NOT to Use Semioscan](#when-not-to-use-semioscan)
-- [Production Usage](#production-usage)
-- [Contributing](#contributing)
-- [License](#license)
-- [Acknowledgments](#acknowledgments)
+- [Semioscan](#semioscan)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Use Cases](#use-cases)
+  - [Installation](#installation)
+    - [Feature Flags](#feature-flags)
+  - [Quick Start](#quick-start)
+    - [1. Calculate Gas Costs](#1-calculate-gas-costs)
+    - [2. Calculate Daily Block Windows](#2-calculate-daily-block-windows)
+    - [3. Extract DEX Price Data](#3-extract-dex-price-data)
+  - [Examples and Tutorials](#examples-and-tutorials)
+    - [Quick Reference](#quick-reference)
+    - [Shell Script Workflows](#shell-script-workflows)
+    - [Running Examples](#running-examples)
+  - [Core Concepts](#core-concepts)
+    - [Block Windows](#block-windows)
+    - [L1 Data Fees (L2 Chains)](#l1-data-fees-l2-chains)
+    - [Caching](#caching)
+  - [Implementing Custom Price Sources](#implementing-custom-price-sources)
+    - [Example: Uniswap V3 Price Source](#example-uniswap-v3-price-source)
+  - [Library Architecture](#library-architecture)
+  - [Multi-Chain Support](#multi-chain-support)
+  - [Advanced Configuration](#advanced-configuration)
+  - [Performance Considerations](#performance-considerations)
+    - [Block Range Chunking](#block-range-chunking)
+    - [Rate Limiting](#rate-limiting)
+    - [Memory Usage](#memory-usage)
+    - [Query Performance](#query-performance)
+  - [Running Tests and Examples](#running-tests-and-examples)
+    - [Running Tests](#running-tests)
+    - [Running Examples](#running-examples-1)
+  - [Troubleshooting](#troubleshooting)
+    - [Common Issues](#common-issues)
+  - [When NOT to Use Semioscan](#when-not-to-use-semioscan)
+  - [Production Usage](#production-usage)
+  - [Contributing](#contributing)
+  - [License](#license)
+  - [Acknowledgments](#acknowledgments)
 
 ## Features
 
@@ -205,6 +219,7 @@ The [`examples/`](examples/) directory contains complete, production-ready examp
 ### Shell Script Workflows
 
 Production-ready scripts for multi-chain operations:
+
 - **`multi_chain_daily_report.sh`** - Generate liquidation reports across all chains
 - **`generate_daily_report.sh`** - Single-chain financial reporting
 - **`collect_data_only.sh`** - Data collection without report generation
@@ -367,12 +382,14 @@ let calculator = GasCalculator::with_config(provider.clone(), Some(config.clone(
 ### Block Range Chunking
 
 Large block ranges are automatically chunked to prevent RPC timeouts:
+
 - **Default**: 5,000 blocks per chunk (configurable per chain)
 - **Benefits**: Prevents timeouts, enables progress tracking, reduces memory usage
 
 ### Rate Limiting
 
 Automatic rate limiting protects against RPC provider limits:
+
 - **Default**: 100 requests/second (configurable per chain)
 - **Recommendation**: Use paid RPC providers for production (300-1000+ req/s)
 
@@ -385,6 +402,7 @@ Automatic rate limiting protects against RPC provider limits:
 ### Query Performance
 
 Typical performance characteristics (depends on RPC provider):
+
 - **Block window calculation**: 5-15 seconds (first query), <1ms (cached)
 - **Gas calculation** (1,000 blocks): 10-30 seconds
 - **Token discovery** (10,000 blocks): 2-5 minutes
@@ -435,18 +453,22 @@ cargo run --package semioscan --example router_token_discovery -- arbitrum
 ### Common Issues
 
 **Rate Limiting (`429 Too Many Requests`)**
+
 - **Solution**: Use a paid RPC provider or increase rate limit delay in config
 - **See**: [examples/README.md#rpc-errors](examples/README.md#rpc-errors)
 
 **Block Range Too Large**
+
 - **Solution**: Reduce `max_block_range` in config (default: 5,000)
 - **Cause**: Some RPC providers have stricter limits
 
 **Missing Data / No Logs Found**
+
 - **Possible causes**: Wrong contract address, invalid block range, chain reorganization
 - **Solution**: Verify addresses and block range using a block explorer
 
 **Chain ID Issues**
+
 - **Solution**: Set `CHAIN_ID` environment variable for chains without `eth_chainId` support
 - **Affected chains**: Some Avalanche RPC endpoints
 

@@ -30,7 +30,7 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 ### Prerequisites
 
-- Rust 1.70 or later
+- Rust 1.73 or later
 - Git
 
 ### Building and Testing
@@ -57,32 +57,26 @@ cargo fmt --package semioscan
 
 ### Testing Strategy
 
-Semioscan uses a pragmatic testing approach:
+Semioscan uses a pragmatic testing approach focused on testing library code, not external dependencies:
 
-**Unit Tests** (`src/**/*.rs`):
+**Unit Tests** (`src/**/*.rs` and `tests/*.rs`):
 
-- Pure logic: configuration, caching, data structures
-- Run fast, no external dependencies
-- Example: Config builder, gas cache, price source event parsing
-
-**Integration Tests** (`tests/*.rs`):
-
-- API surface validation
-- Data structure invariants
-- Type safety enforcement
-- Note: These test the library API, not full end-to-end workflows
+- Test business logic: configuration, caching, data structures
+- Run fast with no external dependencies
+- Focus on edge cases, error handling, and invariants
+- Examples: Config validation, gas cache operations, price source event parsing
 
 **Examples** (`examples/*.rs`):
 
-- Real-world usage patterns with actual blockchain data
-- Require RPC connections
-- Serve as both documentation and smoke tests
+- Demonstrate real-world usage patterns with actual blockchain data
+- Require RPC connections to live chains
+- Serve as both documentation and integration validation
+- See [examples/README.md](examples/README.md) for comprehensive example documentation
 
-**Production Validation**:
+**When to Write Tests vs. Examples:**
 
-- Battle-tested in production financial systems processing millions of dollars
-- Real-world usage across 12+ chains
-- Proven in high-stakes environments requiring precision and reliability
+- **Tests**: Pure logic, error handling, data structures, type safety
+- **Examples**: RPC interactions, real blockchain data, end-to-end workflows
 
 ## Adding Support for a New DEX Protocol
 
@@ -113,7 +107,7 @@ Find event definitions in the protocol's smart contract source (usually on Ether
 
 ```rust
 use semioscan::price::{PriceSource, SwapData, PriceSourceError};
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{Address, B256, U256};
 use alloy_rpc_types::Log;
 
 pub struct YourDexPriceSource {
@@ -211,10 +205,10 @@ For detailed guidance, see [`docs/PRICESOURCE_GUIDE.md`](docs/PRICESOURCE_GUIDE.
 
 ### Testing Requirements
 
-- All new functionality must have tests
-- Integration tests for public API changes
-- Unit tests for complex logic
-- Examples for real-world usage patterns
+- All new functionality must have tests or examples
+- Unit tests for pure logic, error handling, and data structures
+- Examples for blockchain interactions and real-world usage patterns
+- Follow the "Tests vs. Examples" strategy outlined above
 
 ## Project Structure
 
@@ -222,13 +216,16 @@ For detailed guidance, see [`docs/PRICESOURCE_GUIDE.md`](docs/PRICESOURCE_GUIDE.
 crates/semioscan/
 ├── src/
 │   ├── lib.rs               # Public API exports
-│   ├── gas_calculator.rs    # Gas cost calculation
-│   ├── block_window.rs      # Block range utilities
-│   ├── price/
-│   │   ├── mod.rs          # PriceSource trait
-│   │   └── odos.rs         # Odos reference implementation
-│   ├── transfer.rs          # Transfer event extraction
-│   └── config.rs            # Configuration system
+│   ├── blocks/              # Block window calculations
+│   ├── cache/               # Block range and gas caching
+│   ├── config/              # Configuration and constants
+│   ├── errors/              # Comprehensive error types
+│   ├── events/              # Event scanning and discovery
+│   ├── gas/                 # Gas calculation (EIP-1559, EIP-4844)
+│   ├── price/               # PriceSource trait and implementations
+│   ├── retrieval/           # Data retrieval and calculations
+│   ├── tracing/             # Structured logging utilities
+│   └── types/               # Strong types (Wei, TokenAmount, etc.)
 ├── tests/                   # Integration tests
 ├── examples/                # Real-world usage examples
 ├── docs/                    # Additional documentation
@@ -252,9 +249,9 @@ crates/semioscan/
 ## Getting Help
 
 - **Documentation**: Start with the [README](README.md) and [PriceSource Guide](docs/PRICESOURCE_GUIDE.md)
+- **Examples**: See [examples/README.md](examples/README.md) for comprehensive usage examples and troubleshooting
 - **Issues**: Search existing issues or create a new one
 - **Discussions**: Open a discussion for questions or ideas
-- **Examples**: Check `examples/` for usage patterns
 
 ## License
 
