@@ -295,13 +295,45 @@ cargo run --package semioscan --example <example_name>
 
 | Variable | Description | Required | Example |
 |----------|-------------|----------|---------|
-| `RPC_URL` | Blockchain RPC endpoint | Yes* | `https://arb1.arbitrum.io/rpc/` |
-| `API_KEY` | RPC provider API key | No | `your_alchemy_api_key` |
+| `RPC_URL` | Blockchain RPC endpoint base URL | Yes* | `https://arb1.arbitrum.io/rpc/` |
+| `API_KEY` | RPC provider API key (concatenated with RPC_URL) | No | `your_alchemy_api_key` |
 | `CHAIN_ID` | Chain ID (when RPC doesn't support `eth_chainId`) | Sometimes** | `42161` |
 | `RUST_LOG` | Logging level | No | `info`, `debug`, `trace` |
 
 \* Some examples have defaults
 ** Required for chains without `eth_chainId` support (e.g., Avalanche)
+
+**RPC URL Construction:**
+
+When both `RPC_URL` and `API_KEY` are provided, they are concatenated using the web3-standard pattern:
+
+```rust
+// Examples concatenate base URL + API key + trailing slash
+let full_url = format!("{RPC_URL}{API_KEY}/");
+// e.g., "https://arb-mainnet.g.alchemy.com/v2/" + "your_key" + "/"
+```
+
+**Provider-Specific Examples:**
+
+```bash
+# Alchemy (recommended pattern)
+RPC_URL=https://arb-mainnet.g.alchemy.com/v2/
+API_KEY=your_alchemy_api_key
+
+# Infura
+RPC_URL=https://arbitrum-mainnet.infura.io/v3/
+API_KEY=your_infura_project_id
+
+# QuickNode
+RPC_URL=https://xxx-xxx-xxx.arbitrum-mainnet.quiknode.pro/
+API_KEY=your_quicknode_token
+
+# Public RPC (no API key)
+RPC_URL=https://arb1.arbitrum.io/rpc/
+# API_KEY not needed
+```
+
+This pattern matches standard web3 tooling (Hardhat, Foundry) and provider documentation.
 
 ---
 
