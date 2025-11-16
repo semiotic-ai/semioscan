@@ -19,7 +19,7 @@ impl BlockRange {
     /// Get the length of this block range (inclusive)
     pub fn len(&self) -> u64 {
         if self.end >= self.start {
-            self.end - self.start + 1
+            self.end.saturating_sub(self.start) + 1
         } else {
             0
         }
@@ -36,13 +36,13 @@ impl BlockRange {
     }
 }
 
-impl From<(u64, u64)> for BlockRange {
-    fn from((start, end): (u64, u64)) -> Self {
+impl From<(BlockNumber, BlockNumber)> for BlockRange {
+    fn from((start, end): (BlockNumber, BlockNumber)) -> Self {
         Self { start, end }
     }
 }
 
-impl From<BlockRange> for (u64, u64) {
+impl From<BlockRange> for (BlockNumber, BlockNumber) {
     fn from(range: BlockRange) -> Self {
         (range.start, range.end)
     }
@@ -535,13 +535,13 @@ mod tests {
         use proptest::prelude::*;
 
         /// Strategy for generating valid block ranges
-        fn block_range_strategy() -> impl Strategy<Value = (u64, u64)> {
+        fn block_range_strategy() -> impl Strategy<Value = (BlockNumber, BlockNumber)> {
             (0u64..100_000u64)
                 .prop_flat_map(|start| (Just(start), start..start.saturating_add(10_000)))
         }
 
         /// Strategy for generating multiple non-overlapping cached ranges
-        fn cached_ranges_strategy() -> impl Strategy<Value = Vec<(u64, u64)>> {
+        fn cached_ranges_strategy() -> impl Strategy<Value = Vec<(BlockNumber, BlockNumber)>> {
             prop::collection::vec(block_range_strategy(), 0..10).prop_map(|mut ranges| {
                 // Sort and make them non-overlapping
                 ranges.sort_by_key(|(start, _)| *start);

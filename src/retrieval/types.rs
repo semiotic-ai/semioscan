@@ -7,9 +7,6 @@ use serde::{Deserialize, Serialize};
 use crate::types::config::TransactionCount;
 use crate::types::gas::{GasAmount, GasPrice};
 
-use super::decimal_precision::DecimalPrecision;
-use super::utils::{format_token_amount, format_wei_to_eth, format_wei_to_gwei};
-
 /// Data for a single transaction including gas and transferred amount.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GasAndAmountForTx {
@@ -28,24 +25,6 @@ impl GasAndAmountForTx {
         let l2_execution_cost = self.gas_used * self.effective_gas_price;
         let total_cost = l2_execution_cost.saturating_add(self.blob_gas_cost);
         total_cost.saturating_add(self.l1_fee.unwrap_or_default())
-    }
-
-    /// Convert to display format with custom token decimal precision
-    pub fn to_display(&self, token_precision: DecimalPrecision) -> GasAndAmountDisplay {
-        let l2_execution_cost = self.gas_used * self.effective_gas_price;
-        let total_cost = l2_execution_cost
-            .saturating_add(self.blob_gas_cost)
-            .saturating_add(self.l1_fee.unwrap_or_default());
-
-        GasAndAmountDisplay {
-            tx_hash: self.tx_hash.to_string(),
-            gas_used: self.gas_used.to_string(),
-            effective_gas_price_gwei: format_wei_to_gwei(self.effective_gas_price.as_u256()),
-            l1_fee_eth: self.l1_fee.map(format_wei_to_eth),
-            blob_gas_cost_eth: format_wei_to_eth(self.blob_gas_cost),
-            total_gas_cost_eth: format_wei_to_eth(total_cost),
-            transferred_amount_usdc: format_token_amount(self.transferred_amount, token_precision),
-        }
     }
 }
 
@@ -106,30 +85,6 @@ impl CombinedDataResult {
         self.transactions_data.push(data);
     }
 
-    /// Convert to human-readable display format
-    pub fn to_display(&self, token_precision: DecimalPrecision) -> CombinedDataDisplay {
-        CombinedDataDisplay {
-            chain: self.chain,
-            from_address: format!("{:?}", self.from_address),
-            to_address: format!("{:?}", self.to_address),
-            token_address: format!("{:?}", self.token_address),
-            total_l2_execution_cost_eth: format_wei_to_eth(self.total_l2_execution_cost),
-            total_blob_gas_cost_eth: format_wei_to_eth(self.total_blob_gas_cost),
-            total_l1_fee_eth: format_wei_to_eth(self.total_l1_fee),
-            overall_total_gas_cost_eth: format_wei_to_eth(self.overall_total_gas_cost),
-            total_amount_transferred_usdc: format_token_amount(
-                self.total_amount_transferred,
-                token_precision,
-            ),
-            transaction_count: self.transaction_count,
-            transactions_data: self
-                .transactions_data
-                .iter()
-                .map(|tx| tx.to_display(token_precision))
-                .collect(),
-        }
-    }
-
     /// Merge another result into this one (for combining results from multiple block ranges)
     pub fn merge(&mut self, other: &CombinedDataResult) {
         self.total_l2_execution_cost = self
@@ -149,34 +104,6 @@ impl CombinedDataResult {
         self.transactions_data
             .extend(other.transactions_data.iter().cloned()); // Consider efficiency for very large Vecs
     }
-}
-
-/// Human-readable version of CombinedDataResult with formatted values
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CombinedDataDisplay {
-    pub chain: NamedChain,
-    pub from_address: String,
-    pub to_address: String,
-    pub token_address: String,
-    pub total_l2_execution_cost_eth: String,
-    pub total_blob_gas_cost_eth: String,
-    pub total_l1_fee_eth: String,
-    pub overall_total_gas_cost_eth: String,
-    pub total_amount_transferred_usdc: String,
-    pub transaction_count: TransactionCount,
-    pub transactions_data: Vec<GasAndAmountDisplay>,
-}
-
-/// Human-readable version of GasAndAmountForTx
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GasAndAmountDisplay {
-    pub tx_hash: String,
-    pub gas_used: String,
-    pub effective_gas_price_gwei: String,
-    pub l1_fee_eth: Option<String>,
-    pub blob_gas_cost_eth: String,
-    pub total_gas_cost_eth: String,
-    pub transferred_amount_usdc: String,
 }
 
 #[cfg(test)]
@@ -310,87 +237,6 @@ mod tests {
         assert!(
             total > U256::ZERO,
             "Should produce non-zero result even with overflow"
-        );
-    }
-
-    #[test]
-    fn test_to_display_conversion_usdc() {
-        // Test conversion to display format with USDC (6 decimals)
-        let tx = create_test_tx(
-            21000,
-            50_000_000_000_u64, // 50 Gwei
-            None,
-            0,
-            1_000_000, // 1 USDC (6 decimals)
-        );
-
-        let display = tx.to_display(DecimalPrecision::Usdc);
-
-        // Verify fields are properly formatted
-        assert_eq!(
-            display.gas_used, "21000",
-            "Gas used should be simple number"
-        );
-        // The format should be exactly "1" (trailing zeros removed)
-        assert_eq!(
-            display.transferred_amount_usdc, "1",
-            "Should format 1 USDC as '1'"
-        );
-    }
-
-    #[test]
-    fn test_to_display_conversion_18_decimals() {
-        // Test with 18-decimal token (like ETH/WETH)
-        let tx = create_test_tx(
-            100000,
-            10_000_000_000_u64, // 10 Gwei
-            Some(5000),
-            0,
-            1_000_000_000_000_000_000, // 1 token (18 decimals)
-        );
-
-        let display = tx.to_display(DecimalPrecision::NativeToken);
-
-        assert_eq!(display.gas_used, "100000");
-        assert_eq!(
-            display.transferred_amount_usdc, "1",
-            "Should format 1 token as '1'"
-        );
-    }
-
-    #[test]
-    fn test_to_display_with_l1_fee() {
-        // Test that L1 fee is included in display
-        let tx = create_test_tx(
-            50000,
-            20_000_000_000_u64,            // 20 Gwei
-            Some(100_000_000_000_000_u64), // 0.0001 ETH L1 fee
-            0,
-            1_000_000,
-        );
-
-        let display = tx.to_display(DecimalPrecision::Usdc);
-
-        // L1 fee should be Some(String)
-        assert!(display.l1_fee_eth.is_some(), "L1 fee should be present");
-    }
-
-    #[test]
-    fn test_to_display_without_l1_fee() {
-        // Test L1-only transaction (no L1 fee field)
-        let tx = create_test_tx(
-            21000,
-            50_000_000_000_u64,
-            None, // L1 transaction, no L1 fee
-            0,
-            1_000_000,
-        );
-
-        let display = tx.to_display(DecimalPrecision::Usdc);
-
-        assert!(
-            display.l1_fee_eth.is_none(),
-            "L1 fee should be None for L1 transactions"
         );
     }
 

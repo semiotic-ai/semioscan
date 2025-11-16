@@ -515,8 +515,8 @@ impl<P: Provider<Ethereum>> GasCostCalculator<Ethereum, P> {
         from: Address,
         to: Address,
         token: Address,
-        start_block: u64,
-        end_block: u64,
+        start_block: BlockNumber,
+        end_block: BlockNumber,
     ) -> Result<GasCostResult, GasCalculationError> {
         let adapter = EthereumReceiptAdapter;
         self.calculate_gas_cost_with_adapter(
@@ -544,7 +544,7 @@ impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
         from: Address,
         to: Address,
         token: Address,
-        start_block: u64,
+        start_block: BlockNumber,
         end_block: BlockNumber,
     ) -> Result<GasCostResult, GasCalculationError> {
         let adapter = OptimismReceiptAdapter;
