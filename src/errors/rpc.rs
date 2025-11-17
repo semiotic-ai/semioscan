@@ -123,7 +123,7 @@ pub enum RpcError {
     /// Failed to connect to the blockchain or execute an RPC call.
     ///
     /// This is a catch-all for RPC failures that don't fit other categories,
-    /// such as network errors, timeouts, or provider downtime.
+    /// such as network errors or provider downtime.
     #[error("Chain connection failed during {operation}")]
     ChainConnectionFailed {
         /// Description of the operation that failed
@@ -131,6 +131,18 @@ pub enum RpcError {
         /// The underlying transport error from alloy
         #[source]
         source: TransportError,
+    },
+
+    /// RPC request timed out.
+    ///
+    /// This occurs when an RPC provider doesn't respond within the configured
+    /// timeout period. Consider increasing the timeout or checking provider health.
+    #[error("RPC request timed out after {timeout_secs}s during {operation}")]
+    Timeout {
+        /// Description of the operation that timed out
+        operation: Cow<'static, str>,
+        /// Timeout duration in seconds
+        timeout_secs: u64,
     },
 
     /// Failed to fetch block number from the blockchain.
@@ -214,6 +226,29 @@ impl RpcError {
         RpcError::GetBlockFailed {
             block_number,
             source,
+        }
+    }
+
+    /// Helper to create a `Timeout` error.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::RpcError;
+    /// use std::time::Duration;
+    /// use tokio::time::timeout;
+    ///
+    /// let timeout_duration = Duration::from_secs(30);
+    /// match timeout(timeout_duration, provider.get_block(block_num)).await {
+    ///     Ok(Ok(block)) => { /* ... */ },
+    ///     Ok(Err(e)) => { /* RPC error */ },
+    ///     Err(_elapsed) => return Err(RpcError::timeout("get_block", timeout_duration)),
+    /// }
+    /// ```
+    pub fn timeout(operation: impl Into<Cow<'static, str>>, timeout: std::time::Duration) -> Self {
+        RpcError::Timeout {
+            operation: operation.into(),
+            timeout_secs: timeout.as_secs(),
         }
     }
 }

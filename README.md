@@ -89,13 +89,13 @@ Add semioscan to your `Cargo.toml`:
 # Core library (gas, block windows, events)
 semioscan = "0.2"
 
-# With Odos DEX reference implementation
+# With Odos DEX reference implementation (optional)
 semioscan = { version = "0.2", features = ["odos-example"] }
 ```
 
 ### Feature Flags
 
-- **`odos-example`** (default): Includes `OdosPriceSource` as a reference implementation of the `PriceSource` trait for Odos DEX aggregator
+- **`odos-example`**: Includes `OdosPriceSource` as a reference implementation of the `PriceSource` trait for Odos DEX aggregator (optional, not included by default)
 
 ## Quick Start
 

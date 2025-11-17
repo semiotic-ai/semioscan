@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-11-16
+
+### Breaking Changes
+
+**Removed default feature coupling**
+
+- `odos-example` is no longer included in default features
+- Users must now explicitly enable `features = ["odos-example"]` if they want the Odos DEX reference implementation
+- This reduces dependencies for users who only need core functionality (gas calculation, block windows, event scanning)
+
+### Added
+
+- **RPC Timeout Support**: Configurable timeouts for RPC requests to prevent hanging on unresponsive providers
+  - Added `rpc_timeout: Duration` field to `SemioscanConfig` (default: 30 seconds)
+  - Added `rpc_timeout: Option<Duration>` to `ChainConfig` for per-chain overrides
+  - Added `RpcError::Timeout` variant for timeout errors
+  - Added `SemioscanConfigBuilder::rpc_timeout()` method
+  - Added `SemioscanConfigBuilder::chain_timeout()` method for per-chain configuration
+  - Added `SemioscanConfig::get_rpc_timeout()` method
+
+- **Documentation**: Added comprehensive open-source preparation documentation
+  - `SECURITY.md`: Security policy, vulnerability reporting, and security considerations
+  - `CODE_OF_CONDUCT.md`: Contributor Covenant v2.1 code of conduct
+  - `ROADMAP.md`: Version milestones and development roadmap
+  - `docs/STAFF_REVIEW.md`: Comprehensive staff engineer review for open-sourcing
+
+### Changed
+
+- **README**: Updated feature flag documentation to reflect that `odos-example` is optional, not default
+- **Configuration**: All builder methods now properly preserve the new `rpc_timeout` field when updating chain overrides
+
+### Migration Guide
+
+**For Users Relying on Default Features**:
+
+If you were implicitly using the Odos price source via default features, you now need to explicitly enable it:
+
+```toml
+# Before (v0.2.x) - odos-example included by default
+[dependencies]
+semioscan = "0.2"
+
+# After (v0.3.0) - explicitly enable if needed
+[dependencies]
+semioscan = { version = "0.3", features = ["odos-example"] }
+
+# Or if you only need core functionality
+[dependencies]
+semioscan = "0.3"  # No Odos dependency
+```
+
+**For Users Implementing Custom Configurations**:
+
+Chain configuration structs now include an `rpc_timeout` field:
+
+```rust
+// Before (v0.2.x)
+let chain_config = ChainConfig {
+    max_block_range: Some(MaxBlockRange::new(1000)),
+    rate_limit_delay: Some(Duration::from_millis(250)),
+};
+
+// After (v0.3.0)
+let chain_config = ChainConfig {
+    max_block_range: Some(MaxBlockRange::new(1000)),
+    rate_limit_delay: Some(Duration::from_millis(250)),
+    rpc_timeout: None,  // Use default or specify custom timeout
+};
+```
+
 ## [0.2.0] - 2025-11-15
 
 ### Breaking Changes

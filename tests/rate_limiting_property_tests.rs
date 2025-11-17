@@ -316,10 +316,12 @@ fn test_chain_config_with_only_rate_limit() {
     let config = ChainConfig {
         max_block_range: None,
         rate_limit_delay: Some(Duration::from_millis(250)),
+        rpc_timeout: None,
     };
 
     assert!(config.rate_limit_delay.is_some());
     assert!(config.max_block_range.is_none());
+    assert!(config.rpc_timeout.is_none());
 }
 
 #[test]
@@ -327,10 +329,12 @@ fn test_chain_config_with_only_max_blocks() {
     let config = ChainConfig {
         max_block_range: Some(MaxBlockRange::new(1000)),
         rate_limit_delay: None,
+        rpc_timeout: None,
     };
 
     assert!(config.max_block_range.is_some());
     assert!(config.rate_limit_delay.is_none());
+    assert!(config.rpc_timeout.is_none());
 }
 
 #[test]
@@ -338,10 +342,12 @@ fn test_chain_config_with_both_settings() {
     let config = ChainConfig {
         max_block_range: Some(MaxBlockRange::new(1000)),
         rate_limit_delay: Some(Duration::from_millis(250)),
+        rpc_timeout: None,
     };
 
     assert_eq!(config.max_block_range, Some(MaxBlockRange::new(1000)));
     assert_eq!(config.rate_limit_delay, Some(Duration::from_millis(250)));
+    assert!(config.rpc_timeout.is_none());
 }
 
 #[test]

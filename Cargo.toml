@@ -1,6 +1,6 @@
 [package]
 name = "semioscan"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Joseph Livesey <joseph@semiotic.ai>"]
 rust-version = "1.89"
@@ -13,7 +13,7 @@ keywords = ["ethereum", "blockchain", "analytics", "defi", "evm"]
 categories = ["cryptography::cryptocurrencies", "development-tools"]
 
 [features]
-default = ["odos-example"]
+default = []
 odos-example = ["dep:odos-sdk"]
 
 [dependencies]

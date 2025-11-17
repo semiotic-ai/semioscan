@@ -45,7 +45,7 @@ pub mod constants;
 
 /// Configuration for semioscan operations
 ///
-/// Controls RPC behavior including block range limits and rate limiting.
+/// Controls RPC behavior including block range limits, rate limiting, and timeouts.
 /// Use [`SemioscanConfigBuilder`] for a fluent API to construct instances.
 #[derive(Debug, Clone)]
 pub struct SemioscanConfig {
@@ -57,13 +57,17 @@ pub struct SemioscanConfig {
     /// Default: None (no delay)
     pub rate_limit_delay: Option<Duration>,
 
+    /// Timeout for RPC requests
+    /// Default: 30 seconds (prevents hanging on unresponsive providers)
+    pub rpc_timeout: Duration,
+
     /// Chain-specific overrides
     pub chain_overrides: HashMap<NamedChain, ChainConfig>,
 }
 
 /// Chain-specific configuration overrides
 ///
-/// Allows per-chain customization of block ranges and rate limits.
+/// Allows per-chain customization of block ranges, rate limits, and timeouts.
 #[derive(Debug, Clone)]
 pub struct ChainConfig {
     /// Override max block range for this chain
@@ -71,6 +75,9 @@ pub struct ChainConfig {
 
     /// Override rate limit delay for this chain
     pub rate_limit_delay: Option<Duration>,
+
+    /// Override RPC timeout for this chain
+    pub rpc_timeout: Option<Duration>,
 }
 
 impl Default for SemioscanConfig {
@@ -98,6 +105,7 @@ impl SemioscanConfig {
         let mut config = Self {
             max_block_range: MaxBlockRange::new(500),
             rate_limit_delay: None,
+            rpc_timeout: Duration::from_secs(30), // 30 second default timeout
             chain_overrides: HashMap::new(),
         };
 
@@ -107,6 +115,7 @@ impl SemioscanConfig {
             ChainConfig {
                 max_block_range: None, // Use default 500
                 rate_limit_delay: Some(Duration::from_millis(250)),
+                rpc_timeout: None, // Use default timeout
             },
         );
 
@@ -116,6 +125,7 @@ impl SemioscanConfig {
             ChainConfig {
                 max_block_range: None,
                 rate_limit_delay: Some(Duration::from_millis(250)),
+                rpc_timeout: None, // Use default timeout
             },
         );
 
@@ -132,12 +142,13 @@ impl SemioscanConfig {
     /// use semioscan::SemioscanConfig;
     ///
     /// let config = SemioscanConfig::minimal();
-    /// // No rate limiting, 500 block range
+    /// // No rate limiting, 500 block range, 30s timeout
     /// ```
     pub fn minimal() -> Self {
         Self {
             max_block_range: MaxBlockRange::new(500),
             rate_limit_delay: None,
+            rpc_timeout: Duration::from_secs(30), // Still include timeout for safety
             chain_overrides: HashMap::new(),
         }
     }
@@ -158,8 +169,9 @@ impl SemioscanConfig {
     ///     ChainConfig {
     ///         max_block_range: Some(MaxBlockRange::new(1000)),
     ///         rate_limit_delay: None,
+    ///         rpc_timeout: None,
     ///     },
-    /// );
+    ///     );
     ///
     /// assert_eq!(config.get_max_block_range(NamedChain::Arbitrum), MaxBlockRange::new(1000));
     /// assert_eq!(config.get_max_block_range(NamedChain::Base), MaxBlockRange::new(500)); // Default
@@ -200,6 +212,32 @@ impl SemioscanConfig {
             .or(self.rate_limit_delay)
     }
 
+    /// Get effective RPC timeout for a specific chain
+    ///
+    /// Returns chain-specific override if set, otherwise returns global default.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use semioscan::SemioscanConfig;
+    /// use alloy_chains::NamedChain;
+    /// use std::time::Duration;
+    ///
+    /// let config = SemioscanConfig::default();
+    ///
+    /// // All chains use default 30s timeout
+    /// assert_eq!(
+    ///     config.get_rpc_timeout(NamedChain::Arbitrum),
+    ///     Duration::from_secs(30)
+    /// );
+    /// ```
+    pub fn get_rpc_timeout(&self, chain: NamedChain) -> Duration {
+        self.chain_overrides
+            .get(&chain)
+            .and_then(|c| c.rpc_timeout)
+            .unwrap_or(self.rpc_timeout)
+    }
+
     /// Set chain-specific override
     ///
     /// # Example
@@ -215,6 +253,7 @@ impl SemioscanConfig {
     ///     ChainConfig {
     ///         max_block_range: Some(MaxBlockRange::new(2000)),
     ///         rate_limit_delay: Some(Duration::from_millis(500)),
+    ///         rpc_timeout: None,
     ///     },
     /// );
     /// ```
@@ -323,6 +362,23 @@ impl SemioscanConfigBuilder {
         self
     }
 
+    /// Set global RPC timeout
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use semioscan::SemioscanConfigBuilder;
+    /// use std::time::Duration;
+    ///
+    /// let config = SemioscanConfigBuilder::new()
+    ///     .rpc_timeout(Duration::from_secs(60))  // 60 second timeout
+    ///     .build();
+    /// ```
+    pub fn rpc_timeout(mut self, timeout: Duration) -> Self {
+        self.config.rpc_timeout = timeout;
+        self
+    }
+
     /// Add chain-specific configuration
     ///
     /// # Example
@@ -338,6 +394,7 @@ impl SemioscanConfigBuilder {
     ///         ChainConfig {
     ///             max_block_range: Some(MaxBlockRange::new(2000)),
     ///             rate_limit_delay: Some(Duration::from_millis(500)),
+    ///             rpc_timeout: None,
     ///         },
     ///     )
     ///     .build();
@@ -363,8 +420,9 @@ impl SemioscanConfigBuilder {
     pub fn chain_rate_limit(mut self, chain: NamedChain, delay: Duration) -> Self {
         let existing = self.config.chain_overrides.remove(&chain);
         let chain_config = ChainConfig {
-            max_block_range: existing.and_then(|c| c.max_block_range),
+            max_block_range: existing.as_ref().and_then(|c| c.max_block_range),
             rate_limit_delay: Some(delay),
+            rpc_timeout: existing.and_then(|c| c.rpc_timeout),
         };
         self.config.set_chain_override(chain, chain_config);
         self
@@ -386,7 +444,32 @@ impl SemioscanConfigBuilder {
         let existing = self.config.chain_overrides.remove(&chain);
         let chain_config = ChainConfig {
             max_block_range: Some(MaxBlockRange::new(max)),
-            rate_limit_delay: existing.and_then(|c| c.rate_limit_delay),
+            rate_limit_delay: existing.as_ref().and_then(|c| c.rate_limit_delay),
+            rpc_timeout: existing.and_then(|c| c.rpc_timeout),
+        };
+        self.config.set_chain_override(chain, chain_config);
+        self
+    }
+
+    /// Convenience: set RPC timeout for a specific chain
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use semioscan::SemioscanConfigBuilder;
+    /// use alloy_chains::NamedChain;
+    /// use std::time::Duration;
+    ///
+    /// let config = SemioscanConfigBuilder::new()
+    ///     .chain_timeout(NamedChain::Polygon, Duration::from_secs(60))
+    ///     .build();
+    /// ```
+    pub fn chain_timeout(mut self, chain: NamedChain, timeout: Duration) -> Self {
+        let existing = self.config.chain_overrides.remove(&chain);
+        let chain_config = ChainConfig {
+            max_block_range: existing.as_ref().and_then(|c| c.max_block_range),
+            rate_limit_delay: existing.as_ref().and_then(|c| c.rate_limit_delay),
+            rpc_timeout: Some(timeout),
         };
         self.config.set_chain_override(chain, chain_config);
         self
@@ -483,6 +566,7 @@ mod tests {
             ChainConfig {
                 max_block_range: Some(MaxBlockRange::new(2000)),
                 rate_limit_delay: Some(Duration::from_millis(100)),
+                rpc_timeout: None, // Use default timeout
             },
         );
 
@@ -498,6 +582,10 @@ mod tests {
             config.get_rate_limit_delay(NamedChain::Arbitrum),
             Some(Duration::from_millis(100))
         );
+        assert_eq!(
+            config.get_rpc_timeout(NamedChain::Arbitrum),
+            Duration::from_secs(30)
+        ); // Uses default
     }
 
     #[test]
