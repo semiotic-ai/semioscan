@@ -1,8 +1,8 @@
 use alloy_chains::NamedChain;
+use alloy_erc20_full::LazyToken;
 use alloy_primitives::{Address, BlockNumber, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
-use erc20_rs::Erc20;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -186,12 +186,12 @@ impl<P: Provider + Clone> PriceCalculator<P> {
             return Ok(decimals);
         }
 
-        let token_contract = Erc20::new(token_address, self.provider.clone());
+        let token_contract = LazyToken::new(token_address, self.provider.clone());
         let decimals_raw = token_contract
             .decimals()
             .await
             .map_err(|e| PriceCalculationError::metadata_fetch_failed(token_address, e))?;
-        let decimals = TokenDecimals::new(decimals_raw);
+        let decimals = TokenDecimals::new(*decimals_raw);
         self.token_decimals_cache.insert(token_address, decimals);
 
         Ok(decimals)
