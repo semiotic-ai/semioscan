@@ -80,7 +80,7 @@ use alloy_chains::NamedChain;
 use alloy_primitives::{Address, BlockNumber};
 use alloy_provider::Provider;
 use alloy_sol_types::SolEvent;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use crate::config::SemioscanConfig;
 use crate::errors::EventProcessingError;
@@ -230,11 +230,11 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
     let mut transferred_to_tokens = TokenSet::new();
 
     // Process the logs to extract unique token addresses
+    let total_transfer_events = logs.len();
     for log in logs {
         let token_address = log.address();
         match Transfer::decode_log(&log.inner) {
             Ok(event) if event.to == router => {
-                debug!(extracted_token = ?token_address);
                 transferred_to_tokens.insert(token_address);
             }
             Err(e) => {
@@ -245,6 +245,14 @@ pub async fn extract_transferred_to_tokens_with_config<T: Provider>(
             _ => {}
         }
     }
+
+    info!(
+        chain = %chain,
+        router = %router,
+        unique_tokens = transferred_to_tokens.len(),
+        total_transfer_events = total_transfer_events,
+        "Token extraction completed"
+    );
 
     Ok(transferred_to_tokens)
 }
