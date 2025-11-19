@@ -56,8 +56,8 @@ async fn main() -> Result<()> {
     // Create provider
     let provider = ProviderBuilder::new().connect_http(full_rpc_url.parse()?);
 
-    // Create calculator
-    let calculator = BlockWindowCalculator::new(provider.clone(), cache_path.clone());
+    // Create calculator with disk cache
+    let calculator = BlockWindowCalculator::with_disk_cache(provider.clone(), cache_path)?;
 
     // Calculate daily window
     // Note: Chain ID is injected from config rather than queried from provider
@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
         date = %date,
         start_block = window.start_block,
         end_block = window.end_block,
-        block_count = window.block_count(),
+        block_count = window.block_count().as_u64(),
         start_ts = %window.start_ts,
         end_ts_exclusive = %window.end_ts_exclusive,
         "Daily block window calculated"
