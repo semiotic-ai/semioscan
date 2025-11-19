@@ -49,12 +49,17 @@ use tracing_subscriber::FmtSubscriber;
 
 /// Discover tokens on Arbitrum Odos V2 Router
 async fn discover_arbitrum_tokens(custom_range: bool) -> Result<()> {
-    let rpc_url = env::var("ARBITRUM_RPC_URL")
-        .unwrap_or_else(|_| "https://arb1.arbitrum.io/rpc/".to_string());
+    let (rpc_url, api_key) = (
+        env::var("ARBITRUM_RPC_URL")
+            .unwrap_or_else(|_| "https://arb1.arbitrum.io/rpc/".to_string()),
+        env::var("API_KEY").context("API_KEY environment variable not set")?,
+    );
 
-    info!(chain = "Arbitrum", rpc_url, "Connecting to chain");
+    let full_rpc_url = format!("{rpc_url}{api_key}/");
 
-    let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+    info!(chain = "Arbitrum", "Connecting to chain");
+
+    let provider = ProviderBuilder::new().connect_http(full_rpc_url.parse()?);
 
     // Odos V2 Router on Arbitrum
     let router: Address = "0xa669e7A0d4b3e4Fa48af2dE86BD4CD7126Be4e13".parse()?;
@@ -119,12 +124,16 @@ async fn discover_arbitrum_tokens(custom_range: bool) -> Result<()> {
 
 /// Discover tokens on Base Odos V2 Router
 async fn discover_base_tokens() -> Result<()> {
-    let rpc_url =
-        env::var("BASE_RPC_URL").unwrap_or_else(|_| "https://mainnet.base.org".to_string());
+    let (rpc_url, api_key) = (
+        env::var("BASE_RPC_URL").unwrap_or_else(|_| "https://mainnet.base.org".to_string()),
+        env::var("API_KEY").context("API_KEY environment variable not set")?,
+    );
 
-    info!(chain = "Base", rpc_url, "Connecting to chain");
+    let full_rpc_url = format!("{rpc_url}{api_key}/");
 
-    let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+    info!(chain = "Base", "Connecting to chain");
+
+    let provider = ProviderBuilder::new().connect_http(full_rpc_url.parse()?);
 
     // Odos V2 Router on Base
     let router: Address = "0x19cEeAd7105607Cd444F5ad10dd51356436095a1".parse()?;
