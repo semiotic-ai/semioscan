@@ -35,7 +35,7 @@ pub use types::config::{BlockCount, MaxBlockRange, TransactionCount};
 pub use types::fees::{L1DataFee, Percentage};
 pub use types::gas::{BlobCount, BlobGasAmount, GasAmount, GasPrice};
 pub use types::tokens::{
-    NormalizedAmount, TokenAmount, TokenDecimals, TokenPrice, TokenSet, UsdValue,
+    NormalizedAmount, TokenAmount, TokenDecimals, TokenPrice, TokenSet, UsdValue, UsdValueError,
 };
 pub use types::wei::WeiAmount;
 

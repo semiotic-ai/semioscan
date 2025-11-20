@@ -29,4 +29,4 @@ pub use decimals::TokenDecimals;
 pub use normalized::NormalizedAmount;
 pub use price::TokenPrice;
 pub use set::TokenSet;
-pub use usd::UsdValue;
+pub use usd::{UsdValue, UsdValueError};

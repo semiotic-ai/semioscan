@@ -2,11 +2,25 @@
 
 use serde::{Deserialize, Serialize};
 use std::ops::Add;
+use thiserror::Error;
+
+/// Errors that can occur when creating a USD value
+#[derive(Debug, Error, Clone, Copy)]
+pub enum UsdValueError {
+    #[error("USD value cannot be negative: {0}")]
+    Negative(f64),
+    #[error("USD value cannot be NaN")]
+    NaN,
+    #[error("USD value cannot be infinite: {0}")]
+    Infinite(f64),
+}
 
 /// Represents a USD-denominated value
 ///
 /// This type provides type safety for financial calculations involving USD values,
 /// preventing confusion with other f64 values like percentages or raw token amounts.
+///
+/// USD values are validated to be non-negative, finite, and not NaN.
 ///
 /// # Examples
 ///
@@ -16,16 +30,34 @@ use std::ops::Add;
 /// let price = UsdValue::new(1800.50);
 /// let formatted = price.format(2);
 /// assert_eq!(formatted, "$1800.50");
+///
+/// // Fallible construction for external data
+/// let result = UsdValue::try_new(100.0);
+/// assert!(result.is_ok());
+///
+/// let invalid = UsdValue::try_new(-100.0);
+/// assert!(invalid.is_err());
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, Default)]
 #[serde(transparent)]
 pub struct UsdValue(f64);
+
+impl std::hash::Hash for UsdValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.to_bits().hash(state);
+    }
+}
 
 impl UsdValue {
     /// Zero USD value
     pub const ZERO: Self = Self(0.0);
 
-    /// Create a new USD value
+    /// Create a new USD value with validation
+    ///
+    /// # Panics
+    ///
+    /// Panics if the value is negative, NaN, or infinite.
+    /// For fallible construction, use [`UsdValue::try_new`].
     ///
     /// # Examples
     ///
@@ -35,7 +67,64 @@ impl UsdValue {
     /// let value = UsdValue::new(100.50);
     /// assert_eq!(value.as_f64(), 100.50);
     /// ```
-    pub const fn new(value: f64) -> Self {
+    ///
+    /// ```should_panic
+    /// use semioscan::UsdValue;
+    ///
+    /// let invalid = UsdValue::new(-100.0); // Panics
+    /// ```
+    pub fn new(value: f64) -> Self {
+        Self::try_new(value).unwrap_or_else(|e| panic!("Invalid USD value: {}", e))
+    }
+
+    /// Try to create a new USD value with validation
+    ///
+    /// Returns an error if the value is negative, NaN, or infinite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::UsdValue;
+    ///
+    /// let valid = UsdValue::try_new(100.50);
+    /// assert!(valid.is_ok());
+    ///
+    /// let negative = UsdValue::try_new(-100.0);
+    /// assert!(negative.is_err());
+    ///
+    /// let nan = UsdValue::try_new(f64::NAN);
+    /// assert!(nan.is_err());
+    /// ```
+    pub fn try_new(value: f64) -> Result<Self, UsdValueError> {
+        if value.is_nan() {
+            return Err(UsdValueError::NaN);
+        }
+        if value.is_infinite() {
+            return Err(UsdValueError::Infinite(value));
+        }
+        if value < 0.0 {
+            return Err(UsdValueError::Negative(value));
+        }
+        Ok(Self(value))
+    }
+
+    /// Create from a value known to be valid at compile time
+    ///
+    /// Use this for constants or values you're certain are non-negative.
+    /// No runtime validation is performed.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the value is non-negative, finite, and not NaN.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::UsdValue;
+    ///
+    /// const HUNDRED_DOLLARS: UsdValue = UsdValue::from_non_negative(100.0);
+    /// ```
+    pub const fn from_non_negative(value: f64) -> Self {
         Self(value)
     }
 
@@ -70,11 +159,8 @@ impl UsdValue {
     }
 }
 
-impl From<f64> for UsdValue {
-    fn from(value: f64) -> Self {
-        Self(value)
-    }
-}
+// Note: We intentionally do NOT implement From<f64> because it would bypass validation.
+// Use UsdValue::new() for infallible construction or UsdValue::try_new() for fallible.
 
 impl Add for UsdValue {
     type Output = Self;
@@ -93,8 +179,27 @@ impl std::ops::AddAssign for UsdValue {
 impl std::ops::Sub for UsdValue {
     type Output = Self;
 
+    /// Subtract two USD values, saturating at zero
+    ///
+    /// Since USD values cannot be negative, subtraction is saturating.
+    /// If the result would be negative, it returns zero instead.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use semioscan::UsdValue;
+    ///
+    /// let a = UsdValue::new(100.0);
+    /// let b = UsdValue::new(30.0);
+    /// assert_eq!((a - b).as_f64(), 70.0);
+    ///
+    /// // Saturates at zero
+    /// let c = UsdValue::new(10.0);
+    /// let d = UsdValue::new(50.0);
+    /// assert_eq!((c - d).as_f64(), 0.0);
+    /// ```
     fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
+        Self((self.0 - rhs.0).max(0.0))
     }
 }
 
@@ -143,9 +248,6 @@ mod tests {
 
     #[test]
     fn test_usd_value_abs() {
-        let negative = UsdValue::new(-100.0);
-        assert_eq!(negative.abs().as_f64(), 100.0);
-
         let positive = UsdValue::new(100.0);
         assert_eq!(positive.abs().as_f64(), 100.0);
     }
@@ -165,10 +267,66 @@ mod tests {
     }
 
     #[test]
-    fn test_conversions() {
-        let f64_val = 100.50;
-        let usd: UsdValue = f64_val.into();
-        let back: f64 = usd.as_f64();
-        assert_eq!(f64_val, back);
+    fn test_try_new_valid() {
+        let result = UsdValue::try_new(100.50);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().as_f64(), 100.50);
+
+        let zero = UsdValue::try_new(0.0);
+        assert!(zero.is_ok());
+    }
+
+    #[test]
+    fn test_try_new_negative() {
+        let result = UsdValue::try_new(-100.0);
+        assert!(result.is_err());
+        match result {
+            Err(UsdValueError::Negative(v)) => assert_eq!(v, -100.0),
+            _ => panic!("Expected Negative error"),
+        }
+    }
+
+    #[test]
+    fn test_try_new_nan() {
+        let result = UsdValue::try_new(f64::NAN);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(UsdValueError::NaN)));
+    }
+
+    #[test]
+    fn test_try_new_infinite() {
+        let result = UsdValue::try_new(f64::INFINITY);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(UsdValueError::Infinite(_))));
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid USD value")]
+    fn test_new_panics_on_negative() {
+        let _value = UsdValue::new(-100.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Invalid USD value")]
+    fn test_new_panics_on_nan() {
+        let _value = UsdValue::new(f64::NAN);
+    }
+
+    #[test]
+    fn test_subtraction_saturates() {
+        let a = UsdValue::new(100.0);
+        let b = UsdValue::new(30.0);
+        assert_eq!((a - b).as_f64(), 70.0);
+
+        // Should saturate at zero, not go negative
+        let c = UsdValue::new(10.0);
+        let d = UsdValue::new(50.0);
+        assert_eq!((c - d).as_f64(), 0.0);
+    }
+
+    #[test]
+    fn test_from_non_negative_const() {
+        const HUNDRED: UsdValue = UsdValue::from_non_negative(100.0);
+        assert_eq!(HUNDRED.as_f64(), 100.0);
     }
 }
