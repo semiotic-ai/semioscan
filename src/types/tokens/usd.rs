@@ -15,12 +15,32 @@ pub enum UsdValueError {
     Infinite(f64),
 }
 
-/// Represents a USD-denominated value
+/// Represents a USD-denominated value for amounts, balances, and prices
 ///
 /// This type provides type safety for financial calculations involving USD values,
 /// preventing confusion with other f64 values like percentages or raw token amounts.
 ///
-/// USD values are validated to be non-negative, finite, and not NaN.
+/// # Validation Rules
+///
+/// USD values must be:
+/// - Non-negative (with tolerance for floating point rounding errors)
+/// - Finite (not infinite)
+/// - Not NaN
+///
+/// Values within $0.000001 (one microdollar) of zero (including tiny negative values
+/// from floating point errors) are automatically clamped to zero. Larger negative values
+/// are rejected. This tolerance is well below any practical financial threshold.
+///
+/// # Design Note
+///
+/// This type is designed for values that are semantically always positive:
+/// - Token balances and swap amounts
+/// - Prices per token
+/// - Total value locked (TVL)
+/// - Liquidation amounts
+///
+/// For values that can legitimately be negative (PnL, debt, price deltas), consider
+/// using a signed type or `f64` directly with appropriate documentation.
 ///
 /// # Examples
 ///
@@ -102,10 +122,15 @@ impl UsdValue {
         if value.is_infinite() {
             return Err(UsdValueError::Infinite(value));
         }
-        if value < 0.0 {
+        // Allow tiny negative values due to accumulated floating point errors
+        // Use a practical threshold: one microdollar ($0.000001)
+        // This is well below any meaningful financial threshold
+        const TOLERANCE: f64 = 1e-6;
+        if value < -TOLERANCE {
             return Err(UsdValueError::Negative(value));
         }
-        Ok(Self(value))
+        // Clamp tiny negative values to zero
+        Ok(Self(value.max(0.0)))
     }
 
     /// Create from a value known to be valid at compile time
@@ -284,6 +309,32 @@ mod tests {
             Err(UsdValueError::Negative(v)) => assert_eq!(v, -100.0),
             _ => panic!("Expected Negative error"),
         }
+    }
+
+    #[test]
+    fn test_try_new_tiny_negative_clamped_to_zero() {
+        // Floating point errors can produce tiny negative values
+        // These should be clamped to zero, not rejected
+        let tiny_negative = -0.0000000005433305882411751; // Real value from production
+        let result = UsdValue::try_new(tiny_negative);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().as_f64(), 0.0);
+
+        // Values within tolerance (1e-6) should be clamped
+        let within_tolerance = -0.0000005; // -0.5 microdollars
+        assert!(UsdValue::try_new(within_tolerance).unwrap().as_f64() == 0.0);
+    }
+
+    #[test]
+    fn test_try_new_negative_beyond_tolerance_rejected() {
+        // Values more negative than tolerance (1e-6) should be rejected
+        let beyond_tolerance = -0.000002; // -2 microdollars
+        let result = UsdValue::try_new(beyond_tolerance);
+        assert!(result.is_err());
+        assert!(matches!(result, Err(UsdValueError::Negative(_))));
+
+        // A clearly negative value like -1 cent should definitely be rejected
+        assert!(UsdValue::try_new(-0.01).is_err());
     }
 
     #[test]
