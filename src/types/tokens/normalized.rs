@@ -10,8 +10,14 @@ use super::usd::UsdValue;
 /// This represents a token amount after dividing by 10^decimals.
 /// For example, 1.5 ETH (not 1.5e18 wei), or 100.25 USDC (not 100250000).
 ///
-/// This type is used for display, calculations with USD prices, and
-/// any operations requiring decimal arithmetic.
+/// # Invariant
+///
+/// Normalized amounts are always non-negative (≥ 0), representing actual token quantities.
+/// - Creation: Negative values are clamped to zero
+/// - Subtraction: Saturates at zero (never goes negative)
+///
+/// This invariant ensures type safety when converting to USD values and prevents
+/// impossible states (you can't have negative tokens).
 ///
 /// # Examples
 ///
@@ -21,6 +27,14 @@ use super::usd::UsdValue;
 /// let amount = NormalizedAmount::new(1.5);
 /// let usd_value = amount.to_usd(2000.0); // 1.5 ETH × $2000/ETH
 /// assert_eq!(usd_value, UsdValue::new(3000.0));
+///
+/// // Negative inputs are clamped to zero
+/// assert_eq!(NormalizedAmount::new(-5.0).as_f64(), 0.0);
+///
+/// // Subtraction saturates at zero
+/// let a = NormalizedAmount::new(10.0);
+/// let b = NormalizedAmount::new(50.0);
+/// assert_eq!((a - b).as_f64(), 0.0);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -31,8 +45,11 @@ impl NormalizedAmount {
     pub const ZERO: Self = Self(0.0);
 
     /// Create a new normalized amount
-    pub const fn new(amount: f64) -> Self {
-        Self(amount)
+    ///
+    /// Negative values are clamped to zero to maintain the invariant that
+    /// normalized amounts are always non-negative (representing actual token quantities).
+    pub fn new(amount: f64) -> Self {
+        Self(amount.max(0.0))
     }
 
     /// Get the inner f64 value
@@ -60,16 +77,6 @@ impl NormalizedAmount {
     pub fn is_zero(&self) -> bool {
         self.0.abs() < f64::EPSILON
     }
-
-    /// Check if amount is negative
-    pub fn is_negative(&self) -> bool {
-        self.0 < 0.0
-    }
-
-    /// Get absolute value
-    pub fn abs(&self) -> Self {
-        Self(self.0.abs())
-    }
 }
 
 impl From<f64> for NormalizedAmount {
@@ -95,8 +102,12 @@ impl std::ops::AddAssign for NormalizedAmount {
 impl std::ops::Sub for NormalizedAmount {
     type Output = Self;
 
+    /// Subtract two normalized amounts, saturating at zero
+    ///
+    /// Since normalized amounts represent actual token quantities and cannot be negative,
+    /// subtraction saturates at zero if the result would be negative.
     fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0 - rhs.0)
+        Self((self.0 - rhs.0).max(0.0))
     }
 }
 
@@ -166,17 +177,31 @@ mod tests {
     }
 
     #[test]
-    fn test_normalized_amount_negative() {
-        assert!(NormalizedAmount::new(-1.0).is_negative());
-        assert!(!NormalizedAmount::new(1.0).is_negative());
-        assert!(!NormalizedAmount::new(0.0).is_negative());
+    fn test_normalized_amount_clamps_negative_to_zero() {
+        // Negative inputs are clamped to zero to maintain the invariant
+        assert_eq!(NormalizedAmount::new(-1.0).as_f64(), 0.0);
+        assert_eq!(NormalizedAmount::new(-100.5).as_f64(), 0.0);
+        assert_eq!(NormalizedAmount::new(-0.000001).as_f64(), 0.0);
+
+        // Positive values are unchanged
+        assert_eq!(NormalizedAmount::new(1.0).as_f64(), 1.0);
+        assert_eq!(NormalizedAmount::new(100.5).as_f64(), 100.5);
     }
 
     #[test]
-    fn test_normalized_amount_abs() {
-        let negative = NormalizedAmount::new(-5.5);
-        let positive = negative.abs();
-        assert_eq!(positive.as_f64(), 5.5);
+    fn test_normalized_amount_subtraction_saturates() {
+        // Subtraction saturates at zero when result would be negative
+        let a = NormalizedAmount::new(10.0);
+        let b = NormalizedAmount::new(50.0);
+        assert_eq!((a - b).as_f64(), 0.0);
+
+        // Normal subtraction works as expected
+        let c = NormalizedAmount::new(100.0);
+        let d = NormalizedAmount::new(30.0);
+        assert_eq!((c - d).as_f64(), 70.0);
+
+        // Subtracting equal amounts gives zero
+        assert_eq!((a - a).as_f64(), 0.0);
     }
 
     #[test]
