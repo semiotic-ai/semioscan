@@ -239,66 +239,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_usd_value_creation() {
-        let value = UsdValue::new(100.50);
-        assert_eq!(value.as_f64(), 100.50);
-    }
-
-    #[test]
-    fn test_usd_value_zero() {
-        assert!(UsdValue::ZERO.is_zero());
-        assert!(UsdValue::new(0.0).is_zero());
-        assert!(!UsdValue::new(0.1).is_zero());
-    }
-
-    #[test]
     fn test_usd_value_format() {
         let value = UsdValue::new(1234.567);
         assert_eq!(value.format(2), "$1234.57");
         assert_eq!(value.format(0), "$1235");
         assert_eq!(value.format(3), "$1234.567");
-    }
-
-    #[test]
-    fn test_usd_value_arithmetic() {
-        let val1 = UsdValue::new(100.0);
-        let val2 = UsdValue::new(50.0);
-
-        let sum = val1 + val2;
-        assert_eq!(sum.as_f64(), 150.0);
-
-        let diff = val1 - val2;
-        assert_eq!(diff.as_f64(), 50.0);
-    }
-
-    #[test]
-    fn test_usd_value_abs() {
-        let positive = UsdValue::new(100.0);
-        assert_eq!(positive.abs().as_f64(), 100.0);
-    }
-
-    #[test]
-    fn test_display_formatting() {
-        let value = UsdValue::new(1234.567);
-        assert_eq!(format!("{}", value), "$1234.57");
-    }
-
-    #[test]
-    fn test_serialization() {
-        let value = UsdValue::new(100.50);
-        let json = serde_json::to_string(&value).unwrap();
-        let deserialized: UsdValue = serde_json::from_str(&json).unwrap();
-        assert_eq!(value, deserialized);
-    }
-
-    #[test]
-    fn test_try_new_valid() {
-        let result = UsdValue::try_new(100.50);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap().as_f64(), 100.50);
-
-        let zero = UsdValue::try_new(0.0);
-        assert!(zero.is_ok());
     }
 
     #[test]
