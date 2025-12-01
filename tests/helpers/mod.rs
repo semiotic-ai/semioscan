@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Test helpers for semioscan integration tests
 //!
 //! Provides mock implementations of traits to enable testing without

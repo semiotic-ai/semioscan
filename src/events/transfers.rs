@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Transfer amount calculation from ERC-20 token events
 //!
 //! This module provides tools for calculating the total amount of ERC-20 tokens

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 /// Example demonstrating router token discovery using extract_transferred_to_tokens
 ///
 /// This example shows:

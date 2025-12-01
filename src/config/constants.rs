@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Well-known addresses and constants
 //!
 //! This module centralizes magic constants and well-known blockchain addresses

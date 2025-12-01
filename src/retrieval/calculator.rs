@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Combined calculator for gas costs and transfer amounts
 //!
 //! This module provides [`CombinedCalculator`], which retrieves both gas cost data

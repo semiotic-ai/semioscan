@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 /// Example demonstrating EIP-4844 blob gas calculation
 ///
 /// EIP-4844 introduced "blob-carrying transactions" which use a new transaction type

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Disk-based cache implementation with file locking and versioning
 
 use alloy_chains::NamedChain;

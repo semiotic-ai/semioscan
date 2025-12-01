@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Generic block-range cache with gap detection
 //!
 //! This module provides a generic caching mechanism for any data that is keyed by

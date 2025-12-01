@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Error types for combined data retrieval operations.
 //!
 //! This module provides error types for operations in the `retrieval` module,

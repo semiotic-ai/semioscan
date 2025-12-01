@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! In-memory cache for gas cost calculations with gap detection
 //!
 //! This module provides intelligent caching for gas cost calculations that supports:

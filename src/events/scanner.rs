@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Generic event scanner with chunking and rate limiting
 //!
 //! This module provides a DRY solution for scanning blockchain events with

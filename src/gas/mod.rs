@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Gas calculation domain for EVM chains.
 //!
 //! This module provides production-grade gas cost calculation for L1 (Ethereum)

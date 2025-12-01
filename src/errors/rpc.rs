@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared RPC error types for blockchain provider operations.
 //!
 //! This module provides error types for common RPC failures that can occur

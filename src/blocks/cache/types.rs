@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Strong types for cache metadata
 //!
 //! This module provides type-safe wrappers for cache-related metadata:

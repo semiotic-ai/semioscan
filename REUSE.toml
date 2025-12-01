@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+version = 1
+
+# Package management files
+[[annotations]]
+path = "Cargo.toml"
+SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# Documentation
+[[annotations]]
+path = [
+    "README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
+    "ROADMAP.md",
+    "docs/**/*.md",
+    "examples/README.md",
+]
+SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# JSON configuration files
+[[annotations]]
+path = "examples/**/*.json"
+SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"

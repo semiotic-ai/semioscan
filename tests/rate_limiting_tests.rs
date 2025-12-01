@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Integration tests for rate limiting functionality
 //!
 //! These tests validate that rate limiting configuration is correctly applied

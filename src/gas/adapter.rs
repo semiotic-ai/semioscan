@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Receipt adapters for extracting gas data from different network types
 //!
 //! This module provides network-specific adapters for extracting gas cost information

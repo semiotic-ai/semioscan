@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Odos DEX price source implementation
 //!
 //! This module provides a reference implementation of [`PriceSource`]

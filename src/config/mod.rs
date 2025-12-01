@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Configuration for semioscan operations
 //!
 //! This module provides a flexible configuration system for controlling

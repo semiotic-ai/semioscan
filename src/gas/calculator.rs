@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Gas cost calculation for blockchain transactions
 //!
 //! This module provides tools for calculating total gas costs for transactions between

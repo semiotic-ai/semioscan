@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 /// Template example showing how to implement PriceSource for a custom DEX
 ///
 /// This example demonstrates:

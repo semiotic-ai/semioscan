@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Semioscan: Blockchain analytics library for EVM chains
 //!
 //! Semioscan provides production-grade tools for:

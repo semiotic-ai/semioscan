@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! In-memory cache implementation with optional TTL and size limits
 
 use async_trait::async_trait;

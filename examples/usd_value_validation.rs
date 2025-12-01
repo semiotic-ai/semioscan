@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Demonstrates proper UsdValue validation
 //!
 //! This example shows the improved validation that works in both debug and release builds.

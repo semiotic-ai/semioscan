@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Property-based tests for rate limiting
 //!
 //! These tests use proptest to validate invariants about rate limiting behavior

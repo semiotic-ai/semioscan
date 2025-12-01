@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Block window calculation for mapping UTC dates to blockchain block ranges
 //!
 //! This module provides tools for calculating which blockchain blocks correspond to

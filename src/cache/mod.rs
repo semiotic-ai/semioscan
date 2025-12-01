@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Generic caching infrastructure for block-range-based data.
 //!
 //! This module provides reusable caching abstractions that are used by:

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Semantic filter builders for blockchain events
 //!
 //! This module provides type-safe, self-documenting filter builders that replace

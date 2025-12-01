@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Canonical ERC-20 event definitions for blockchain event decoding
 //!
 //! This module provides strongly-typed event definitions for the standard ERC-20

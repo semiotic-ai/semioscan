@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Cache backends for block window calculations
 //!
 //! This module provides different caching strategies for storing block window data:

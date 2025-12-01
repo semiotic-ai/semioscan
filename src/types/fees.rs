@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Strong types for fee-related values
 //!
 //! Separates different kinds of fees for type safety and clarity.

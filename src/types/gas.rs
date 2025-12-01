@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 //! Strong types for gas-related values
 //!
 //! This module provides newtype wrappers around U256 to add type safety

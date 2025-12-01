@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2025 Semiotic AI, Inc.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 use alloy_chains::NamedChain;
 use alloy_network::{Ethereum, Network};
 use alloy_primitives::{Address, BlockNumber, B256, U256};
