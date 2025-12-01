@@ -30,3 +30,9 @@ SPDX-License-Identifier = "Apache-2.0"
 path = "examples/**/*.json"
 SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
 SPDX-License-Identifier = "Apache-2.0"
+
+# Configuration files
+[[annotations]]
+path = [".gitignore", ".env.example", ".github/**"]
+SPDX-FileCopyrightText = "2025 Semiotic AI, Inc."
+SPDX-License-Identifier = "Apache-2.0"
