@@ -30,7 +30,7 @@ This project follows the [Rust Code of Conduct](https://www.rust-lang.org/polici
 
 ### Prerequisites
 
-- Rust 1.73 or later
+- Rust 1.89 or later
 - Git
 
 ### Building and Testing
@@ -213,7 +213,7 @@ For detailed guidance, see [`docs/PRICESOURCE_GUIDE.md`](docs/PRICESOURCE_GUIDE.
 ## Project Structure
 
 ```text
-crates/semioscan/
+semioscan/
 ├── src/
 │   ├── lib.rs               # Public API exports
 │   ├── blocks/              # Block window calculations
