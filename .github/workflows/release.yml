@@ -40,7 +40,13 @@ jobs:
           tool: cargo-semver-checks
 
       - name: Check semver compatibility
-        run: cargo semver-checks check-release
+        run: |
+          # Skip semver check if this is the first release (crate not yet on crates.io)
+          if cargo search semioscan --limit 1 | grep -q "^semioscan "; then
+            cargo semver-checks check-release
+          else
+            echo "Skipping semver check: semioscan not yet published to crates.io"
+          fi
 
   publish:
     name: Publish to crates.io
