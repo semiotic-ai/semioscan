@@ -24,7 +24,6 @@ Built on [Alloy](https://github.com/alloy-rs/alloy), the modern Ethereum library
     - [3. Extract DEX Price Data](#3-extract-dex-price-data)
   - [Examples and Tutorials](#examples-and-tutorials)
     - [Quick Reference](#quick-reference)
-    - [Shell Script Workflows](#shell-script-workflows)
     - [Running Examples](#running-examples)
   - [Core Concepts](#core-concepts)
     - [Block Windows](#block-windows)
@@ -223,15 +222,6 @@ The [`examples/`](examples/) directory contains complete, production-ready examp
 | [`router_token_discovery.rs`](examples/router_token_discovery.rs) | Discover tokens sent to router contracts | Intermediate |
 | [`eip4844_blob_gas.rs`](examples/eip4844_blob_gas.rs) | Calculate EIP-4844 blob gas for L2 rollups | Advanced |
 | [`custom_dex_integration.rs`](examples/custom_dex_integration.rs) | Implement `PriceSource` for any DEX | Advanced |
-
-### Shell Script Workflows
-
-Production-ready scripts for multi-chain operations:
-
-- **`multi_chain_daily_report.sh`** - Generate liquidation reports across all chains
-- **`generate_daily_report.sh`** - Single-chain financial reporting
-- **`collect_data_only.sh`** - Data collection without report generation
-- **`generate_report_from_json.sh`** - Report from cached data
 
 ### Running Examples
 
