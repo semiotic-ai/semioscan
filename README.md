@@ -3,6 +3,7 @@
 [![Crates.io](https://img.shields.io/crates/v/semioscan.svg)](https://crates.io/crates/semioscan)
 [![Documentation](https://docs.rs/semioscan/badge.svg)](https://docs.rs/semioscan)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![REUSE](https://api.reuse.software/badge/github.com/semiotic-ai/semioscan)](https://api.reuse.software/info/github.com/semiotic-ai/semioscan)
 
 **Semioscan** is a Rust library for blockchain analytics, providing production-grade tools for calculating gas costs, extracting price data from DEX swaps, and working with block ranges across multiple EVM-compatible chains.
 
