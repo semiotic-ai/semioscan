@@ -74,12 +74,14 @@
 
 mod config;
 mod factory;
+mod pool;
 
 pub use config::ProviderConfig;
 pub use factory::{
     create_http_provider, create_typed_http_provider, create_ws_provider,
     rate_limited_http_provider, simple_http_provider,
 };
+pub use pool::{ChainEndpoint, PooledProvider, ProviderPool, ProviderPoolBuilder};
 
 use alloy_chains::NamedChain;
 use alloy_network::{AnyNetwork, Ethereum};

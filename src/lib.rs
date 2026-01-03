@@ -105,8 +105,8 @@ pub use transport::{
 pub use provider::{
     create_http_provider, create_typed_http_provider, create_ws_provider, network_type_for_chain,
     rate_limited_http_provider, simple_http_provider, AnyHttpProvider, ChainAwareProvider,
-    DynProviderBuilder, EthereumHttpProvider, NetworkType, OptimismHttpProvider, ProviderConfig,
-    SharedProvider,
+    ChainEndpoint, DynProviderBuilder, EthereumHttpProvider, NetworkType, OptimismHttpProvider,
+    PooledProvider, ProviderConfig, ProviderPool, ProviderPoolBuilder, SharedProvider,
 };
 
 // Re-export RouterType from odos-sdk for convenience

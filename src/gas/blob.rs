@@ -184,7 +184,7 @@ where
 /// # Example
 ///
 /// ```rust
-/// use semioscan::{BlobCount, gas::blob::calculate_blob_gas};
+/// use semioscan::{BlobCount, blob::calculate_blob_gas};
 ///
 /// let gas = calculate_blob_gas(BlobCount::new(3));
 /// assert_eq!(gas, 393_216); // 3 * 131_072
@@ -225,7 +225,7 @@ pub const fn max_blob_gas_per_block() -> u64 {
 ///
 /// ```rust
 /// use alloy_primitives::U256;
-/// use semioscan::{BlobCount, BlobGasPrice, gas::blob::estimate_total_tx_cost};
+/// use semioscan::{BlobCount, BlobGasPrice, blob::estimate_total_tx_cost};
 ///
 /// let total = estimate_total_tx_cost(
 ///     21_000,                           // execution gas
