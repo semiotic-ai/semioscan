@@ -93,7 +93,10 @@ pub use retrieval::{
 };
 
 // === Transport Layers ===
-pub use transport::{LoggingLayer, LoggingService, RateLimitLayer, RateLimitService};
+pub use transport::{
+    LoggingLayer, LoggingService, RateLimitLayer, RateLimitService, RetryConfig, RetryLayer,
+    RetryLayerBuilder, RetryService,
+};
 
 // === Provider Utilities ===
 pub use provider::{

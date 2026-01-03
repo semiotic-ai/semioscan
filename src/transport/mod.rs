@@ -46,6 +46,8 @@
 
 mod logging;
 mod rate_limit;
+mod retry;
 
 pub use logging::{LoggingLayer, LoggingService};
 pub use rate_limit::{RateLimitLayer, RateLimitService};
+pub use retry::{RetryConfig, RetryLayer, RetryLayerBuilder, RetryService};
