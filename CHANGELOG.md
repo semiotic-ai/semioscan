@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-01-03
+
+### Added
+
+#### Provider Utilities
+
+- **Connection Pooling**: Thread-safe provider pooling for efficient connection reuse across concurrent operations
+  - `ProviderPool`: Thread-safe pool using RwLock for concurrent access
+  - `ProviderPoolBuilder`: Builder pattern for easy configuration
+  - `ChainEndpoint`: Configuration struct with chain-specific helpers
+  - `PooledProvider`: Type alias for Arc<RootProvider<AnyNetwork>>
+  - Lazy provider initialization via `get_or_add()`
+  - Per-chain rate limiting support
+  - Compatible with `std::sync::LazyLock` for static pools
+
+- **Dynamic Provider Utilities**: Runtime chain selection without compile-time network constraints
+  - Type aliases: `AnyHttpProvider`, `EthereumHttpProvider`, `OptimismHttpProvider`
+  - `NetworkType` enum with `network_type_for_chain()` for chain categorization
+  - `ChainAwareProvider` wrapper for tracking chain metadata
+  - Factory functions: `create_http_provider`, `create_ws_provider`, `create_typed_http_provider`
+  - `ProviderConfig` with presets for public/private endpoints, Infura, Alchemy
+
+#### Transport Layers
+
+- **Rate Limiting Layer**: Token bucket rate limiter with configurable limits
+  - `RateLimitLayer::per_second(n)` for requests-per-second limiting
+  - `RateLimitLayer::with_min_delay(duration)` for fixed delays between requests
+  - Async-safe with Arc<Mutex<RateLimitState>>
+
+- **Logging Layer**: RPC call tracing with configurable verbosity
+  - Automatic method extraction from RequestPacket
+  - Duration tracking in tracing spans
+  - Optional request/response payload logging via `with_request_logging()` and `verbose()`
+
+- **Retry Layer**: Automatic retry of transient RPC failures with exponential backoff
+  - `RetryLayer::new()` with configurable max retries, base delay, and max delay
+  - Builder pattern for flexible configuration
+  - Preset configurations: `aggressive()` and `conservative()`
+  - Uses Alloy's `is_retry_err()` for smart error classification
+
+#### Gas Calculation
+
+- **EIP-4844 Blob Gas Support**: Comprehensive blob gas tracking and utilities
+  - `BlobGasPrice` type with `from_gwei()` and `cost_for_blobs()` methods
+  - `GasBreakdown` struct separating execution/blob/L1 costs
+  - `GasBreakdownBuilder` for flexible breakdown construction
+  - Enhanced `L1Gas`/`L2Gas` with `blob_count` and `blob_gas_price` fields
+  - `GasCostResult` now includes `breakdown` field for analytics
+  - New `blob` module with utilities:
+    - `get_blob_base_fee()` - fetch from latest block
+    - `get_blob_base_fee_at_block()` - fetch from specific block
+    - `estimate_blob_cost()` - estimate cost for N blobs
+    - `calculate_blob_gas()` - pure blob gas calculation
+    - `max_blob_gas_per_block()` - returns 786,432 max
+    - `estimate_total_tx_cost()` - combines execution + blob costs
+
+#### Batch Operations
+
+- **Batch Fetching for Transactions and Receipts**: Two-pass batch approach for fetching transactions and receipts in parallel via `futures::join_all`
+- **Batch Balance Utilities**: Fetch multiple token/ETH balances efficiently
+  - `batch_fetch_balances()` for ERC-20 token balances
+  - `batch_fetch_eth_balances()` for native ETH balances
+  - New types: `BalanceQuery`, `BalanceResult`, `BalanceError`
+  - Compatible with Alloy's `CallBatchLayer` for automatic Multicall3 batching
+
+- **Batch Token Decimals**: `batch_fetch_decimals()` for fetching multiple token decimals in parallel
+
+#### Real-Time Events
+
+- **WebSocket Support**: Real-time event streaming via WebSocket subscriptions
+  - `RealtimeEventScanner` for WebSocket-based event subscriptions
+  - `subscribe_blocks()` for real-time block headers
+  - `subscribe_logs()` for real-time log events
+  - `subscribe_logs_with_catchup()` for subscriptions with historical catchup
+  - New `SubscriptionFailed` error variant for WebSocket errors
+
+#### Documentation
+
+- **Network Selection Guide** (`docs/NETWORK_SELECTION.md`): Comprehensive guide for choosing between Ethereum, Optimism, and AnyNetwork types
+- **Provider Setup Examples** (`docs/PROVIDER_SETUP.md`): Practical examples covering rate limiting, retry, logging, pooling, and WebSocket providers
+
+### Changed
+
+- **Minimum Rust version**: Updated to 1.92 (from 1.89)
+- **Dependencies**: Updated and upgraded all cargo dependencies
+
+### Fixed
+
+- Fixed doctest imports in blob module to use correct public paths
+
 ## [0.3.0] - 2025-11-16
 
 ### Breaking Changes

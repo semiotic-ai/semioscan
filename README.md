@@ -61,11 +61,13 @@ Built on [Alloy](https://github.com/alloy-rs/alloy), the modern Ethereum library
 
 ## Features
 
-- **Gas Cost Calculation**: Accurately calculate transaction gas costs for both L1 (Ethereum) and L2 (Optimism Stack) chains, including L1 data fees
+- **Gas Cost Calculation**: Accurately calculate transaction gas costs for both L1 (Ethereum) and L2 (Optimism Stack) chains, including L1 data fees and EIP-4844 blob gas
 - **Block Window Calculations**: Map UTC dates to blockchain block ranges with intelligent caching
 - **DEX Price Extraction**: Extensible trait-based system for extracting price data from on-chain swap events
 - **Multi-Chain Support**: Works with 12+ EVM chains including Ethereum, Arbitrum, Base, Optimism, Polygon, and more
-- **Event Scanning**: Extract transfer amounts and events from blockchain transaction logs
+- **Event Scanning**: Extract transfer amounts and events from blockchain transaction logs with real-time WebSocket subscriptions
+- **Provider Utilities**: Connection pooling, rate limiting, retry with exponential backoff, and logging layers
+- **Batch Operations**: Efficient batch fetching for transactions, receipts, balances, and token decimals
 - **Production-Ready**: Battle-tested in production for automated trading and DeFi applications processing millions of dollars in swaps
 
 ## Use Cases
@@ -87,10 +89,10 @@ Add semioscan to your `Cargo.toml`:
 ```toml
 [dependencies]
 # Core library (gas, block windows, events)
-semioscan = "0.3"
+semioscan = "0.4"
 
 # With Odos DEX reference implementation (optional)
-semioscan = { version = "0.3", features = ["odos-example"] }
+semioscan = { version = "0.4", features = ["odos-example"] }
 ```
 
 ### Feature Flags
@@ -611,13 +613,13 @@ cargo run --package semioscan --example router_token_discovery -- arbitrum
 
 Semioscan may not be the best choice for:
 
-- **Real-time price feeds**: Use WebSocket-based oracles (Chainlink, Pyth, etc.) for sub-second price updates
+- **Real-time price feeds**: Use WebSocket-based oracles (Chainlink, Pyth, etc.) for sub-second price updates (though Semioscan now supports WebSocket subscriptions for event streaming)
 - **Non-EVM chains**: Semioscan is EVM-specific (Solana, Cosmos, etc. are not supported)
-- **Simple balance queries**: Use lighter libraries like `ethers-rs` for basic token balances
+- **Simple balance queries**: Use lighter libraries for basic token balances (though Semioscan provides efficient batch balance queries)
 - **Indexing entire chains**: Use The Graph or custom indexers for comprehensive blockchain indexing
-- **High-frequency trading**: RPC-based queries have latency; use WebSocket streams or MEV infrastructure
+- **High-frequency trading**: For ultra-low latency, use dedicated MEV infrastructure
 
-Semioscan excels at **batch analytics**, **historical queries**, and **multi-chain operations** where accurate gas cost calculation and flexible price extraction are required.
+Semioscan excels at **batch analytics**, **historical queries**, **real-time event streaming**, and **multi-chain operations** where accurate gas cost calculation and flexible price extraction are required.
 
 ## Production Usage
 

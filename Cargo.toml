@@ -1,9 +1,9 @@
 [package]
 name = "semioscan"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["Joseph Livesey <joseph@semiotic.ai>"]
-rust-version = "1.89"
+rust-version = "1.92"
 description = "Production-grade Rust library for blockchain analytics: gas calculation, price extraction, and block window calculations for EVM chains"
 license = "Apache-2.0"
 repository = "https://github.com/semiotic-ai/semioscan"
@@ -46,7 +46,10 @@ alloy-transport-http = { version = "1.2", default-features = false, features = [
 ] }
 async-trait = "0.1"
 # futures with std enables join_all for batch RPC calls and StreamExt for WebSocket subscriptions
-futures = { version = "0.3", default-features = false, features = ["alloc", "std"] }
+futures = { version = "0.3", default-features = false, features = [
+    "alloc",
+    "std",
+] }
 bigdecimal = { version = "0.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 op-alloy-network = "0.22"
