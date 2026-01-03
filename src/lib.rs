@@ -18,6 +18,7 @@
 //! - `price` - Price extraction domain
 //! - `blocks` - Block window calculations
 //! - `events` - Event processing
+//! - `provider` - Dynamic provider utilities for runtime chain selection
 //! - `transport` - Transport layer utilities (rate limiting, etc.)
 //! - `cache` - Caching infrastructure (internal)
 //! - `retrieval` - Data orchestration (internal)
@@ -31,6 +32,7 @@ pub mod errors;
 mod events;
 mod gas;
 pub mod price;
+pub mod provider;
 mod retrieval;
 mod tracing;
 pub mod transport;
@@ -92,6 +94,14 @@ pub use retrieval::{
 
 // === Transport Layers ===
 pub use transport::{LoggingLayer, LoggingService, RateLimitLayer, RateLimitService};
+
+// === Provider Utilities ===
+pub use provider::{
+    create_http_provider, create_typed_http_provider, create_ws_provider, network_type_for_chain,
+    rate_limited_http_provider, simple_http_provider, AnyHttpProvider, ChainAwareProvider,
+    DynProviderBuilder, EthereumHttpProvider, NetworkType, OptimismHttpProvider, ProviderConfig,
+    SharedProvider,
+};
 
 // Re-export RouterType from odos-sdk for convenience
 #[cfg(feature = "odos-example")]

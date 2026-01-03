@@ -183,6 +183,19 @@ pub enum RpcError {
         /// Details about the failure
         details: String,
     },
+
+    /// Invalid provider URL.
+    ///
+    /// This occurs when the provided RPC URL is malformed or cannot be parsed.
+    #[error("Invalid provider URL: {0}")]
+    ProviderUrlInvalid(String),
+
+    /// Failed to establish connection to provider.
+    ///
+    /// This occurs when the initial connection to the RPC provider fails,
+    /// such as during WebSocket handshake or HTTP connection establishment.
+    #[error("Failed to connect to provider: {0}")]
+    ProviderConnectionFailed(String),
 }
 
 impl RpcError {
