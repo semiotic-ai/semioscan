@@ -83,8 +83,9 @@ pub use events::{Approval, Transfer};
 
 // === Retrieval (Data Orchestration) ===
 pub use retrieval::{
-    get_token_decimal_precision, u256_to_bigdecimal, CombinedCalculator, CombinedDataResult,
-    DecimalPrecision,
+    batch_fetch_balances, batch_fetch_eth_balances, get_token_decimal_precision,
+    u256_to_bigdecimal, BalanceError, BalanceQuery, BalanceResult, CombinedCalculator,
+    CombinedDataResult, DecimalPrecision,
 };
 
 // Re-export RouterType from odos-sdk for convenience

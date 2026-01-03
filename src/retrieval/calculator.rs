@@ -58,14 +58,15 @@
 
 use alloy_chains::NamedChain;
 use alloy_network::{Ethereum, Network};
-use alloy_primitives::{Address, BlockNumber};
+use alloy_primitives::{Address, BlockNumber, TxHash};
 use alloy_provider::Provider;
 use alloy_rpc_types::{Log as RpcLog, TransactionTrait};
 use alloy_sol_types::SolEvent;
+use futures::future::join_all;
 use op_alloy_network::Optimism;
 use std::sync::Arc;
 use tokio::time::sleep;
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, trace};
 
 use crate::config::SemioscanConfig;
 use crate::events::definitions::Transfer;
@@ -76,6 +77,17 @@ use crate::types::gas::{GasAmount, GasPrice};
 use super::gas_calculation::GasCalculationCore;
 use super::types::{CombinedDataResult, GasAndAmountForTx};
 use crate::errors::RetrievalError;
+
+/// Log metadata extracted from RpcLog for batch processing.
+///
+/// Alloy's `RpcLog` contains Optional tx_hash and block_number fields.
+/// This struct holds the validated, required fields along with the
+/// decoded transfer value, ready for batch RPC fetching.
+struct LogBatchEntry {
+    tx_hash: TxHash,
+    block_number: BlockNumber,
+    transfer_value: alloy_primitives::U256,
+}
 
 pub struct CombinedCalculator<N: Network, P: Provider<N> + Send + Sync + Clone + 'static>
 where
@@ -108,66 +120,132 @@ where
         }
     }
 
-    async fn process_log_for_combined_data<A: ReceiptAdapter<N> + Send + Sync>(
+    /// Batch fetches transaction and receipt data for multiple logs.
+    ///
+    /// # Performance Optimization
+    ///
+    /// This method uses parallel fetching via `futures::join_all` to fetch all
+    /// transactions and receipts concurrently. When combined with Alloy's
+    /// `CallBatchLayer`, these parallel requests can be automatically batched,
+    /// reducing network overhead.
+    ///
+    /// # Arguments
+    ///
+    /// * `log_entries` - Pre-validated log entries with tx hashes and decoded values
+    /// * `adapter` - Network-specific receipt adapter
+    ///
+    /// # Returns
+    ///
+    /// A vector of results, each containing either the processed gas/amount data
+    /// or an error for that specific transaction.
+    async fn batch_fetch_tx_data<A: ReceiptAdapter<N> + Send + Sync>(
         &self,
-        rpc_log_entry: &RpcLog,
+        log_entries: &[LogBatchEntry],
         adapter: &A,
-        transfer_event: &Transfer, // Decoded event
-    ) -> Result<Option<GasAndAmountForTx>, RetrievalError> {
-        let tx_hash = rpc_log_entry
-            .transaction_hash
-            .ok_or_else(RetrievalError::missing_transaction_hash)?;
+    ) -> Vec<Result<GasAndAmountForTx, (TxHash, RetrievalError)>> {
+        if log_entries.is_empty() {
+            return vec![];
+        }
 
-        let span = spans::process_log_for_combined_data(tx_hash);
-        let _guard = span.enter();
-
-        let transaction_fut = self.provider.get_transaction_by_hash(tx_hash);
-        let receipt_fut = self.provider.get_transaction_receipt(tx_hash);
-
-        let (transaction_res, receipt_res) = tokio::join!(transaction_fut, receipt_fut);
-
-        let transaction = transaction_res
-            .map_err(|e| {
-                RetrievalError::Rpc(crate::errors::RpcError::chain_connection_failed(
-                    format!("get_transaction_by_hash({})", tx_hash),
-                    e,
-                ))
-            })?
-            .ok_or_else(|| RetrievalError::missing_transaction(&tx_hash.to_string()))?;
-
-        let receipt = receipt_res
-            .map_err(|e| {
-                RetrievalError::Rpc(crate::errors::RpcError::chain_connection_failed(
-                    format!("get_transaction_receipt({})", tx_hash),
-                    e,
-                ))
-            })?
-            .ok_or_else(|| RetrievalError::missing_receipt(&tx_hash.to_string()))?;
-
-        let gas_used = adapter.gas_used(&receipt);
-        let receipt_effective_gas_price = adapter.effective_gas_price(&receipt);
-        let l1_fee = adapter.l1_data_fee(&receipt);
-
-        let effective_gas_price = GasCalculationCore::calculate_effective_gas_price::<N>(
-            &transaction,
-            receipt_effective_gas_price,
+        info!(
+            count = log_entries.len(),
+            "Batch fetching transaction data for logs"
         );
 
-        let blob_gas_cost = GasCalculationCore::calculate_blob_gas_cost::<N>(&transaction);
+        // Create futures for all transaction and receipt fetches
+        let fetch_futures: Vec<_> = log_entries
+            .iter()
+            .map(|entry| {
+                let provider = self.provider.clone();
+                let tx_hash = entry.tx_hash;
+                let block_number = entry.block_number;
+                let transfer_value = entry.transfer_value;
 
-        let block_number = rpc_log_entry
-            .block_number
-            .ok_or_else(RetrievalError::missing_block_number)?;
+                async move {
+                    let span = spans::process_log_for_combined_data(tx_hash);
+                    let _guard = span.enter();
 
-        Ok(Some(GasAndAmountForTx {
-            tx_hash,
-            block_number,
-            gas_used: GasAmount::from(gas_used),
-            effective_gas_price: GasPrice::from(effective_gas_price),
-            l1_fee,
-            transferred_amount: transfer_event.value,
-            blob_gas_cost,
-        }))
+                    // Fetch transaction and receipt in parallel
+                    let (tx_result, receipt_result) = tokio::join!(
+                        provider.get_transaction_by_hash(tx_hash),
+                        provider.get_transaction_receipt(tx_hash)
+                    );
+
+                    (
+                        tx_hash,
+                        block_number,
+                        transfer_value,
+                        tx_result,
+                        receipt_result,
+                    )
+                }
+            })
+            .collect();
+
+        // Execute all fetches in parallel
+        // When CallBatchLayer is enabled, these may be batched together
+        let results = join_all(fetch_futures).await;
+
+        // Process results
+        results
+            .into_iter()
+            .map(|(tx_hash, block_number, transfer_value, tx_result, receipt_result)| {
+                // Process transaction result
+                let transaction = tx_result
+                    .map_err(|e| {
+                        (
+                            tx_hash,
+                            RetrievalError::Rpc(crate::errors::RpcError::chain_connection_failed(
+                                format!("get_transaction_by_hash({tx_hash})"),
+                                e,
+                            )),
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        (
+                            tx_hash,
+                            RetrievalError::missing_transaction(&tx_hash.to_string()),
+                        )
+                    })?;
+
+                // Process receipt result
+                let receipt = receipt_result
+                    .map_err(|e| {
+                        (
+                            tx_hash,
+                            RetrievalError::Rpc(crate::errors::RpcError::chain_connection_failed(
+                                format!("get_transaction_receipt({tx_hash})"),
+                                e,
+                            )),
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        (tx_hash, RetrievalError::missing_receipt(&tx_hash.to_string()))
+                    })?;
+
+                // Extract gas data
+                let gas_used = adapter.gas_used(&receipt);
+                let receipt_effective_gas_price = adapter.effective_gas_price(&receipt);
+                let l1_fee = adapter.l1_data_fee(&receipt);
+
+                let effective_gas_price = GasCalculationCore::calculate_effective_gas_price::<N>(
+                    &transaction,
+                    receipt_effective_gas_price,
+                );
+
+                let blob_gas_cost = GasCalculationCore::calculate_blob_gas_cost::<N>(&transaction);
+
+                Ok(GasAndAmountForTx {
+                    tx_hash,
+                    block_number,
+                    gas_used: GasAmount::from(gas_used),
+                    effective_gas_price: GasPrice::from(effective_gas_price),
+                    l1_fee,
+                    transferred_amount: transfer_value,
+                    blob_gas_cost,
+                })
+            })
+            .collect()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -226,36 +304,39 @@ where
                 "Fetched logs"
             );
 
+            // First pass: Decode all logs and collect entries for batch fetching
+            let mut log_entries = Vec::with_capacity(logs.len());
             for rpc_log_entry in &logs {
                 match Transfer::decode_log(&rpc_log_entry.inner) {
                     Ok(transfer_event_data) => {
+                        let tx_hash = match rpc_log_entry.transaction_hash {
+                            Some(hash) => hash,
+                            None => {
+                                error!("Missing transaction hash in log entry");
+                                continue;
+                            }
+                        };
+                        let block_number = match rpc_log_entry.block_number {
+                            Some(num) => num,
+                            None => {
+                                error!("Missing block number in log entry");
+                                continue;
+                            }
+                        };
+
                         info!(
                             ?chain, ?from_address, ?to_address, ?token_address,
                             amount = ?transfer_event_data.value,
-                            block = rpc_log_entry.block_number,
-                            tx_hash = ?rpc_log_entry.transaction_hash,
-                            "Processing Transfer event"
+                            block = block_number,
+                            ?tx_hash,
+                            "Decoded Transfer event for batch processing"
                         );
 
-                        match self
-                            .process_log_for_combined_data(
-                                rpc_log_entry,
-                                adapter,
-                                &transfer_event_data,
-                            )
-                            .await
-                        {
-                            Ok(Some(data)) => {
-                                result.add_transaction_data(data);
-                            }
-                            Ok(None) => {
-                                warn!("No transfer event found for log: {:?}", rpc_log_entry);
-                            }
-                            Err(e) => {
-                                error!(error = %e, tx_hash = ?rpc_log_entry.transaction_hash, "Error processing log for combined data. Skipping log.");
-                                // Continue with other logs
-                            }
-                        }
+                        log_entries.push(LogBatchEntry {
+                            tx_hash,
+                            block_number,
+                            transfer_value: transfer_event_data.value,
+                        });
                     }
                     Err(e) => {
                         error!(error = %e, log_data = ?rpc_log_entry.data(), log_topics = ?rpc_log_entry.topics(), "Failed to decode Transfer log. Skipping log.");
@@ -263,6 +344,23 @@ where
                     }
                 }
             }
+
+            // Second pass: Batch fetch all transaction and receipt data
+            let batch_results = self.batch_fetch_tx_data(&log_entries, adapter).await;
+
+            // Process batch results
+            for batch_result in batch_results {
+                match batch_result {
+                    Ok(data) => {
+                        result.add_transaction_data(data);
+                    }
+                    Err((tx_hash, e)) => {
+                        error!(error = %e, ?tx_hash, "Error processing log for combined data. Skipping log.");
+                        // Continue with other logs
+                    }
+                }
+            }
+
             current_block = chunk_end + 1;
 
             // Apply rate limiting if configured for this chain
