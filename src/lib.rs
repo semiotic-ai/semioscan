@@ -18,6 +18,7 @@
 //! - `price` - Price extraction domain
 //! - `blocks` - Block window calculations
 //! - `events` - Event processing
+//! - `transport` - Transport layer utilities (rate limiting, etc.)
 //! - `cache` - Caching infrastructure (internal)
 //! - `retrieval` - Data orchestration (internal)
 //! - `tracing` - Observability (internal)
@@ -32,6 +33,7 @@ mod gas;
 pub mod price;
 mod retrieval;
 mod tracing;
+pub mod transport;
 mod types;
 
 // === Core Types (from types/) ===
@@ -87,6 +89,9 @@ pub use retrieval::{
     u256_to_bigdecimal, BalanceError, BalanceQuery, BalanceResult, CombinedCalculator,
     CombinedDataResult, DecimalPrecision,
 };
+
+// === Transport Layers ===
+pub use transport::{LoggingLayer, LoggingService, RateLimitLayer, RateLimitService};
 
 // Re-export RouterType from odos-sdk for convenience
 #[cfg(feature = "odos-example")]
