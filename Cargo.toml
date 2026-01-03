@@ -41,6 +41,8 @@ alloy-transport-http = { version = "1.2", default-features = false, features = [
     "reqwest",
 ] }
 async-trait = "0.1"
+# futures with alloc enables join_all for batch RPC calls without pulling in std features
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
 bigdecimal = { version = "0.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 op-alloy-network = "0.22"

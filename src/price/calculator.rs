@@ -7,10 +7,11 @@ use alloy_erc20_full::LazyToken;
 use alloy_primitives::{Address, BlockNumber, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
+use futures::future::join_all;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::config::SemioscanConfig;
 use crate::errors::PriceCalculationError;
@@ -97,6 +98,26 @@ impl TokenPriceResult {
 /// This calculator fetches swap events from the blockchain, extracts price information,
 /// and provides caching to minimize RPC calls. It's designed to work with any DEX protocol
 /// through the [`PriceSource`] trait.
+///
+/// # Performance with CallBatchLayer
+///
+/// For optimal performance, construct your provider with Alloy's `CallBatchLayer`.
+/// This automatically batches concurrent `eth_call` requests (like token decimals
+/// fetches) into a single Multicall3 RPC request:
+///
+/// ```rust,ignore
+/// use alloy_provider::{layers::CallBatchLayer, ProviderBuilder};
+/// use std::time::Duration;
+///
+/// let provider = ProviderBuilder::new()
+///     .layer(CallBatchLayer::new().wait(Duration::from_millis(10)))
+///     .connect_http(rpc_url);
+///
+/// let calculator = PriceCalculator::new(provider, chain, usdc_address, price_source);
+/// ```
+///
+/// Without `CallBatchLayer`, the calculator still benefits from parallel fetching
+/// but each call is sent as a separate RPC request.
 ///
 /// # Caching and Thread Safety
 ///
@@ -201,6 +222,69 @@ impl<P: Provider + Clone> PriceCalculator<P> {
         Ok(decimals)
     }
 
+    /// Batch fetch token decimals for multiple addresses in parallel.
+    ///
+    /// This method fetches decimals for all provided token addresses concurrently,
+    /// which significantly reduces RPC latency when processing many tokens.
+    ///
+    /// When combined with Alloy's `CallBatchLayer`, these parallel calls are
+    /// automatically batched into a single Multicall3 RPC request, reducing
+    /// network overhead even further.
+    ///
+    /// Tokens that are already cached are skipped. Tokens that fail to fetch
+    /// are logged as warnings but don't cause the entire batch to fail.
+    async fn batch_fetch_token_decimals(&mut self, token_addresses: &[Address]) {
+        // Filter out already-cached addresses
+        let uncached: Vec<Address> = token_addresses
+            .iter()
+            .filter(|addr| !self.token_decimals_cache.contains_key(*addr))
+            .copied()
+            .collect();
+
+        if uncached.is_empty() {
+            return;
+        }
+
+        info!(
+            count = uncached.len(),
+            "Batch fetching token decimals for uncached tokens"
+        );
+
+        // Create futures for all uncached token fetches
+        let fetch_futures: Vec<_> = uncached
+            .iter()
+            .map(|&addr| {
+                let provider = self.provider.clone();
+                async move {
+                    let token_contract = LazyToken::new(addr, provider);
+                    let result = token_contract.decimals().await.copied();
+                    (addr, result)
+                }
+            })
+            .collect();
+
+        // Execute all fetches in parallel
+        // When CallBatchLayer is enabled, these will be automatically batched
+        let results = join_all(fetch_futures).await;
+
+        // Process results and update cache
+        for (addr, result) in results {
+            match result {
+                Ok(decimals_raw) => {
+                    let decimals = TokenDecimals::new(decimals_raw);
+                    self.token_decimals_cache.insert(addr, decimals);
+                }
+                Err(e) => {
+                    warn!(
+                        token = ?addr,
+                        error = ?e,
+                        "Failed to fetch decimals for token, will retry on demand"
+                    );
+                }
+            }
+        }
+    }
+
     fn normalize_amount(&self, amount: U256, decimals: TokenDecimals) -> NormalizedAmount {
         TokenAmount::new(amount).normalize(decimals)
     }
@@ -209,6 +293,16 @@ impl<P: Provider + Clone> PriceCalculator<P> {
     ///
     /// Scans the block range for swap events, processes each event to extract price data,
     /// and accumulates results for the token.
+    ///
+    /// # Performance Optimization
+    ///
+    /// This method uses a two-pass approach to enable batch RPC calls:
+    /// 1. First pass: Extract all swap data from logs and collect unique token addresses
+    /// 2. Batch fetch all token decimals in parallel (benefits from `CallBatchLayer`)
+    /// 3. Second pass: Process swaps using cached decimals
+    ///
+    /// When the provider is constructed with `CallBatchLayer`, the parallel decimals
+    /// fetches are automatically batched into a single Multicall3 RPC request.
     async fn process_gap_for_price(
         &mut self,
         token_address: Address,
@@ -232,8 +326,7 @@ impl<P: Provider + Clone> PriceCalculator<P> {
             .await
             .map_err(|e| {
                 PriceCalculationError::processing_failed(format!(
-                    "Failed to scan swap events from {} to {}: {}",
-                    gap_start, gap_end, e
+                    "Failed to scan swap events from {gap_start} to {gap_end}: {e}"
                 ))
             })?;
 
@@ -244,30 +337,28 @@ impl<P: Provider + Clone> PriceCalculator<P> {
             "Fetched logs for gap"
         );
 
-        // Process each log to extract price information
-        for log in logs {
-            // Extract swap data using the price source
-            match self.price_source.extract_swap_from_log(&log) {
+        // First pass: Extract all swap data and collect unique token addresses
+        let mut swaps = Vec::new();
+        let mut token_addresses = HashSet::new();
+
+        for log in &logs {
+            match self.price_source.extract_swap_from_log(log) {
                 Ok(Some(swap_data)) => {
-                    // Apply price source filtering
                     if !self.price_source.should_include_swap(&swap_data) {
                         continue;
                     }
 
-                    // Process the swap data
-                    match self.process_swap_data(&swap_data, token_address).await {
-                        Ok(Some(amounts)) => {
-                            gap_result.add_swap(
-                                amounts.token_amount.as_f64(),
-                                amounts.usdc_amount.as_f64(),
-                            );
-                        }
-                        Ok(None) => {
-                            // Not relevant for our token
-                        }
-                        Err(e) => {
-                            error!(error = ?e, "Error processing swap data");
-                        }
+                    // Check if this swap involves our target token
+                    let is_relevant = (swap_data.token_in == token_address
+                        && swap_data.token_out == self.usdc_address)
+                        || (swap_data.token_in == self.usdc_address
+                            && swap_data.token_out == token_address);
+
+                    if is_relevant {
+                        // Collect token addresses for batch fetching
+                        token_addresses.insert(swap_data.token_in);
+                        token_addresses.insert(swap_data.token_out);
+                        swaps.push(swap_data);
                     }
                 }
                 Ok(None) => {
@@ -282,6 +373,28 @@ impl<P: Provider + Clone> PriceCalculator<P> {
                     | PriceSourceError::InvalidSwapData { .. }),
                 ) => {
                     error!(error = ?e, "Invalid swap data in log");
+                }
+            }
+        }
+
+        // Batch fetch all token decimals in parallel
+        // When CallBatchLayer is enabled, these parallel calls are automatically
+        // batched into a single Multicall3 RPC request
+        let addresses: Vec<Address> = token_addresses.into_iter().collect();
+        self.batch_fetch_token_decimals(&addresses).await;
+
+        // Second pass: Process swaps using cached decimals
+        for swap_data in swaps {
+            match self.process_swap_data(&swap_data, token_address).await {
+                Ok(Some(amounts)) => {
+                    gap_result
+                        .add_swap(amounts.token_amount.as_f64(), amounts.usdc_amount.as_f64());
+                }
+                Ok(None) => {
+                    // Not relevant for our token (shouldn't happen since we filtered above)
+                }
+                Err(e) => {
+                    error!(error = ?e, "Error processing swap data");
                 }
             }
         }
