@@ -171,6 +171,18 @@ pub enum RpcError {
         #[source]
         source: TransportError,
     },
+
+    /// Failed to establish a WebSocket subscription.
+    ///
+    /// This occurs when attempting to subscribe to blocks, logs, or other events
+    /// via WebSocket and the subscription request fails.
+    #[error("Subscription failed for {operation}: {details}")]
+    SubscriptionFailed {
+        /// Description of what subscription was attempted
+        operation: Cow<'static, str>,
+        /// Details about the failure
+        details: String,
+    },
 }
 
 impl RpcError {
@@ -253,6 +265,28 @@ impl RpcError {
         RpcError::Timeout {
             operation: operation.into(),
             timeout_secs: timeout.as_secs(),
+        }
+    }
+
+    /// Helper to create a `SubscriptionFailed` error.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use semioscan::RpcError;
+    ///
+    /// match provider.subscribe_blocks().await {
+    ///     Ok(sub) => { /* ... */ },
+    ///     Err(e) => return Err(RpcError::subscription_failed("blocks", e)),
+    /// }
+    /// ```
+    pub fn subscription_failed(
+        operation: impl Into<Cow<'static, str>>,
+        error: impl std::fmt::Display,
+    ) -> Self {
+        RpcError::SubscriptionFailed {
+            operation: operation.into(),
+            details: error.to_string(),
         }
     }
 }

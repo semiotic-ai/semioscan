@@ -10,10 +10,12 @@
 //! - Token discovery via event scanning
 //! - Semantic filter builders for type-safe event filtering
 //! - Generic event scanning with chunking and rate limiting
+//! - Real-time event streaming via WebSocket subscriptions
 
 pub mod definitions;
 pub mod discovery;
 pub mod filter;
+pub mod realtime;
 pub mod scanner;
 pub mod transfers;
 
@@ -26,5 +28,7 @@ pub use transfers::{AmountCalculator, AmountResult};
 // These are tested in filter::tests::integration module
 #[allow(unused_imports)]
 pub use filter::{transfer_filter_from_to, transfer_filter_to_recipient, TransferFilterBuilder};
+#[allow(unused_imports)]
+pub use realtime::RealtimeEventScanner;
 #[allow(unused_imports)]
 pub use scanner::EventScanner;

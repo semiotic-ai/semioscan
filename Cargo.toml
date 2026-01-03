@@ -30,7 +30,9 @@ alloy-primitives = { version = "1.5", default-features = false, features = [
 ] }
 alloy-provider = { version = "1.2", default-features = false, features = [
     "anvil-node",
+    "pubsub",
     "reqwest",
+    "ws",
 ] }
 alloy-rpc-client = "1.2"
 alloy-rpc-types = "1.2"
@@ -41,8 +43,8 @@ alloy-transport-http = { version = "1.2", default-features = false, features = [
     "reqwest",
 ] }
 async-trait = "0.1"
-# futures with alloc enables join_all for batch RPC calls without pulling in std features
-futures = { version = "0.3", default-features = false, features = ["alloc"] }
+# futures with std enables join_all for batch RPC calls and StreamExt for WebSocket subscriptions
+futures = { version = "0.3", default-features = false, features = ["alloc", "std"] }
 bigdecimal = { version = "0.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 op-alloy-network = "0.22"
