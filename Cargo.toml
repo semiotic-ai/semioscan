@@ -19,6 +19,7 @@ odos-example = ["dep:odos-sdk"]
 [dependencies]
 # Core blockchain dependencies (always required)
 alloy-chains = { version = "0.2", features = ["serde"] }
+alloy-consensus = { version = "1.2", default-features = false }
 alloy-contract = { version = "1.2", default-features = false }
 alloy-dyn-abi = { version = "1.5", default-features = false }
 alloy-json-rpc = "1.2"

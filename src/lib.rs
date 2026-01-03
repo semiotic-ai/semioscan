@@ -41,7 +41,9 @@ mod types;
 // === Core Types (from types/) ===
 pub use types::config::{BlockCount, MaxBlockRange, TransactionCount};
 pub use types::fees::{L1DataFee, Percentage};
-pub use types::gas::{BlobCount, BlobGasAmount, GasAmount, GasPrice};
+pub use types::gas::{
+    BlobCount, BlobGasAmount, BlobGasPrice, GasAmount, GasBreakdown, GasBreakdownBuilder, GasPrice,
+};
 pub use types::tokens::{
     NormalizedAmount, TokenAmount, TokenDecimals, TokenPrice, TokenSet, UsdValue, UsdValueError,
 };
@@ -59,6 +61,7 @@ pub use errors::{
 
 // === Gas Calculation (from gas/) ===
 pub use gas::adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, ReceiptAdapter};
+pub use gas::blob;
 pub use gas::cache::GasCache;
 pub use gas::{EventType, GasCostCalculator, GasCostResult, GasForTx};
 

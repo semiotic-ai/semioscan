@@ -39,7 +39,7 @@ use crate::gas::cache::GasCache;
 use crate::retrieval::DecimalPrecision;
 use crate::types::config::TransactionCount;
 use crate::types::fees::L1DataFee;
-use crate::types::gas::{GasAmount, GasPrice};
+use crate::types::gas::{BlobCount, BlobGasPrice, GasAmount, GasBreakdown, GasPrice};
 use crate::types::wei::WeiAmount;
 
 /// Gas data for a single transaction
@@ -68,14 +68,45 @@ impl From<(U256, U256, U256)> for GasForTx {
 
 /// Gas data for L1 (Ethereum) transactions
 ///
-/// L1 transactions have a simple gas cost calculation:
-/// `total_cost = gas_used * effective_gas_price`
+/// L1 transactions have a gas cost calculation that may include blob gas (EIP-4844):
+/// `total_cost = (gas_used * effective_gas_price) + blob_gas_cost`
 #[derive(Debug, Clone)]
 pub struct L1Gas {
     /// Amount of gas consumed by the transaction
     pub gas_used: GasAmount,
     /// Effective gas price paid per unit of gas (in wei)
     pub effective_gas_price: GasPrice,
+    /// Number of blobs in this transaction (0 for non-EIP-4844)
+    pub blob_count: BlobCount,
+    /// Blob gas price (0 for non-EIP-4844)
+    pub blob_gas_price: BlobGasPrice,
+}
+
+impl L1Gas {
+    /// Calculate execution gas cost (gas_used * effective_gas_price)
+    pub fn execution_cost(&self) -> U256 {
+        self.gas_used * self.effective_gas_price
+    }
+
+    /// Calculate blob gas cost (blob_gas_used * blob_gas_price)
+    pub fn blob_cost(&self) -> U256 {
+        self.blob_gas_price.cost_for_blobs(self.blob_count)
+    }
+
+    /// Calculate total gas cost (execution + blob)
+    pub fn total_cost(&self) -> U256 {
+        self.execution_cost().saturating_add(self.blob_cost())
+    }
+
+    /// Convert to GasBreakdown for detailed analysis
+    pub fn to_breakdown(&self) -> GasBreakdown {
+        GasBreakdown::builder()
+            .execution_gas_cost(self.execution_cost())
+            .blob_gas_cost(self.blob_cost())
+            .blob_count(self.blob_count)
+            .blob_gas_price(self.blob_gas_price)
+            .build()
+    }
 }
 
 impl From<(U256, U256)> for L1Gas {
@@ -83,14 +114,34 @@ impl From<(U256, U256)> for L1Gas {
         Self {
             gas_used: GasAmount::from(gas_used),
             effective_gas_price: GasPrice::from(effective_gas_price),
+            blob_count: BlobCount::ZERO,
+            blob_gas_price: BlobGasPrice::ZERO,
+        }
+    }
+}
+
+impl From<(U256, U256, BlobCount, BlobGasPrice)> for L1Gas {
+    fn from(
+        (gas_used, effective_gas_price, blob_count, blob_gas_price): (
+            U256,
+            U256,
+            BlobCount,
+            BlobGasPrice,
+        ),
+    ) -> Self {
+        Self {
+            gas_used: GasAmount::from(gas_used),
+            effective_gas_price: GasPrice::from(effective_gas_price),
+            blob_count,
+            blob_gas_price,
         }
     }
 }
 
 /// Gas data for L2 (Optimism Stack) transactions
 ///
-/// L2 transactions have an additional L1 data fee component:
-/// `total_cost = (gas_used * effective_gas_price) + l1_data_fee`
+/// L2 transactions have an additional L1 data fee component and may include blob gas:
+/// `total_cost = (gas_used * effective_gas_price) + l1_data_fee + blob_gas_cost`
 ///
 /// The L1 data fee covers the cost of posting transaction data to the L1 chain.
 #[derive(Debug, Clone)]
@@ -101,6 +152,40 @@ pub struct L2Gas {
     pub effective_gas_price: GasPrice,
     /// L1 data fee for posting transaction to L1 chain
     pub l1_data_fee: L1DataFee,
+    /// Number of blobs in this transaction (0 for non-EIP-4844)
+    pub blob_count: BlobCount,
+    /// Blob gas price (0 for non-EIP-4844)
+    pub blob_gas_price: BlobGasPrice,
+}
+
+impl L2Gas {
+    /// Calculate execution gas cost (gas_used * effective_gas_price)
+    pub fn execution_cost(&self) -> U256 {
+        self.gas_used * self.effective_gas_price
+    }
+
+    /// Calculate blob gas cost (blob_gas_used * blob_gas_price)
+    pub fn blob_cost(&self) -> U256 {
+        self.blob_gas_price.cost_for_blobs(self.blob_count)
+    }
+
+    /// Calculate total gas cost (execution + blob + L1 data fee)
+    pub fn total_cost(&self) -> U256 {
+        self.execution_cost()
+            .saturating_add(self.blob_cost())
+            .saturating_add(self.l1_data_fee.as_u256())
+    }
+
+    /// Convert to GasBreakdown for detailed analysis
+    pub fn to_breakdown(&self) -> GasBreakdown {
+        GasBreakdown::builder()
+            .execution_gas_cost(self.execution_cost())
+            .blob_gas_cost(self.blob_cost())
+            .l1_data_fee(self.l1_data_fee.as_u256())
+            .blob_count(self.blob_count)
+            .blob_gas_price(self.blob_gas_price)
+            .build()
+    }
 }
 
 impl From<(U256, U256, U256)> for L2Gas {
@@ -109,6 +194,28 @@ impl From<(U256, U256, U256)> for L2Gas {
             gas_used: GasAmount::from(gas_used),
             effective_gas_price: GasPrice::from(effective_gas_price),
             l1_data_fee: L1DataFee::new(l1_data_fee),
+            blob_count: BlobCount::ZERO,
+            blob_gas_price: BlobGasPrice::ZERO,
+        }
+    }
+}
+
+impl From<(U256, U256, U256, BlobCount, BlobGasPrice)> for L2Gas {
+    fn from(
+        (gas_used, effective_gas_price, l1_data_fee, blob_count, blob_gas_price): (
+            U256,
+            U256,
+            U256,
+            BlobCount,
+            BlobGasPrice,
+        ),
+    ) -> Self {
+        Self {
+            gas_used: GasAmount::from(gas_used),
+            effective_gas_price: GasPrice::from(effective_gas_price),
+            l1_data_fee: L1DataFee::new(l1_data_fee),
+            blob_count,
+            blob_gas_price,
         }
     }
 }
@@ -116,7 +223,7 @@ impl From<(U256, U256, U256)> for L2Gas {
 /// Result of gas cost calculation over a block range
 ///
 /// Contains the total gas costs paid for all transactions from one address to another,
-/// along with the number of transactions processed.
+/// along with the number of transactions processed and a detailed gas breakdown.
 ///
 /// # Units
 ///
@@ -126,6 +233,11 @@ impl From<(U256, U256, U256)> for L2Gas {
 ///
 /// For L2 chains (Arbitrum, Base, Optimism, etc.), the `total_gas_cost` automatically
 /// includes both L2 execution gas and L1 data fees.
+///
+/// # EIP-4844 Blob Gas
+///
+/// For transactions with blobs, the `breakdown` field separates blob gas costs from
+/// execution gas costs, allowing detailed analysis of EIP-4844 transaction costs.
 #[derive(Default, Debug, Clone, Serialize)]
 pub struct GasCostResult {
     /// Chain where the transactions occurred
@@ -134,10 +246,12 @@ pub struct GasCostResult {
     pub from: Address,
     /// Address that received the transactions
     pub to: Address,
-    /// Total gas cost in wei (includes L1 data fees for L2 chains)
+    /// Total gas cost in wei (includes L1 data fees for L2 chains and blob gas)
     pub total_gas_cost: WeiAmount,
     /// Number of transactions processed
     pub transaction_count: TransactionCount,
+    /// Detailed breakdown of gas costs (execution vs blob vs L1 data)
+    pub breakdown: GasBreakdown,
 }
 
 impl GasCostResult {
@@ -148,34 +262,36 @@ impl GasCostResult {
             chain,
             total_gas_cost: WeiAmount::ZERO,
             transaction_count: TransactionCount::ZERO,
+            breakdown: GasBreakdown::new(),
         }
     }
 
     pub fn add_l1_fee(&mut self, l1_fee: L1DataFee) {
         self.total_gas_cost = self.total_gas_cost + WeiAmount::from(l1_fee.as_u256());
+        self.breakdown.l1_data_fee = self.breakdown.l1_data_fee.saturating_add(l1_fee.as_u256());
     }
 
     /// Add a transaction to the gas cost result
     ///
     /// This will add the gas cost for the transaction to the total gas cost
-    /// and increment the transaction count.
+    /// and increment the transaction count. The breakdown is automatically updated
+    /// to separate execution gas, blob gas, and L1 data fees.
     ///
-    /// If the transaction is an L2 transaction, it will add the L1 data fee to the total gas cost.
-    ///
-    /// If the transaction is an L1 transaction, it will add the gas cost for the transaction to the total gas cost
-    /// and increment the transaction count.
+    /// For EIP-4844 transactions, blob gas costs are tracked separately in the breakdown.
     pub fn add_transaction(&mut self, gas: GasForTx) {
         match gas {
-            GasForTx::L1(gas) => {
-                let gas_cost = gas.gas_used * gas.effective_gas_price;
-                self.total_gas_cost = self.total_gas_cost + WeiAmount::from(gas_cost);
+            GasForTx::L1(ref g) => {
+                let tx_breakdown = g.to_breakdown();
+                self.total_gas_cost =
+                    self.total_gas_cost + WeiAmount::from(tx_breakdown.total_cost());
+                self.breakdown.merge(&tx_breakdown);
                 self.transaction_count.increment();
             }
-            GasForTx::L2(gas) => {
-                let l2_gas_cost = gas.gas_used * gas.effective_gas_price;
-                let l1_data_fee = gas.l1_data_fee.as_u256();
-                let total_gas_cost = l2_gas_cost.saturating_add(l1_data_fee);
-                self.total_gas_cost = self.total_gas_cost + WeiAmount::from(total_gas_cost);
+            GasForTx::L2(ref g) => {
+                let tx_breakdown = g.to_breakdown();
+                self.total_gas_cost =
+                    self.total_gas_cost + WeiAmount::from(tx_breakdown.total_cost());
+                self.breakdown.merge(&tx_breakdown);
                 self.transaction_count.increment();
             }
         }
@@ -185,6 +301,32 @@ impl GasCostResult {
     pub fn merge(&mut self, other: &Self) {
         self.total_gas_cost = self.total_gas_cost + other.total_gas_cost;
         self.transaction_count += other.transaction_count;
+        self.breakdown.merge(&other.breakdown);
+    }
+
+    /// Check if any transactions in this result used blob gas (EIP-4844)
+    pub fn has_blob_transactions(&self) -> bool {
+        self.breakdown.has_blob_gas()
+    }
+
+    /// Get total blob gas cost across all transactions
+    pub fn total_blob_gas_cost(&self) -> U256 {
+        self.breakdown.blob_gas_cost
+    }
+
+    /// Get total execution gas cost (excluding blob gas and L1 data fees)
+    pub fn total_execution_gas_cost(&self) -> U256 {
+        self.breakdown.execution_gas_cost
+    }
+
+    /// Get total L1 data fee (for L2 chains)
+    pub fn total_l1_data_fee(&self) -> U256 {
+        self.breakdown.l1_data_fee
+    }
+
+    /// Get total blob count across all transactions
+    pub fn total_blob_count(&self) -> BlobCount {
+        self.breakdown.blob_count
     }
 
     /// Get the total gas cost formatted as a string
@@ -268,6 +410,8 @@ mod tests {
         result.add_transaction(GasForTx::L1(L1Gas {
             gas_used: GasAmount::new(21000),
             effective_gas_price: GasPrice::from_gwei(50),
+            blob_count: BlobCount::ZERO,
+            blob_gas_price: BlobGasPrice::ZERO,
         }));
 
         assert_eq!(result.transaction_count, TransactionCount::new(1));
@@ -280,6 +424,8 @@ mod tests {
         result.add_transaction(GasForTx::L1(L1Gas {
             gas_used: GasAmount::new(100000),
             effective_gas_price: GasPrice::from_gwei(60),
+            blob_count: BlobCount::ZERO,
+            blob_gas_price: BlobGasPrice::ZERO,
         }));
 
         assert_eq!(result.transaction_count, TransactionCount::new(2));
@@ -288,6 +434,47 @@ mod tests {
             result.total_gas_cost,
             WeiAmount::from(7_050_000_000_000_000u64)
         );
+        // Verify breakdown tracks execution gas correctly
+        assert_eq!(
+            result.breakdown.execution_gas_cost,
+            U256::from(7_050_000_000_000_000u64)
+        );
+        assert_eq!(result.breakdown.blob_gas_cost, U256::ZERO);
+    }
+
+    #[test]
+    fn test_gas_cost_result_add_transaction_l1_with_blobs() {
+        let from = address!("1111111111111111111111111111111111111111");
+        let to = address!("2222222222222222222222222222222222222222");
+        let mut result = GasCostResult::new(NamedChain::Mainnet, from, to);
+
+        // Add EIP-4844 transaction: 21000 gas at 50 gwei + 2 blobs at 1 gwei
+        // Execution: 21000 * 50 gwei = 1,050,000,000,000,000 wei
+        // Blob: 2 * 131072 * 1 gwei = 262,144,000,000,000 wei
+        // Total: 1,312,144,000,000,000 wei
+        result.add_transaction(GasForTx::L1(L1Gas {
+            gas_used: GasAmount::new(21000),
+            effective_gas_price: GasPrice::from_gwei(50),
+            blob_count: BlobCount::new(2),
+            blob_gas_price: BlobGasPrice::from_gwei(1),
+        }));
+
+        assert_eq!(result.transaction_count, TransactionCount::new(1));
+        assert_eq!(
+            result.total_gas_cost,
+            WeiAmount::from(1_312_144_000_000_000u64)
+        );
+        // Verify breakdown separates execution and blob gas
+        assert_eq!(
+            result.breakdown.execution_gas_cost,
+            U256::from(1_050_000_000_000_000u64)
+        );
+        assert_eq!(
+            result.breakdown.blob_gas_cost,
+            U256::from(262_144_000_000_000u64)
+        );
+        assert_eq!(result.breakdown.blob_count, BlobCount::new(2));
+        assert!(result.has_blob_transactions());
     }
 
     #[test]
@@ -301,6 +488,8 @@ mod tests {
             gas_used: GasAmount::new(150000),
             effective_gas_price: GasPrice::new(100_000_000), // 0.1 gwei
             l1_data_fee: L1DataFee::new(U256::from(5_000_000_000_000_000u64)), // 0.005 ETH
+            blob_count: BlobCount::ZERO,
+            blob_gas_price: BlobGasPrice::ZERO,
         }));
 
         assert_eq!(result.transaction_count, TransactionCount::new(1));
@@ -310,6 +499,15 @@ mod tests {
         assert_eq!(
             result.total_gas_cost,
             WeiAmount::from(5_015_000_000_000_000u64)
+        );
+        // Verify breakdown tracks L1 data fee correctly
+        assert_eq!(
+            result.breakdown.l1_data_fee,
+            U256::from(5_000_000_000_000_000u64)
+        );
+        assert_eq!(
+            result.breakdown.execution_gas_cost,
+            U256::from(15_000_000_000_000u64)
         );
     }
 
@@ -324,6 +522,9 @@ mod tests {
             to,
             total_gas_cost: WeiAmount::from(1_000_000_000_000_000u64),
             transaction_count: TransactionCount::new(5),
+            breakdown: GasBreakdown::builder()
+                .execution_gas_cost(U256::from(1_000_000_000_000_000u64))
+                .build(),
         };
 
         let result2 = GasCostResult {
@@ -332,6 +533,9 @@ mod tests {
             to,
             total_gas_cost: WeiAmount::from(500_000_000_000_000u64),
             transaction_count: TransactionCount::new(3),
+            breakdown: GasBreakdown::builder()
+                .execution_gas_cost(U256::from(500_000_000_000_000u64))
+                .build(),
         };
 
         result1.merge(&result2);
@@ -342,6 +546,11 @@ mod tests {
             WeiAmount::from(1_500_000_000_000_000u64)
         );
         assert_eq!(result1.transaction_count, TransactionCount::new(8));
+        // Verify breakdown is also merged
+        assert_eq!(
+            result1.breakdown.execution_gas_cost,
+            U256::from(1_500_000_000_000_000u64)
+        );
     }
 
     #[test]
@@ -355,6 +564,9 @@ mod tests {
             to,
             total_gas_cost: WeiAmount::from(1_000_000u64),
             transaction_count: TransactionCount::new(5),
+            breakdown: GasBreakdown::builder()
+                .execution_gas_cost(U256::from(1_000_000u64))
+                .build(),
         };
 
         let empty = GasCostResult::new(NamedChain::Mainnet, from, to);
@@ -379,6 +591,8 @@ mod tests {
         result.add_transaction(GasForTx::L1(L1Gas {
             gas_used: GasAmount::new(1000000),
             effective_gas_price: GasPrice::new(1000000),
+            blob_count: BlobCount::ZERO,
+            blob_gas_price: BlobGasPrice::ZERO,
         }));
 
         // Should saturate at U256::MAX, not wrap around
@@ -397,6 +611,7 @@ mod tests {
             to,
             total_gas_cost: WeiAmount::from(U256::MAX - U256::from(100u64)),
             transaction_count: TransactionCount::new(5),
+            breakdown: GasBreakdown::new(),
         };
 
         let result2 = GasCostResult {
@@ -405,6 +620,7 @@ mod tests {
             to,
             total_gas_cost: WeiAmount::from(500u64),
             transaction_count: TransactionCount::new(3),
+            breakdown: GasBreakdown::new(),
         };
 
         result1.merge(&result2);
@@ -438,11 +654,20 @@ mod tests {
             result.total_gas_cost,
             WeiAmount::from(1_000_000_000_000_000u64)
         );
+        // Verify breakdown tracks L1 fees
+        assert_eq!(
+            result.breakdown.l1_data_fee,
+            U256::from(1_000_000_000_000_000u64)
+        );
 
         result.add_l1_fee(L1DataFee::new(U256::from(500_000_000_000_000u64)));
         assert_eq!(
             result.total_gas_cost,
             WeiAmount::from(1_500_000_000_000_000u64)
+        );
+        assert_eq!(
+            result.breakdown.l1_data_fee,
+            U256::from(1_500_000_000_000_000u64)
         );
     }
 

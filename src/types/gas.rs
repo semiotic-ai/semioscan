@@ -282,7 +282,7 @@ mod tests {
 /// let count = BlobCount::new(2);
 /// assert_eq!(count.as_usize(), 2);
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct BlobCount(usize);
 
@@ -425,6 +425,266 @@ impl std::fmt::Display for BlobGasAmount {
     }
 }
 
+/// Blob gas price in wei per unit of blob gas (EIP-4844)
+///
+/// This represents the price paid per unit of blob gas, which is separate
+/// from regular execution gas pricing. The blob base fee follows its own
+/// EIP-4844 pricing mechanism based on blob supply and demand.
+///
+/// # Example
+/// ```
+/// use alloy_primitives::U256;
+/// use semioscan::BlobGasPrice;
+///
+/// let price = BlobGasPrice::new(U256::from(1_000_000)); // ~1 gwei
+/// let blob_gas = U256::from(131_072); // 1 blob
+/// let cost = price.cost_for_gas(blob_gas);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
+#[serde(transparent)]
+pub struct BlobGasPrice(U256);
+
+impl BlobGasPrice {
+    /// Zero blob gas price
+    pub const ZERO: Self = Self(U256::ZERO);
+
+    /// Create a new blob gas price from wei
+    pub const fn new(price_wei: U256) -> Self {
+        Self(price_wei)
+    }
+
+    /// Create from gwei (convenience constructor)
+    pub fn from_gwei(gwei: u64) -> Self {
+        Self(U256::from(gwei).saturating_mul(U256::from(1_000_000_000u64)))
+    }
+
+    /// Get the inner U256 value (in wei)
+    pub const fn as_u256(&self) -> U256 {
+        self.0
+    }
+
+    /// Calculate cost for a given amount of blob gas
+    ///
+    /// Uses saturating multiplication to prevent overflow.
+    pub fn cost_for_gas(&self, blob_gas: U256) -> U256 {
+        self.0.saturating_mul(blob_gas)
+    }
+
+    /// Calculate cost for a specific blob count
+    pub fn cost_for_blobs(&self, count: BlobCount) -> U256 {
+        self.cost_for_gas(count.to_blob_gas_amount().as_u256())
+    }
+
+    /// Convert to gwei as f64 (lossy, for display purposes)
+    pub fn as_gwei_f64(&self) -> f64 {
+        let gwei_divisor = 1_000_000_000u64;
+        let whole_gwei = self.0 / U256::from(gwei_divisor);
+        whole_gwei.to_string().parse::<f64>().unwrap_or(0.0)
+    }
+}
+
+impl From<u64> for BlobGasPrice {
+    fn from(value: u64) -> Self {
+        Self(U256::from(value))
+    }
+}
+
+impl From<u128> for BlobGasPrice {
+    fn from(value: u128) -> Self {
+        Self(U256::from(value))
+    }
+}
+
+impl From<U256> for BlobGasPrice {
+    fn from(value: U256) -> Self {
+        Self(value)
+    }
+}
+
+impl std::fmt::Display for BlobGasPrice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let gwei = self.as_gwei_f64();
+        if gwei >= 1.0 {
+            write!(f, "{gwei:.4} gwei (blob)")
+        } else {
+            write!(f, "{} wei (blob)", self.0)
+        }
+    }
+}
+
+/// Detailed breakdown of gas costs for a transaction
+///
+/// Separates execution gas, blob gas, and L1 data fees for comprehensive
+/// analytics and cost attribution.
+///
+/// # Example
+/// ```
+/// use alloy_primitives::U256;
+/// use semioscan::{GasBreakdown, BlobGasPrice};
+///
+/// let breakdown = GasBreakdown::builder()
+///     .execution_gas_cost(U256::from(1_000_000_000_000_000u64))
+///     .blob_gas_cost(U256::from(500_000_000_000_000u64))
+///     .build();
+///
+/// assert_eq!(
+///     breakdown.total_cost(),
+///     U256::from(1_500_000_000_000_000u64)
+/// );
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct GasBreakdown {
+    /// Cost for regular execution gas (gas_used * effective_gas_price)
+    pub execution_gas_cost: U256,
+    /// Cost for blob gas (blob_gas_used * blob_gas_price) - EIP-4844 only
+    pub blob_gas_cost: U256,
+    /// L1 data fee for OP-stack chains (Optimism, Base, etc.)
+    pub l1_data_fee: U256,
+    /// Number of blobs in the transaction (0 for non-EIP-4844)
+    pub blob_count: BlobCount,
+    /// Blob gas price used for this transaction
+    pub blob_gas_price: BlobGasPrice,
+}
+
+impl GasBreakdown {
+    /// Create a new empty gas breakdown
+    pub const fn new() -> Self {
+        Self {
+            execution_gas_cost: U256::ZERO,
+            blob_gas_cost: U256::ZERO,
+            l1_data_fee: U256::ZERO,
+            blob_count: BlobCount::ZERO,
+            blob_gas_price: BlobGasPrice::ZERO,
+        }
+    }
+
+    /// Create a builder for constructing a gas breakdown
+    pub fn builder() -> GasBreakdownBuilder {
+        GasBreakdownBuilder::new()
+    }
+
+    /// Calculate total cost (execution + blob + L1 data fee)
+    pub fn total_cost(&self) -> U256 {
+        self.execution_gas_cost
+            .saturating_add(self.blob_gas_cost)
+            .saturating_add(self.l1_data_fee)
+    }
+
+    /// Check if this transaction used blob gas (is EIP-4844)
+    pub fn has_blob_gas(&self) -> bool {
+        self.blob_count.as_usize() > 0
+    }
+
+    /// Check if this transaction has L1 data fees (is on an L2)
+    pub fn has_l1_data_fee(&self) -> bool {
+        self.l1_data_fee > U256::ZERO
+    }
+
+    /// Merge another breakdown into this one (for aggregation)
+    pub fn merge(&mut self, other: &Self) {
+        self.execution_gas_cost = self
+            .execution_gas_cost
+            .saturating_add(other.execution_gas_cost);
+        self.blob_gas_cost = self.blob_gas_cost.saturating_add(other.blob_gas_cost);
+        self.l1_data_fee = self.l1_data_fee.saturating_add(other.l1_data_fee);
+        // For merged results, blob_count represents total blobs across all txs
+        self.blob_count = BlobCount::new(
+            self.blob_count
+                .as_usize()
+                .saturating_add(other.blob_count.as_usize()),
+        );
+        // blob_gas_price doesn't aggregate meaningfully, keep the last non-zero value
+        if other.blob_gas_price.as_u256() > U256::ZERO {
+            self.blob_gas_price = other.blob_gas_price;
+        }
+    }
+}
+
+impl Add for GasBreakdown {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        let mut result = self;
+        result.merge(&rhs);
+        result
+    }
+}
+
+impl std::fmt::Display for GasBreakdown {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "execution: {} wei", self.execution_gas_cost)?;
+        if self.has_blob_gas() {
+            write!(
+                f,
+                ", blob: {} wei ({} @ {})",
+                self.blob_gas_cost, self.blob_count, self.blob_gas_price
+            )?;
+        }
+        if self.has_l1_data_fee() {
+            write!(f, ", L1 data: {} wei", self.l1_data_fee)?;
+        }
+        write!(f, ", total: {} wei", self.total_cost())
+    }
+}
+
+/// Builder for constructing GasBreakdown instances
+#[derive(Debug, Default)]
+pub struct GasBreakdownBuilder {
+    execution_gas_cost: U256,
+    blob_gas_cost: U256,
+    l1_data_fee: U256,
+    blob_count: BlobCount,
+    blob_gas_price: BlobGasPrice,
+}
+
+impl GasBreakdownBuilder {
+    /// Create a new builder
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the execution gas cost
+    pub fn execution_gas_cost(mut self, cost: U256) -> Self {
+        self.execution_gas_cost = cost;
+        self
+    }
+
+    /// Set the blob gas cost
+    pub fn blob_gas_cost(mut self, cost: U256) -> Self {
+        self.blob_gas_cost = cost;
+        self
+    }
+
+    /// Set the L1 data fee
+    pub fn l1_data_fee(mut self, fee: U256) -> Self {
+        self.l1_data_fee = fee;
+        self
+    }
+
+    /// Set the blob count
+    pub fn blob_count(mut self, count: BlobCount) -> Self {
+        self.blob_count = count;
+        self
+    }
+
+    /// Set the blob gas price
+    pub fn blob_gas_price(mut self, price: BlobGasPrice) -> Self {
+        self.blob_gas_price = price;
+        self
+    }
+
+    /// Build the GasBreakdown
+    pub fn build(self) -> GasBreakdown {
+        GasBreakdown {
+            execution_gas_cost: self.execution_gas_cost,
+            blob_gas_cost: self.blob_gas_cost,
+            l1_data_fee: self.l1_data_fee,
+            blob_count: self.blob_count,
+            blob_gas_price: self.blob_gas_price,
+        }
+    }
+}
+
 #[cfg(test)]
 mod blob_tests {
     use super::*;
@@ -559,5 +819,167 @@ mod blob_tests {
         let json = serde_json::to_string(&gas).unwrap();
         let deserialized: BlobGasAmount = serde_json::from_str(&json).unwrap();
         assert_eq!(gas, deserialized);
+    }
+
+    #[test]
+    fn test_blob_gas_price_creation() {
+        let price = BlobGasPrice::new(U256::from(1_000_000_000)); // 1 gwei
+        assert_eq!(price.as_u256(), U256::from(1_000_000_000));
+    }
+
+    #[test]
+    fn test_blob_gas_price_from_gwei() {
+        let price = BlobGasPrice::from_gwei(25);
+        assert_eq!(price.as_u256(), U256::from(25_000_000_000u64));
+    }
+
+    #[test]
+    fn test_blob_gas_price_cost_for_gas() {
+        let price = BlobGasPrice::from_gwei(1); // 1 gwei
+        let blob_gas = U256::from(131_072); // 1 blob worth
+        let cost = price.cost_for_gas(blob_gas);
+        // 1 gwei * 131072 = 131072 gwei = 131,072,000,000,000 wei
+        assert_eq!(cost, U256::from(131_072_000_000_000u64));
+    }
+
+    #[test]
+    fn test_blob_gas_price_cost_for_blobs() {
+        let price = BlobGasPrice::from_gwei(1);
+        let cost = price.cost_for_blobs(BlobCount::new(2));
+        // 2 blobs = 262144 blob gas, at 1 gwei = 262,144,000,000,000 wei
+        assert_eq!(cost, U256::from(262_144_000_000_000u64));
+    }
+
+    #[test]
+    fn test_blob_gas_price_display() {
+        let price = BlobGasPrice::from_gwei(25);
+        let display = format!("{price}");
+        assert!(display.contains("gwei"));
+        assert!(display.contains("blob"));
+
+        let small_price = BlobGasPrice::new(U256::from(100));
+        let display = format!("{small_price}");
+        assert!(display.contains("wei"));
+    }
+
+    #[test]
+    fn test_blob_gas_price_serialization() {
+        let price = BlobGasPrice::from_gwei(10);
+        let json = serde_json::to_string(&price).unwrap();
+        let deserialized: BlobGasPrice = serde_json::from_str(&json).unwrap();
+        assert_eq!(price, deserialized);
+    }
+
+    #[test]
+    fn test_gas_breakdown_new() {
+        let breakdown = GasBreakdown::new();
+        assert_eq!(breakdown.execution_gas_cost, U256::ZERO);
+        assert_eq!(breakdown.blob_gas_cost, U256::ZERO);
+        assert_eq!(breakdown.l1_data_fee, U256::ZERO);
+        assert_eq!(breakdown.blob_count, BlobCount::ZERO);
+        assert_eq!(breakdown.total_cost(), U256::ZERO);
+    }
+
+    #[test]
+    fn test_gas_breakdown_builder() {
+        let breakdown = GasBreakdown::builder()
+            .execution_gas_cost(U256::from(1_000_000u64))
+            .blob_gas_cost(U256::from(500_000u64))
+            .l1_data_fee(U256::from(200_000u64))
+            .blob_count(BlobCount::new(2))
+            .blob_gas_price(BlobGasPrice::from_gwei(1))
+            .build();
+
+        assert_eq!(breakdown.execution_gas_cost, U256::from(1_000_000u64));
+        assert_eq!(breakdown.blob_gas_cost, U256::from(500_000u64));
+        assert_eq!(breakdown.l1_data_fee, U256::from(200_000u64));
+        assert_eq!(breakdown.blob_count, BlobCount::new(2));
+        assert_eq!(breakdown.total_cost(), U256::from(1_700_000u64));
+    }
+
+    #[test]
+    fn test_gas_breakdown_has_blob_gas() {
+        let without_blobs = GasBreakdown::new();
+        assert!(!without_blobs.has_blob_gas());
+
+        let with_blobs = GasBreakdown::builder()
+            .blob_count(BlobCount::new(1))
+            .build();
+        assert!(with_blobs.has_blob_gas());
+    }
+
+    #[test]
+    fn test_gas_breakdown_has_l1_data_fee() {
+        let without_l1 = GasBreakdown::new();
+        assert!(!without_l1.has_l1_data_fee());
+
+        let with_l1 = GasBreakdown::builder()
+            .l1_data_fee(U256::from(100u64))
+            .build();
+        assert!(with_l1.has_l1_data_fee());
+    }
+
+    #[test]
+    fn test_gas_breakdown_merge() {
+        let mut breakdown1 = GasBreakdown::builder()
+            .execution_gas_cost(U256::from(1_000u64))
+            .blob_gas_cost(U256::from(500u64))
+            .blob_count(BlobCount::new(1))
+            .build();
+
+        let breakdown2 = GasBreakdown::builder()
+            .execution_gas_cost(U256::from(2_000u64))
+            .blob_gas_cost(U256::from(1_000u64))
+            .blob_count(BlobCount::new(2))
+            .build();
+
+        breakdown1.merge(&breakdown2);
+
+        assert_eq!(breakdown1.execution_gas_cost, U256::from(3_000u64));
+        assert_eq!(breakdown1.blob_gas_cost, U256::from(1_500u64));
+        assert_eq!(breakdown1.blob_count, BlobCount::new(3));
+    }
+
+    #[test]
+    fn test_gas_breakdown_add() {
+        let breakdown1 = GasBreakdown::builder()
+            .execution_gas_cost(U256::from(1_000u64))
+            .build();
+
+        let breakdown2 = GasBreakdown::builder()
+            .execution_gas_cost(U256::from(2_000u64))
+            .build();
+
+        let result = breakdown1 + breakdown2;
+        assert_eq!(result.execution_gas_cost, U256::from(3_000u64));
+    }
+
+    #[test]
+    fn test_gas_breakdown_display() {
+        let breakdown = GasBreakdown::builder()
+            .execution_gas_cost(U256::from(1_000_000u64))
+            .blob_gas_cost(U256::from(500_000u64))
+            .blob_count(BlobCount::new(2))
+            .blob_gas_price(BlobGasPrice::from_gwei(1))
+            .l1_data_fee(U256::from(200_000u64))
+            .build();
+
+        let display = format!("{breakdown}");
+        assert!(display.contains("execution"));
+        assert!(display.contains("blob"));
+        assert!(display.contains("L1 data"));
+        assert!(display.contains("total"));
+    }
+
+    #[test]
+    fn test_gas_breakdown_serialization() {
+        let breakdown = GasBreakdown::builder()
+            .execution_gas_cost(U256::from(1_000_000u64))
+            .blob_gas_cost(U256::from(500_000u64))
+            .build();
+
+        let json = serde_json::to_string(&breakdown).unwrap();
+        let deserialized: GasBreakdown = serde_json::from_str(&json).unwrap();
+        assert_eq!(breakdown, deserialized);
     }
 }
