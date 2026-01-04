@@ -43,7 +43,7 @@ use alloy_primitives::BlockNumber;
 use alloy_provider::Provider;
 use alloy_rpc_types::{Filter, Log};
 use tokio::time::sleep;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::config::SemioscanConfig;
 use crate::errors::EventProcessingError;
@@ -154,7 +154,7 @@ impl<P: Provider> EventScanner<P> {
         start_block: BlockNumber,
         end_block: BlockNumber,
     ) -> Result<Vec<Log>, EventProcessingError> {
-        info!(
+        debug!(
             chain = %chain,
             start_block = start_block,
             end_block = end_block,
@@ -188,7 +188,7 @@ impl<P: Provider> EventScanner<P> {
 
             match self.provider.get_logs(&filter).await {
                 Ok(logs) => {
-                    info!(
+                    debug!(
                         logs_count = logs.len(),
                         current_block = current_block,
                         to_block = to_block,
@@ -222,7 +222,7 @@ impl<P: Provider> EventScanner<P> {
             }
         }
 
-        info!(
+        debug!(
             chain = %chain,
             total_logs = all_logs.len(),
             "Finished event scan"
@@ -279,7 +279,7 @@ impl<P: Provider> EventScanner<P> {
         F: FnMut(Vec<Log>) -> Fut,
         Fut: std::future::Future<Output = Result<(), EventProcessingError>>,
     {
-        info!(
+        debug!(
             chain = %chain,
             start_block = start_block,
             end_block = end_block,
@@ -304,7 +304,7 @@ impl<P: Provider> EventScanner<P> {
 
             match self.provider.get_logs(&filter).await {
                 Ok(logs) => {
-                    info!(
+                    debug!(
                         logs_count = logs.len(),
                         current_block = current_block,
                         to_block = to_block,
@@ -335,7 +335,7 @@ impl<P: Provider> EventScanner<P> {
             }
         }
 
-        info!(chain = %chain, "Finished event scan with handler");
+        debug!(chain = %chain, "Finished event scan with handler");
 
         Ok(())
     }
