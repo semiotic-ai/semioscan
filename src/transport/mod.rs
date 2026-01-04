@@ -7,6 +7,9 @@
 //! This module provides Tower-based middleware layers for customizing
 //! the RPC transport behavior of Alloy providers.
 //!
+//! Note: RPC request/response logging is handled natively by alloy's transport
+//! layer at DEBUG/TRACE level.
+//!
 //! # Rate Limiting
 //!
 //! The [`RateLimitLayer`] provides configurable rate limiting for RPC requests,
@@ -44,10 +47,8 @@
 //! };
 //! ```
 
-mod logging;
 mod rate_limit;
 mod retry;
 
-pub use logging::{LoggingLayer, LoggingService};
 pub use rate_limit::{RateLimitLayer, RateLimitService};
 pub use retry::{RetryConfig, RetryLayer, RetryLayerBuilder, RetryService};

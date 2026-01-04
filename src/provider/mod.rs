@@ -237,12 +237,13 @@ impl<P> std::ops::Deref for ChainAwareProvider<P> {
 /// let provider = ProviderBuilder::new()
 ///     .http("https://eth.llamarpc.com")
 ///     .with_rate_limit(10)
-///     .with_logging()
 ///     .build()?;
 /// ```
+///
+/// Note: RPC request/response logging is handled natively by alloy's transport
+/// layer at DEBUG/TRACE level.
 pub struct DynProviderBuilder {
     rate_limit_per_second: Option<u32>,
-    enable_logging: bool,
     timeout_ms: Option<u64>,
 }
 
@@ -258,7 +259,6 @@ impl DynProviderBuilder {
     pub fn new() -> Self {
         Self {
             rate_limit_per_second: None,
-            enable_logging: false,
             timeout_ms: None,
         }
     }
@@ -267,13 +267,6 @@ impl DynProviderBuilder {
     #[must_use]
     pub fn with_rate_limit(mut self, requests_per_second: u32) -> Self {
         self.rate_limit_per_second = Some(requests_per_second);
-        self
-    }
-
-    /// Enable request/response logging
-    #[must_use]
-    pub fn with_logging(mut self) -> Self {
-        self.enable_logging = true;
         self
     }
 
@@ -294,9 +287,7 @@ impl DynProviderBuilder {
         url: &str,
         chain: NamedChain,
     ) -> Result<ChainAwareProvider<AnyHttpProvider>, crate::errors::RpcError> {
-        let config = ProviderConfig::new(url)
-            .with_rate_limit_opt(self.rate_limit_per_second)
-            .with_logging(self.enable_logging);
+        let config = ProviderConfig::new(url).with_rate_limit_opt(self.rate_limit_per_second);
 
         let provider = create_http_provider(config)?;
         Ok(ChainAwareProvider::new(provider, chain))
@@ -308,9 +299,7 @@ impl DynProviderBuilder {
     ///
     /// Returns an error if the URL is invalid
     pub fn build_http(self, url: &str) -> Result<AnyHttpProvider, crate::errors::RpcError> {
-        let config = ProviderConfig::new(url)
-            .with_rate_limit_opt(self.rate_limit_per_second)
-            .with_logging(self.enable_logging);
+        let config = ProviderConfig::new(url).with_rate_limit_opt(self.rate_limit_per_second);
 
         create_http_provider(config)
     }
@@ -401,7 +390,6 @@ mod tests {
     fn test_dyn_provider_builder_defaults() {
         let builder = DynProviderBuilder::new();
         assert!(builder.rate_limit_per_second.is_none());
-        assert!(!builder.enable_logging);
         assert!(builder.timeout_ms.is_none());
     }
 
@@ -409,11 +397,9 @@ mod tests {
     fn test_dyn_provider_builder_config() {
         let builder = DynProviderBuilder::new()
             .with_rate_limit(10)
-            .with_logging()
             .with_timeout_ms(5000);
 
         assert_eq!(builder.rate_limit_per_second, Some(10));
-        assert!(builder.enable_logging);
         assert_eq!(builder.timeout_ms, Some(5000));
     }
 }

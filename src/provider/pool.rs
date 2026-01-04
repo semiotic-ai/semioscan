@@ -86,7 +86,7 @@ use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::errors::RpcError;
-use crate::transport::{LoggingLayer, RateLimitLayer};
+use crate::transport::RateLimitLayer;
 
 /// Type alias for a pooled provider using `AnyNetwork`
 pub type PooledProvider = Arc<RootProvider<AnyNetwork>>;
@@ -107,8 +107,6 @@ pub struct ProviderPool {
     providers: RwLock<HashMap<NamedChain, PooledProvider>>,
     /// Default rate limit for new providers (requests per second)
     default_rate_limit: Option<u32>,
-    /// Whether to enable logging for new providers
-    enable_logging: bool,
 }
 
 impl ProviderPool {
@@ -118,17 +116,15 @@ impl ProviderPool {
         Self {
             providers: RwLock::new(HashMap::new()),
             default_rate_limit: None,
-            enable_logging: false,
         }
     }
 
-    /// Create a pool with default configuration for new providers
+    /// Create a pool with default rate limit for new providers
     #[must_use]
-    pub fn with_defaults(rate_limit: Option<u32>, enable_logging: bool) -> Self {
+    pub fn with_defaults(rate_limit: Option<u32>) -> Self {
         Self {
             providers: RwLock::new(HashMap::new()),
             default_rate_limit: rate_limit,
-            enable_logging,
         }
     }
 
@@ -141,7 +137,7 @@ impl ProviderPool {
         endpoints: Vec<ChainEndpoint>,
         rate_limit: Option<u32>,
     ) -> Result<Self, RpcError> {
-        let pool = Self::with_defaults(rate_limit, false);
+        let pool = Self::with_defaults(rate_limit);
         for endpoint in endpoints {
             pool.add(
                 endpoint.chain,
@@ -171,11 +167,7 @@ impl ProviderPool {
         url: &str,
         rate_limit: Option<u32>,
     ) -> Result<(), RpcError> {
-        let provider = create_pooled_provider(
-            url,
-            rate_limit.or(self.default_rate_limit),
-            self.enable_logging,
-        )?;
+        let provider = create_pooled_provider(url, rate_limit.or(self.default_rate_limit))?;
 
         let mut providers = self.providers.write().map_err(|_| {
             RpcError::ProviderConnectionFailed("Provider pool lock poisoned".to_string())
@@ -284,7 +276,6 @@ impl ProviderPool {
 pub struct ProviderPoolBuilder {
     endpoints: Vec<ChainEndpoint>,
     default_rate_limit: Option<u32>,
-    enable_logging: bool,
 }
 
 impl ProviderPoolBuilder {
@@ -328,20 +319,13 @@ impl ProviderPoolBuilder {
         self
     }
 
-    /// Enable logging for all providers
-    #[must_use]
-    pub fn with_logging(mut self) -> Self {
-        self.enable_logging = true;
-        self
-    }
-
     /// Build the provider pool
     ///
     /// # Errors
     ///
     /// Returns an error if any endpoint URL is invalid
     pub fn build(self) -> Result<ProviderPool, RpcError> {
-        let pool = ProviderPool::with_defaults(self.default_rate_limit, self.enable_logging);
+        let pool = ProviderPool::with_defaults(self.default_rate_limit);
 
         for endpoint in self.endpoints {
             pool.add(
@@ -421,33 +405,28 @@ impl ChainEndpoint {
     }
 }
 
-/// Create a pooled provider with optional rate limiting and logging
+/// Create a pooled provider with optional rate limiting
 ///
 /// Returns a bare `RootProvider` without fillers, as fillers are typically
 /// application-specific and should be added by the consumer if needed.
+///
+/// Note: RPC request/response logging is handled natively by alloy's transport
+/// layer at DEBUG/TRACE level.
 fn create_pooled_provider(
     url: &str,
     rate_limit: Option<u32>,
-    enable_logging: bool,
 ) -> Result<RootProvider<AnyNetwork>, RpcError> {
     let parsed_url: url::Url = url.parse().map_err(|e| {
         warn!(url = url, error = ?e, "Invalid provider URL");
         RpcError::ProviderUrlInvalid(url.to_string())
     })?;
 
-    // Build the RPC client with optional layers
-    let client = match (rate_limit, enable_logging) {
-        (Some(limit), true) => alloy_rpc_client::ClientBuilder::default()
-            .layer(LoggingLayer::new())
+    // Build the RPC client with optional rate limiting
+    let client = match rate_limit {
+        Some(limit) => alloy_rpc_client::ClientBuilder::default()
             .layer(RateLimitLayer::per_second(limit))
             .http(parsed_url),
-        (Some(limit), false) => alloy_rpc_client::ClientBuilder::default()
-            .layer(RateLimitLayer::per_second(limit))
-            .http(parsed_url),
-        (None, true) => alloy_rpc_client::ClientBuilder::default()
-            .layer(LoggingLayer::new())
-            .http(parsed_url),
-        (None, false) => alloy_rpc_client::ClientBuilder::default().http(parsed_url),
+        None => alloy_rpc_client::ClientBuilder::default().http(parsed_url),
     };
 
     // Create a bare provider without fillers - fillers are application-specific
@@ -473,9 +452,8 @@ mod tests {
 
     #[test]
     fn test_pool_with_defaults() {
-        let pool = ProviderPool::with_defaults(Some(10), true);
+        let pool = ProviderPool::with_defaults(Some(10));
         assert_eq!(pool.default_rate_limit, Some(10));
-        assert!(pool.enable_logging);
     }
 
     #[test]
@@ -495,12 +473,10 @@ mod tests {
         let builder = ProviderPoolBuilder::new()
             .add_chain(NamedChain::Mainnet, "https://eth.llamarpc.com")
             .add_chain_with_rate_limit(NamedChain::Base, "https://mainnet.base.org", 5)
-            .with_rate_limit(10)
-            .with_logging();
+            .with_rate_limit(10);
 
         assert_eq!(builder.endpoints.len(), 2);
         assert_eq!(builder.default_rate_limit, Some(10));
-        assert!(builder.enable_logging);
     }
 
     #[test]

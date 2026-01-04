@@ -9,7 +9,7 @@ use alloy_provider::ProviderBuilder;
 use alloy_rpc_client::ClientBuilder;
 
 use crate::errors::RpcError;
-use crate::transport::{LoggingLayer, RateLimitLayer};
+use crate::transport::RateLimitLayer;
 
 use super::config::ProviderConfig;
 use super::AnyHttpProvider;
@@ -22,8 +22,10 @@ use super::AnyHttpProvider;
 /// # Configuration Options
 ///
 /// - Rate limiting: Automatically throttles requests
-/// - Logging: Enables request/response logging via tracing
 /// - Timeout: Sets request timeout
+///
+/// Note: RPC request/response logging is handled natively by alloy's transport
+/// layer at DEBUG/TRACE level.
 ///
 /// # Examples
 ///
@@ -59,26 +61,9 @@ pub fn create_http_provider(config: ProviderConfig) -> Result<AnyHttpProvider, R
 
     // Build the provider based on configuration
     // We disable recommended fillers to return a RootProvider for maximum flexibility
-    match (
-        config.rate_limit_per_second,
-        config.min_delay,
-        config.logging_enabled,
-    ) {
-        // Rate limit + logging
-        (Some(rps), None, true) => {
-            let client = ClientBuilder::default()
-                .layer(LoggingLayer::new())
-                .layer(RateLimitLayer::per_second(rps))
-                .http(url);
-
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<AnyNetwork>()
-                .connect_client(client))
-        }
-
-        // Rate limit only
-        (Some(rps), None, false) => {
+    match (config.rate_limit_per_second, config.min_delay) {
+        // Rate limit
+        (Some(rps), None) => {
             let client = ClientBuilder::default()
                 .layer(RateLimitLayer::per_second(rps))
                 .http(url);
@@ -89,35 +74,10 @@ pub fn create_http_provider(config: ProviderConfig) -> Result<AnyHttpProvider, R
                 .connect_client(client))
         }
 
-        // Min delay + logging
-        (None, Some(delay), true) => {
-            let client = ClientBuilder::default()
-                .layer(LoggingLayer::new())
-                .layer(RateLimitLayer::with_min_delay(delay))
-                .http(url);
-
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<AnyNetwork>()
-                .connect_client(client))
-        }
-
-        // Min delay only
-        (None, Some(delay), false) => {
+        // Min delay
+        (None, Some(delay)) => {
             let client = ClientBuilder::default()
                 .layer(RateLimitLayer::with_min_delay(delay))
-                .http(url);
-
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<AnyNetwork>()
-                .connect_client(client))
-        }
-
-        // Logging only
-        (None, None, true) => {
-            let client = ClientBuilder::default()
-                .layer(LoggingLayer::new())
                 .http(url);
 
             Ok(ProviderBuilder::new()
@@ -127,20 +87,19 @@ pub fn create_http_provider(config: ProviderConfig) -> Result<AnyHttpProvider, R
         }
 
         // No layers
-        (None, None, false) => Ok(ProviderBuilder::new()
+        (None, None) => Ok(ProviderBuilder::new()
             .disable_recommended_fillers()
             .network::<AnyNetwork>()
             .connect_http(url)),
 
         // Both rate limit and min delay (prefer rate limit)
-        (Some(rps), Some(_), logging) => {
+        (Some(rps), Some(_)) => {
             tracing::warn!(
                 "Both rate_limit_per_second and min_delay specified, using rate_limit_per_second"
             );
             let config = ProviderConfig {
                 rate_limit_per_second: Some(rps),
                 min_delay: None,
-                logging_enabled: logging,
                 ..config
             };
             create_http_provider(config)
@@ -189,22 +148,8 @@ pub async fn create_ws_provider(
 
     // Build provider with optional layers
     // We disable recommended fillers to return a RootProvider
-    match (config.rate_limit_per_second, config.logging_enabled) {
-        (Some(rps), true) => {
-            let client = ClientBuilder::default()
-                .layer(LoggingLayer::new())
-                .layer(RateLimitLayer::per_second(rps))
-                .ws(ws)
-                .await
-                .map_err(|e| RpcError::ProviderConnectionFailed(e.to_string()))?;
-
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<AnyNetwork>()
-                .connect_client(client))
-        }
-
-        (Some(rps), false) => {
+    match config.rate_limit_per_second {
+        Some(rps) => {
             let client = ClientBuilder::default()
                 .layer(RateLimitLayer::per_second(rps))
                 .ws(ws)
@@ -217,20 +162,7 @@ pub async fn create_ws_provider(
                 .connect_client(client))
         }
 
-        (None, true) => {
-            let client = ClientBuilder::default()
-                .layer(LoggingLayer::new())
-                .ws(ws)
-                .await
-                .map_err(|e| RpcError::ProviderConnectionFailed(e.to_string()))?;
-
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<AnyNetwork>()
-                .connect_client(client))
-        }
-
-        (None, false) => ProviderBuilder::new()
+        None => ProviderBuilder::new()
             .disable_recommended_fillers()
             .network::<AnyNetwork>()
             .connect_ws(ws)
@@ -271,20 +203,8 @@ where
 
     // Build the provider based on configuration
     // We disable recommended fillers to return a RootProvider
-    match (config.rate_limit_per_second, config.logging_enabled) {
-        (Some(rps), true) => {
-            let client = ClientBuilder::default()
-                .layer(LoggingLayer::new())
-                .layer(RateLimitLayer::per_second(rps))
-                .http(url);
-
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<N>()
-                .connect_client(client))
-        }
-
-        (Some(rps), false) => {
+    match config.rate_limit_per_second {
+        Some(rps) => {
             let client = ClientBuilder::default()
                 .layer(RateLimitLayer::per_second(rps))
                 .http(url);
@@ -295,18 +215,7 @@ where
                 .connect_client(client))
         }
 
-        (None, true) => {
-            let client = ClientBuilder::default()
-                .layer(LoggingLayer::new())
-                .http(url);
-
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<N>()
-                .connect_client(client))
-        }
-
-        (None, false) => Ok(ProviderBuilder::new()
+        None => Ok(ProviderBuilder::new()
             .disable_recommended_fillers()
             .network::<N>()
             .connect_http(url)),
@@ -359,23 +268,6 @@ mod tests {
     fn test_create_http_provider_with_rate_limit() {
         let result =
             create_http_provider(ProviderConfig::new("http://localhost:8545").with_rate_limit(10));
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_create_http_provider_with_logging() {
-        let result =
-            create_http_provider(ProviderConfig::new("http://localhost:8545").with_logging(true));
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn test_create_http_provider_with_all_options() {
-        let result = create_http_provider(
-            ProviderConfig::new("http://localhost:8545")
-                .with_rate_limit(10)
-                .with_logging(true),
-        );
         assert!(result.is_ok());
     }
 

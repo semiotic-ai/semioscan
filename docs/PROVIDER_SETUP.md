@@ -13,6 +13,8 @@ This guide provides practical examples for setting up Alloy providers with Semio
 - [WebSocket Providers](#websocket-providers)
 - [Custom Filler Configuration](#custom-filler-configuration)
 
+> **Note:** RPC request/response logging is handled natively by alloy's transport layer at DEBUG/TRACE level. Enable it by setting your tracing subscriber level appropriately.
+
 ---
 
 ## Basic Provider Setup
@@ -137,45 +139,37 @@ let provider = create_http_provider(
 
 ## Logging and Tracing
 
-Add observability to RPC calls for debugging and monitoring.
+Alloy's transport layer provides native RPC request/response logging via tracing.
 
-### Using LoggingLayer
+### Enabling Native Logging
 
 ```rust
-use semioscan::LoggingLayer;
-use alloy_rpc_client::ClientBuilder;
-use alloy_provider::ProviderBuilder;
+use tracing_subscriber::{fmt, EnvFilter};
 
-// Basic logging (method names and timing)
-let layer = LoggingLayer::new();
+// Enable debug logging to see RPC requests
+tracing_subscriber::fmt()
+    .with_env_filter("alloy_transport=debug")
+    .init();
 
-// With request payload logging
-let layer = LoggingLayer::new().with_request_logging();
-
-// Verbose mode (full request/response payloads)
-let layer = LoggingLayer::new().verbose();
-
-let client = ClientBuilder::default()
-    .layer(layer)
-    .http("https://eth.llamarpc.com".parse()?);
-
-let provider = ProviderBuilder::new()
-    .connect_client(client);
-
-// Now all RPC calls are logged:
-// DEBUG rpc_call{method="eth_blockNumber"}: RPC request
-// DEBUG rpc_call{method="eth_blockNumber" duration_ms=42}: RPC response
+// Or for full request/response bodies, use trace level
+tracing_subscriber::fmt()
+    .with_env_filter("alloy_transport=trace")
+    .init();
 ```
 
-### Using ProviderConfig
+### What Gets Logged
 
-```rust
-use semioscan::{create_http_provider, ProviderConfig};
+At DEBUG level:
+- Request URL and span information
+- HTTP response status codes
 
-let provider = create_http_provider(
-    ProviderConfig::new("https://eth.llamarpc.com")
-        .with_logging(true)
-)?;
+At TRACE level:
+- Full response bodies
+
+### Example Output
+
+```
+DEBUG ReqwestTransport{url=https://eth.llamarpc.com}: received response from server status=200
 ```
 
 ---
@@ -231,17 +225,16 @@ Layer order matters! Outer layers wrap inner layers.
 ### Recommended Stack
 
 ```rust
-use semioscan::{LoggingLayer, RateLimitLayer, RetryLayer};
+use semioscan::{RateLimitLayer, RetryLayer};
 use alloy_rpc_client::ClientBuilder;
 use alloy_provider::ProviderBuilder;
 
 // Recommended layer order (outer to inner):
-// 1. Logging - logs all requests/responses
-// 2. Retry - retries failed requests
-// 3. Rate Limit - enforces rate limits
+// 1. Retry - retries failed requests
+// 2. Rate Limit - enforces rate limits
+// Note: Logging is handled natively by alloy at DEBUG/TRACE level
 let client = ClientBuilder::default()
-    .layer(LoggingLayer::new())           // Outer: logs everything
-    .layer(RetryLayer::new())             // Middle: retries on failure
+    .layer(RetryLayer::new())             // Outer: retries on failure
     .layer(RateLimitLayer::per_second(10)) // Inner: rate limits
     .http("https://eth.llamarpc.com".parse()?);
 
@@ -254,14 +247,14 @@ let provider = ProviderBuilder::new()
 With the stack above, request flow is:
 
 ```
-Request → Logging → Retry → RateLimit → HTTP Transport
+Request → Retry → RateLimit → HTTP Transport (with native logging)
                                               ↓
-Response ← Logging ← Retry ← RateLimit ← HTTP Transport
+Response ← Retry ← RateLimit ← HTTP Transport
 ```
 
-- Logging sees all requests (including retries)
 - Retry catches failures and retries with backoff
 - Rate limit ensures we don't exceed limits
+- Native alloy logging happens at the transport level
 
 ---
 
@@ -468,14 +461,14 @@ let block = provider.get_block_number().await?;
 ### Production-Ready Ethereum Provider
 
 ```rust
-use semioscan::{RateLimitLayer, RetryLayer, LoggingLayer};
+use semioscan::{RateLimitLayer, RetryLayer};
 use alloy_rpc_client::ClientBuilder;
 use alloy_provider::ProviderBuilder;
 use alloy_network::Ethereum;
 
 fn create_production_provider(rpc_url: &str) -> Result<impl Provider<Ethereum>, Error> {
+    // Note: Logging is handled natively by alloy at DEBUG/TRACE level
     let client = ClientBuilder::default()
-        .layer(LoggingLayer::new())
         .layer(RetryLayer::builder()
             .max_retries(5)
             .base_delay(Duration::from_millis(100))

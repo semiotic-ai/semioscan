@@ -14,17 +14,17 @@ use std::time::Duration;
 /// use semioscan::provider::ProviderConfig;
 ///
 /// let config = ProviderConfig::new("https://eth.llamarpc.com")
-///     .with_rate_limit(10)
-///     .with_logging();
+///     .with_rate_limit(10);
 /// ```
+///
+/// Note: RPC request/response logging is handled natively by alloy's transport
+/// layer at DEBUG/TRACE level.
 #[derive(Debug, Clone)]
 pub struct ProviderConfig {
     /// RPC endpoint URL
     pub url: String,
     /// Rate limit in requests per second (None for unlimited)
     pub rate_limit_per_second: Option<u32>,
-    /// Enable request/response logging
-    pub logging_enabled: bool,
     /// Request timeout duration
     pub timeout: Option<Duration>,
     /// Minimum delay between requests (alternative to rate limiting)
@@ -38,7 +38,6 @@ impl ProviderConfig {
         Self {
             url: url.into(),
             rate_limit_per_second: None,
-            logging_enabled: false,
             timeout: None,
             min_delay: None,
         }
@@ -58,16 +57,6 @@ impl ProviderConfig {
     #[must_use]
     pub fn with_rate_limit_opt(mut self, requests_per_second: Option<u32>) -> Self {
         self.rate_limit_per_second = requests_per_second;
-        self
-    }
-
-    /// Enable request/response logging
-    ///
-    /// When enabled, all RPC requests and responses will be logged via
-    /// the `tracing` crate at DEBUG level.
-    #[must_use]
-    pub fn with_logging(mut self, enabled: bool) -> Self {
-        self.logging_enabled = enabled;
         self
     }
 
@@ -147,7 +136,6 @@ mod tests {
         let config = ProviderConfig::new("https://eth.llamarpc.com");
         assert_eq!(config.url, "https://eth.llamarpc.com");
         assert!(config.rate_limit_per_second.is_none());
-        assert!(!config.logging_enabled);
     }
 
     #[test]
@@ -155,12 +143,6 @@ mod tests {
         let config = ProviderConfig::new("https://eth.llamarpc.com").with_rate_limit(10);
         assert_eq!(config.rate_limit_per_second, Some(10));
         assert!(config.has_rate_limiting());
-    }
-
-    #[test]
-    fn test_provider_config_with_logging() {
-        let config = ProviderConfig::new("https://eth.llamarpc.com").with_logging(true);
-        assert!(config.logging_enabled);
     }
 
     #[test]
