@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-01-04
+
+### Added
+
+- **Chain-aware OdosPriceSource with V3 router support**
+  - `for_chain(chain, router_type)` constructor resolves router addresses via odos-sdk's chain registry
+  - V3 router support with `SwapV3`/`SwapMultiV3` event decoding
+  - `all_routers_for_chain(chain)` discovers all available routers for a chain
+  - `OdosError` type for unsupported chain/router handling
+  - Re-export `RouterType` from odos-sdk for ergonomic imports
+
+### Changed
+
+- **Upgraded to odos-sdk 1.2 APIs**
+  - Use `RouterType::swap_routers()` instead of hardcoded router list
+  - Use `router_type.emits_swap_events()` for type-safe router validation
+
+### Fixed
+
+- **Reject LimitOrder router type in OdosPriceSource**: LimitOrder routers emit `LimitOrderFilled` events instead of `Swap`/`SwapMulti` events, which was incorrectly handled by falling back to V2 event parsing
+
 ## [0.5.2] - 2026-01-04
 
 ### Changed
