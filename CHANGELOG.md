@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-01-04
+
+### Changed
+
+- **Cleaner INFO-level logs**: Demoted `EventScanner` logs from INFO to DEBUG level
+  - "Starting event scan", "Finished event scan", and per-chunk logs are now DEBUG
+  - Domain-level APIs (token discovery, transfer amounts) provide better context at INFO level
+  - Reduces log noise for production deployments
+
+## [0.5.1] - 2026-01-03
+
+### Changed
+
+- Updated and upgraded cargo dependencies
+
 ## [0.5.0] - 2026-01-03
 
 ### Breaking Changes
