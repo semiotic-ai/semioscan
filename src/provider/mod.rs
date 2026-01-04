@@ -15,7 +15,7 @@
 //!
 //! This module provides:
 //! - [`create_http_provider`] - Create an HTTP provider with optional rate limiting
-//! - [`create_ws_provider`] - Create a WebSocket provider for real-time subscriptions
+//! - [`create_ws_provider`] - Create a WebSocket provider for real-time subscriptions (requires `ws` feature)
 //! - [`ChainProvider`] - Enum-based provider for common chains
 //!
 //! # When to Use Dynamic Providers
@@ -77,9 +77,11 @@ mod factory;
 mod pool;
 
 pub use config::ProviderConfig;
+#[cfg(feature = "ws")]
+pub use factory::create_ws_provider;
 pub use factory::{
-    create_http_provider, create_typed_http_provider, create_ws_provider,
-    rate_limited_http_provider, simple_http_provider,
+    create_http_provider, create_typed_http_provider, rate_limited_http_provider,
+    simple_http_provider,
 };
 pub use pool::{ChainEndpoint, PooledProvider, ProviderPool, ProviderPoolBuilder};
 

@@ -179,6 +179,7 @@ pub fn create_http_provider(config: ProviderConfig) -> Result<AnyHttpProvider, R
 /// Returns an error if:
 /// - The URL is malformed
 /// - The WebSocket connection fails
+#[cfg(feature = "ws")]
 pub async fn create_ws_provider(
     config: ProviderConfig,
 ) -> Result<alloy_provider::RootProvider<AnyNetwork>, RpcError> {

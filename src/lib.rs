@@ -102,8 +102,10 @@ pub use transport::{
 };
 
 // === Provider Utilities ===
+#[cfg(feature = "ws")]
+pub use provider::create_ws_provider;
 pub use provider::{
-    create_http_provider, create_typed_http_provider, create_ws_provider, network_type_for_chain,
+    create_http_provider, create_typed_http_provider, network_type_for_chain,
     rate_limited_http_provider, simple_http_provider, AnyHttpProvider, ChainAwareProvider,
     ChainEndpoint, DynProviderBuilder, EthereumHttpProvider, NetworkType, OptimismHttpProvider,
     PooledProvider, ProviderConfig, ProviderPool, ProviderPoolBuilder, SharedProvider,
