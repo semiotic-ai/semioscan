@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-01-03
+
+### Breaking Changes
+
+**Removed `LoggingLayer` in favor of alloy's native tracing**
+
+- Removed `LoggingLayer` and `LoggingService` from `semioscan::transport`
+- Removed `logging_enabled` field from `ProviderConfig`
+- Removed `with_logging()` method from `ProviderConfig` and `DynProviderBuilder`
+- Removed `enable_logging` field from `ProviderPool` and `ProviderPoolBuilder`
+- Removed `with_logging()` method from `ProviderPoolBuilder`
+
+Alloy's HTTP transport now provides native tracing at DEBUG/TRACE level, making our custom logging layer redundant.
+
+#### Migration Guide
+
+**Before (v0.4.x)**:
+
+```rust
+use semioscan::{LoggingLayer, ProviderConfig, create_http_provider};
+
+// Using LoggingLayer directly
+let client = ClientBuilder::default()
+    .layer(LoggingLayer::new())
+    .http(url);
+
+// Using ProviderConfig
+let provider = create_http_provider(
+    ProviderConfig::new("https://eth.llamarpc.com")
+        .with_logging(true)
+)?;
+```
+
+**After (v0.5.0)**:
+
+```rust
+use semioscan::{ProviderConfig, create_http_provider};
+
+// Enable logging via tracing subscriber
+tracing_subscriber::fmt()
+    .with_env_filter("alloy_transport=debug")  // or "trace" for full bodies
+    .init();
+
+// Create provider normally (logging happens automatically)
+let provider = create_http_provider(
+    ProviderConfig::new("https://eth.llamarpc.com")
+)?;
+```
+
+### Changed
+
+- `ProviderPool::with_defaults()` now takes only `rate_limit: Option<u32>` (removed `enable_logging` parameter)
+- Provider factory functions simplified by removing logging-related match branches
+
 ## [0.4.1] - 2026-01-03
 
 ### Changed
