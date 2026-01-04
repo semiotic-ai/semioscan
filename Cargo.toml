@@ -61,7 +61,7 @@ tower = { version = "0.5", default-features = false }
 tracing = "0.1"
 
 # Optional: Odos DEX price source example (feature: odos-example)
-odos-sdk = { version = "1.0", features = [
+odos-sdk = { version = "1.2", features = [
     "v2",
     "v3",
     "limit-orders",
@@ -82,3 +82,7 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "fmt",
     "json",
 ] }
+
+[[example]]
+name = "router_token_discovery"
+required-features = ["odos-example"]

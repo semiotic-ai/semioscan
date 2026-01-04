@@ -72,9 +72,12 @@ pub enum OdosError {
         /// The router type that was requested
         router_type: &'static str,
     },
-    /// LimitOrder routers emit different events and are not supported for price extraction
-    #[error("LimitOrder router not supported for price extraction (emits LimitOrderFilled events, not Swap/SwapMulti)")]
-    LimitOrderNotSupported,
+    /// Router type does not emit swap events and cannot be used for price extraction
+    #[error("{router_type} router not supported for price extraction (does not emit Swap/SwapMulti events)")]
+    NonSwapRouterNotSupported {
+        /// The router type that was rejected
+        router_type: &'static str,
+    },
 }
 
 impl OdosError {
@@ -147,8 +150,8 @@ impl OdosPriceSource {
     ///
     /// # Errors
     ///
-    /// - Returns [`OdosError::LimitOrderNotSupported`] for `RouterType::LimitOrder`
-    ///   (LimitOrder routers emit `LimitOrderFilled` events, not `Swap/SwapMulti`)
+    /// - Returns [`OdosError::NonSwapRouterNotSupported`] for router types that don't
+    ///   emit `Swap/SwapMulti` events (e.g., `RouterType::LimitOrder`)
     /// - Returns [`OdosError::UnsupportedChain`] if Odos doesn't have the requested
     ///   router type deployed on the specified chain.
     ///
@@ -165,9 +168,11 @@ impl OdosPriceSource {
     /// let source = OdosPriceSource::for_chain(NamedChain::Mainnet, RouterType::V3)?;
     /// ```
     pub fn for_chain(chain: NamedChain, router_type: RouterType) -> Result<Self, OdosError> {
-        // LimitOrder routers emit LimitOrderFilled events, not Swap/SwapMulti
-        if router_type == RouterType::LimitOrder {
-            return Err(OdosError::LimitOrderNotSupported);
+        // Only swap routers (V2/V3) emit Swap/SwapMulti events
+        if !router_type.emits_swap_events() {
+            return Err(OdosError::NonSwapRouterNotSupported {
+                router_type: router_type.as_str(),
+            });
         }
 
         let chain_id: u64 = chain.into();
@@ -216,7 +221,7 @@ impl OdosPriceSource {
     /// }
     /// ```
     pub fn all_routers_for_chain(chain: NamedChain) -> Vec<Self> {
-        [RouterType::V2, RouterType::V3]
+        RouterType::swap_routers()
             .into_iter()
             .filter_map(|router_type| Self::for_chain(chain, router_type).ok())
             .collect()
@@ -464,13 +469,16 @@ mod tests {
     }
 
     #[test]
-    fn test_for_chain_limit_order_rejected() {
+    fn test_for_chain_non_swap_router_rejected() {
         // LimitOrder emits different events (LimitOrderFilled), not Swap/SwapMulti
         let result = OdosPriceSource::for_chain(NamedChain::Mainnet, RouterType::LimitOrder);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(matches!(err, OdosError::LimitOrderNotSupported));
+        assert!(matches!(
+            err,
+            OdosError::NonSwapRouterNotSupported { router_type: "LO" }
+        ));
     }
 
     #[test]
