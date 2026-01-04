@@ -42,7 +42,7 @@ jobs:
       - name: Check semver compatibility
         run: |
           # Skip semver check if this is the first release (crate not yet on crates.io)
-          if cargo search semioscan --limit 1 | grep -q "^semioscan "; then
+          if curl -sf "https://crates.io/api/v1/crates/semioscan" | grep -q '"name":"semioscan"'; then
             cargo semver-checks check-release
           else
             echo "Skipping semver check: semioscan not yet published to crates.io"
