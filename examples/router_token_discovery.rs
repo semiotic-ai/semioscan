@@ -7,24 +7,25 @@
 /// This example shows:
 /// 1. How to discover all tokens transferred to a router contract
 /// 2. How to use extract_transferred_to_tokens for token inventory
-/// 3. Real-world usage patterns for liquidation systems
-/// 4. Performance considerations for large block ranges
+/// 3. How to use OdosPriceSource::for_chain() for chain-aware router lookup
+/// 4. How to discover all available routers with all_routers_for_chain()
+/// 5. Real-world usage patterns for liquidation systems
 ///
 /// Run with:
 /// ```bash
 /// # Discover tokens on Arbitrum Odos router
 /// ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc/ \
-/// cargo run --package semioscan --example router_token_discovery -- arbitrum
+/// cargo run --package semioscan --example router_token_discovery --features odos-example -- arbitrum
 ///
 /// # Discover tokens on Base Odos router
 /// BASE_RPC_URL=https://mainnet.base.org \
-/// cargo run --package semioscan --example router_token_discovery -- base
+/// cargo run --package semioscan --example router_token_discovery --features odos-example -- base
 ///
 /// # Discover tokens with custom block range
 /// ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc/ \
 /// START_BLOCK=270000000 \
 /// END_BLOCK=270010000 \
-/// cargo run --package semioscan --example router_token_discovery -- arbitrum --custom-range
+/// cargo run --package semioscan --example router_token_discovery --features odos-example -- arbitrum --custom-range
 /// ```
 ///
 /// # Use Cases
@@ -46,6 +47,8 @@ use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder};
 use anyhow::{Context, Result};
 use semioscan::extract_transferred_to_tokens;
+use semioscan::price::odos::{OdosPriceSource, RouterType};
+use semioscan::price::PriceSource;
 use std::env;
 use std::time::Instant;
 use tracing::{info, Level};
@@ -65,8 +68,10 @@ async fn discover_arbitrum_tokens(custom_range: bool) -> Result<()> {
 
     let provider = ProviderBuilder::new().connect_http(full_rpc_url.parse()?);
 
-    // Odos V2 Router on Arbitrum
-    let router: Address = "0xa669e7A0d4b3e4Fa48af2dE86BD4CD7126Be4e13".parse()?;
+    // Use chain-aware constructor instead of hardcoded address
+    let price_source = OdosPriceSource::for_chain(NamedChain::Arbitrum, RouterType::V2)
+        .context("Arbitrum V2 router not available")?;
+    let router: Address = price_source.router_address();
 
     let (start_block, end_block) = if custom_range {
         let start = env::var("START_BLOCK")
@@ -139,8 +144,10 @@ async fn discover_base_tokens() -> Result<()> {
 
     let provider = ProviderBuilder::new().connect_http(full_rpc_url.parse()?);
 
-    // Odos V2 Router on Base
-    let router: Address = "0x19cEeAd7105607Cd444F5ad10dd51356436095a1".parse()?;
+    // Use chain-aware constructor instead of hardcoded address
+    let price_source = OdosPriceSource::for_chain(NamedChain::Base, RouterType::V2)
+        .context("Base V2 router not available")?;
+    let router: Address = price_source.router_address();
 
     let latest = provider.get_block_number().await?;
     let start_block = latest.saturating_sub(10_000);
@@ -232,6 +239,52 @@ async fn demonstrate_temporal_analysis() -> Result<()> {
     Ok(())
 }
 
+/// Demonstrate discovering all available routers on a chain
+fn demonstrate_router_discovery() {
+    println!("\n=== Router Discovery with all_routers_for_chain() ===\n");
+
+    println!("Discover all Odos routers deployed on a chain:\n");
+
+    // Demo with Mainnet
+    let mainnet_sources = OdosPriceSource::all_routers_for_chain(NamedChain::Mainnet);
+    println!("Mainnet routers: {} found", mainnet_sources.len());
+    for source in &mainnet_sources {
+        println!("  - {}", source.router_address());
+    }
+
+    // Demo with Arbitrum
+    let arb_sources = OdosPriceSource::all_routers_for_chain(NamedChain::Arbitrum);
+    println!("\nArbitrum routers: {} found", arb_sources.len());
+    for source in &arb_sources {
+        println!("  - {}", source.router_address());
+    }
+
+    // Demo with Base
+    let base_sources = OdosPriceSource::all_routers_for_chain(NamedChain::Base);
+    println!("\nBase routers: {} found", base_sources.len());
+    for source in &base_sources {
+        println!("  - {}", source.router_address());
+    }
+
+    println!("\n=== Example Usage ===\n");
+    println!("```rust");
+    println!("use semioscan::price::odos::OdosPriceSource;");
+    println!("use alloy_chains::NamedChain;");
+    println!();
+    println!("// Get all routers for comprehensive scanning");
+    println!("let sources = OdosPriceSource::all_routers_for_chain(NamedChain::Arbitrum);");
+    println!();
+    println!("// Use each source with a PriceCalculator");
+    println!("for source in sources {{");
+    println!("    let calc = PriceCalculator::with_price_source(");
+    println!("        provider.clone(),");
+    println!("        Box::new(source),");
+    println!("    );");
+    println!("    // ... extract prices from this router");
+    println!("}}");
+    println!("```");
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing
@@ -251,10 +304,14 @@ async fn main() -> Result<()> {
         "arbitrum" | "arb" => discover_arbitrum_tokens(custom_range).await?,
         "base" => discover_base_tokens().await?,
         "temporal" => demonstrate_temporal_analysis().await?,
+        "routers" => {
+            demonstrate_router_discovery();
+            return Ok(());
+        }
         _ => {
             eprintln!("Unknown chain: {}", chain);
             eprintln!(
-                "Usage: {} [arbitrum|base|temporal] [--custom-range]",
+                "Usage: {} [arbitrum|base|temporal|routers] [--custom-range]",
                 args[0]
             );
             std::process::exit(1);
