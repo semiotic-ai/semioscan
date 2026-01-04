@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-01-03
+
+### Changed
+
+- **WebSocket dependencies now optional**: Moved `alloy-provider`'s `pubsub` and `ws` features behind a new `ws` feature flag
+  - Users who don't need WebSocket support no longer pull in `tokio-tungstenite`, `tungstenite`, `alloy-transport-ws`, and `alloy-pubsub`
+  - Reduces binary size and compile times for HTTP-only use cases
+  - To enable WebSocket support: `semioscan = { version = "0.4", features = ["ws"] }`
+
+### Feature-Gated
+
+- `create_ws_provider()` function now requires `ws` feature
+- `RealtimeEventScanner` and `events::realtime` module now require `ws` feature
+
 ## [0.4.0] - 2026-01-03
 
 ### Added
