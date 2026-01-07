@@ -75,13 +75,16 @@ pub enum EventProcessingError {
         details: String,
     },
 
-    /// Generic RPC failure with context.
+    /// RPC failure with contextual information.
     ///
-    /// Used when an RPC call fails and we want to provide context
-    /// without requiring the specific error type.
+    /// Used when an RPC call fails and we want to include additional context
+    /// (such as block ranges or operation details) in the error message.
+    /// Prefer this over [`Rpc`] when the context would aid debugging.
+    ///
+    /// [`Rpc`]: EventProcessingError::Rpc
     #[error("RPC call failed: {details}")]
     RpcFailed {
-        /// Details about the failure
+        /// Details about the failure including context
         details: String,
     },
 }
