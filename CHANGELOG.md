@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-01-07
+
+### Added
+
+- **Standalone chunked log fetching utility**
+  - `fetch_logs_chunked()` function for fetching logs over large block ranges
+  - Simpler API than `EventScanner` for use cases that just need chunked log fetching with a custom filter
+  - No `SemioscanConfig` or chain-specific configuration required
+  - Exported from crate root as `semioscan::fetch_logs_chunked`
+
+- **Input validation for chunked log fetching**
+  - Returns `InvalidInput` error for zero chunk size
+  - Returns `InvalidInput` error for missing `from_block` or `to_block` in filter
+
 ## [0.7.0] - 2026-01-06
 
 ### Added
