@@ -64,6 +64,26 @@ pub enum EventProcessingError {
     /// event processing (e.g., fetching logs, scanning for events).
     #[error("RPC error: {0}")]
     Rpc(#[from] RpcError),
+
+    /// Invalid input provided to an operation.
+    ///
+    /// This occurs when function arguments don't meet requirements,
+    /// such as a filter missing required block range bounds.
+    #[error("Invalid input: {details}")]
+    InvalidInput {
+        /// Details about what was invalid
+        details: String,
+    },
+
+    /// Generic RPC failure with context.
+    ///
+    /// Used when an RPC call fails and we want to provide context
+    /// without requiring the specific error type.
+    #[error("RPC call failed: {details}")]
+    RpcFailed {
+        /// Details about the failure
+        details: String,
+    },
 }
 
 impl EventProcessingError {
@@ -84,5 +104,19 @@ impl EventProcessingError {
     /// Helper to create a missing RPC URL configuration error.
     pub fn missing_rpc_url(chain: impl std::fmt::Display) -> Self {
         Self::configuration_missing(format!("RPC_URL for chain {}", chain))
+    }
+
+    /// Create an `InvalidInput` error with details.
+    pub fn invalid_input(details: impl Into<String>) -> Self {
+        EventProcessingError::InvalidInput {
+            details: details.into(),
+        }
+    }
+
+    /// Create an `RpcFailed` error with details.
+    pub fn rpc_failed(details: impl Into<String>) -> Self {
+        EventProcessingError::RpcFailed {
+            details: details.into(),
+        }
     }
 }

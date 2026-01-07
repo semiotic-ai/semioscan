@@ -12,6 +12,7 @@
 //! - Generic event scanning with chunking and rate limiting
 //! - Real-time event streaming via WebSocket subscriptions (requires `ws` feature)
 
+mod chunked;
 pub mod definitions;
 pub mod discovery;
 pub mod filter;
@@ -21,6 +22,7 @@ pub mod scanner;
 pub mod transfers;
 
 // Re-export public types
+pub use chunked::fetch_logs_chunked;
 pub use definitions::{Approval, Transfer};
 pub use discovery::{extract_transferred_to_tokens, extract_transferred_to_tokens_with_config};
 pub use transfers::{AmountCalculator, AmountResult};

@@ -84,6 +84,7 @@ pub use blocks::{
 pub use types::cache::{AccessSequence, TimestampMillis};
 
 // === Events (from events/) ===
+pub use events::fetch_logs_chunked;
 pub use events::EventScanner;
 pub use events::{extract_transferred_to_tokens, extract_transferred_to_tokens_with_config};
 pub use events::{AmountCalculator, AmountResult};
