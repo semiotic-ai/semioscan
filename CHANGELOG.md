@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-01-06
+
+### Added
+
+- **Per-transaction swap data extraction**
+  - `RawSwapResult` struct for individual swap details with normalized amounts
+  - `PriceCalculator::extract_raw_swaps()` method for per-transaction granularity
+  - Useful for fee calculations and detailed swap analysis
+
+- **Transaction metadata in SwapData**
+  - `tx_hash: Option<B256>` field for transaction hash
+  - `block_number: Option<BlockNumber>` field for block number
+  - Automatically populated when extracting swaps from logs
+
+- **Custom decimal precision support**
+  - `DecimalPrecision::Custom(u8)` variant for arbitrary token decimals
+  - Enables `u256_to_bigdecimal()` to work with any token, not just USDC/native
+
+- **EventScanner public export**
+  - `EventScanner` now exported from crate root as `semioscan::EventScanner`
+  - Enables external consumers to use the scanner with built-in chunking and rate limiting
+
 ## [0.6.0] - 2026-01-04
 
 ### Added
