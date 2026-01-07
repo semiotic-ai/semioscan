@@ -72,7 +72,7 @@ pub use price::{PriceSource, PriceSourceError, SwapData};
 #[cfg(feature = "odos-example")]
 pub use price::odos::OdosPriceSource;
 #[cfg(feature = "odos-example")]
-pub use price::{PriceCalculator, TokenPriceResult};
+pub use price::{PriceCalculator, RawSwapResult, TokenPriceResult};
 
 // === Block Windows (from blocks/) ===
 pub use blocks::{
@@ -84,6 +84,7 @@ pub use blocks::{
 pub use types::cache::{AccessSequence, TimestampMillis};
 
 // === Events (from events/) ===
+pub use events::EventScanner;
 pub use events::{extract_transferred_to_tokens, extract_transferred_to_tokens_with_config};
 pub use events::{AmountCalculator, AmountResult};
 pub use events::{Approval, Transfer};

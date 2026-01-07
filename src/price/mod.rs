@@ -68,6 +68,8 @@
 //!             token_out,
 //!             token_out_amount,
 //!             sender: Some(event.sender),
+//!             tx_hash: None,  // Set by caller from log metadata
+//!             block_number: None,  // Set by caller from log metadata
 //!         }))
 //!     }
 //! }
@@ -84,8 +86,9 @@
 //!
 //! See [`odos::OdosPriceSource`] for implementation details.
 
-use alloy_primitives::{Address, B256, U256};
+use alloy_primitives::{Address, BlockNumber, B256, U256};
 use alloy_rpc_types::Log;
+use serde::Serialize;
 
 // Re-export PriceSourceError from types module
 pub use crate::types::price::PriceSourceError;
@@ -106,7 +109,7 @@ pub use calculator::*;
 /// This is the core data structure that [`PriceSource`] implementations must produce.
 /// Token amounts are raw U256 values (not normalized) - the [`crate::PriceCalculator`]
 /// handles decimal normalization.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SwapData {
     /// Token that was sold (input token)
     pub token_in: Address,
@@ -118,6 +121,10 @@ pub struct SwapData {
     pub token_out_amount: U256,
     /// Optional: transaction initiator (useful for filtering specific addresses)
     pub sender: Option<Address>,
+    /// Optional: transaction hash (populated when extracting from logs)
+    pub tx_hash: Option<B256>,
+    /// Optional: block number (populated when extracting from logs)
+    pub block_number: Option<BlockNumber>,
 }
 
 /// Trait for extracting price data from DEX swap events

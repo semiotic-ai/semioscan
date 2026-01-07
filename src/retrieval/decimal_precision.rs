@@ -13,6 +13,8 @@ pub enum DecimalPrecision {
     BinancePegUsdc,
     /// Native tokens (ETH, BNB, MATIC, etc.) and gas costs use 18 decimals
     NativeToken,
+    /// Custom decimal precision for arbitrary tokens
+    Custom(u8),
 }
 
 impl DecimalPrecision {
@@ -22,6 +24,7 @@ impl DecimalPrecision {
             DecimalPrecision::Usdc => 6,
             DecimalPrecision::BinancePegUsdc => 18,
             DecimalPrecision::NativeToken => 18,
+            DecimalPrecision::Custom(decimals) => decimals,
         }
     }
 }

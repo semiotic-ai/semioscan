@@ -464,6 +464,8 @@ impl PriceSource for UniswapV3PriceSource {
             token_out,
             token_out_amount,
             sender: Some(event.sender),
+            tx_hash: log.transaction_hash,
+            block_number: log.block_number,
         }))
     }
 }

@@ -345,6 +345,8 @@ impl OdosPriceSource {
                 token_out: event.tokensOut[0],
                 token_out_amount: event.amountsOut[0],
                 sender: Some(event.sender),
+                tx_hash: log.transaction_hash,
+                block_number: log.block_number,
             }));
         }
 
@@ -362,6 +364,8 @@ impl OdosPriceSource {
             token_out: event.outputToken,
             token_out_amount: event.amountOut,
             sender: Some(event.sender),
+            tx_hash: log.transaction_hash,
+            block_number: log.block_number,
         }))
     }
 
@@ -395,6 +399,8 @@ impl OdosPriceSource {
                 token_out: event.tokensOut[0],
                 token_out_amount: event.amountsOut[0],
                 sender: Some(event.sender),
+                tx_hash: log.transaction_hash,
+                block_number: log.block_number,
             }));
         }
 
@@ -412,6 +418,8 @@ impl OdosPriceSource {
             token_out: event.outputToken,
             token_out_amount: event.amountOut,
             sender: Some(event.sender),
+            tx_hash: log.transaction_hash,
+            block_number: log.block_number,
         }))
     }
 }
@@ -498,6 +506,8 @@ mod tests {
             token_out: Address::ZERO,
             token_out_amount: Default::default(),
             sender: Some(liquidator),
+            tx_hash: None,
+            block_number: None,
         };
         assert!(source.should_include_swap(&swap));
 
@@ -529,6 +539,8 @@ mod tests {
             token_out: Address::ZERO,
             token_out_amount: Default::default(),
             sender: Some(liquidator),
+            tx_hash: None,
+            block_number: None,
         };
         assert!(price_source.should_include_swap(&swap));
 

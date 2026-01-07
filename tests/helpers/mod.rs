@@ -125,5 +125,7 @@ pub fn create_test_swap(
         token_out,
         token_out_amount: U256::from(token_out_amount),
         sender,
+        tx_hash: None,
+        block_number: None,
     }
 }

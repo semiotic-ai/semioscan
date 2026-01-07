@@ -71,6 +71,10 @@ pub struct SwapData {
     pub token_out_amount: U256,
     /// Optional: sender address (for filtering)
     pub sender: Option<Address>,
+    /// Optional: transaction hash (populated from log metadata)
+    pub tx_hash: Option<B256>,
+    /// Optional: block number (populated from log metadata)
+    pub block_number: Option<BlockNumber>,
 }
 ```
 
@@ -203,6 +207,8 @@ impl PriceSource for UniswapV2PriceSource {
             token_out,
             token_out_amount: amount_out,
             sender: Some(event.sender),
+            tx_hash: log.transaction_hash,
+            block_number: log.block_number,
         }))
     }
 }
@@ -315,6 +321,8 @@ impl PriceSource for UniswapV3PriceSource {
             token_out,
             token_out_amount: amount_out,
             sender: Some(event.sender),
+            tx_hash: log.transaction_hash,
+            block_number: log.block_number,
         }))
     }
 }
@@ -379,6 +387,8 @@ impl PriceSource for AggregatorPriceSource {
             token_out: event.tokensOut[0],
             token_out_amount: event.amountsOut[0],
             sender: Some(event.sender),
+            tx_hash: log.transaction_hash,
+            block_number: log.block_number,
         }))
     }
 }
@@ -433,6 +443,8 @@ impl PriceSource for CurvePriceSource {
             token_out: self.tokens[bought_id],
             token_out_amount: event.tokens_bought,
             sender: Some(event.buyer),
+            tx_hash: log.transaction_hash,
+            block_number: log.block_number,
         }))
     }
 }
@@ -672,9 +684,13 @@ let normalized = amount / U256::from(10u128.pow(decimals));
 ```rust
 // Correct - return raw U256 values
 Ok(Some(SwapData {
+    token_in: event.token_in,
     token_in_amount: event.amount_in,  // Raw amount
+    token_out: event.token_out,
     token_out_amount: event.amount_out,  // Raw amount
-    // ...
+    sender: Some(event.sender),
+    tx_hash: log.transaction_hash,
+    block_number: log.block_number,
 }))
 ```
 

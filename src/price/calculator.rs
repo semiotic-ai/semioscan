@@ -4,7 +4,7 @@
 
 use alloy_chains::NamedChain;
 use alloy_erc20_full::LazyToken;
-use alloy_primitives::{Address, BlockNumber, U256};
+use alloy_primitives::{Address, BlockNumber, B256, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
 use futures::future::join_all;
@@ -17,7 +17,7 @@ use crate::config::SemioscanConfig;
 use crate::errors::PriceCalculationError;
 use crate::events::scanner::EventScanner;
 use crate::price::cache::PriceCache;
-use crate::price::{PriceSource, PriceSourceError};
+use crate::price::{PriceSource, PriceSourceError, SwapData};
 use crate::{NormalizedAmount, TokenAmount, TokenDecimals, TokenPrice, TransactionCount, UsdValue};
 
 // Internal type for swap data processing
@@ -90,6 +90,41 @@ impl TokenPriceResult {
     /// Get the transaction count
     pub fn transaction_count(&self) -> TransactionCount {
         self.transaction_count
+    }
+}
+
+/// A single raw swap with normalized amounts and transaction metadata.
+///
+/// This struct provides per-transaction granularity for swap data,
+/// useful when you need individual swap details rather than aggregated totals.
+#[derive(Debug, Clone, Serialize)]
+pub struct RawSwapResult {
+    /// The raw swap data from the DEX event
+    pub swap: SwapData,
+    /// Normalized amount of input token (accounting for decimals)
+    pub normalized_token_in_amount: NormalizedAmount,
+    /// Normalized amount of output token (accounting for decimals)
+    pub normalized_token_out_amount: NormalizedAmount,
+    /// Decimals for the input token
+    pub token_in_decimals: TokenDecimals,
+    /// Decimals for the output token
+    pub token_out_decimals: TokenDecimals,
+}
+
+impl RawSwapResult {
+    /// Get the transaction hash if available
+    pub fn tx_hash(&self) -> Option<B256> {
+        self.swap.tx_hash
+    }
+
+    /// Get the block number if available
+    pub fn block_number(&self) -> Option<BlockNumber> {
+        self.swap.block_number
+    }
+
+    /// Get the sender address if available
+    pub fn sender(&self) -> Option<Address> {
+        self.swap.sender
     }
 }
 
@@ -516,6 +551,149 @@ impl<P: Provider + Clone> PriceCalculator<P> {
         );
 
         Ok(price_data)
+    }
+
+    /// Extract raw swap data per transaction from a block range.
+    ///
+    /// Unlike [`calculate_price_between_blocks`](Self::calculate_price_between_blocks) which
+    /// returns aggregated totals, this method returns individual swap data for each transaction.
+    /// This is useful when you need per-transaction granularity, such as for fee calculations
+    /// or detailed swap analysis.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_block` - The starting block number (inclusive)
+    /// * `end_block` - The ending block number (inclusive)
+    ///
+    /// # Returns
+    ///
+    /// A vector of `RawSwapResult` containing each swap with normalized amounts and metadata.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let swaps = calculator.extract_raw_swaps(start_block, end_block).await?;
+    ///
+    /// for swap in swaps {
+    ///     println!(
+    ///         "Tx: {:?}, Token In: {:?}, Amount: {}",
+    ///         swap.tx_hash(),
+    ///         swap.swap.token_in,
+    ///         swap.normalized_token_in_amount.as_f64()
+    ///     );
+    /// }
+    /// ```
+    pub async fn extract_raw_swaps(
+        &mut self,
+        start_block: BlockNumber,
+        end_block: BlockNumber,
+    ) -> Result<Vec<RawSwapResult>, PriceCalculationError> {
+        info!(
+            start_block = start_block,
+            end_block = end_block,
+            "Extracting raw swaps"
+        );
+
+        let event_topics = self.price_source.event_topics();
+
+        // Create a scanner to handle chunking and rate limiting
+        let scanner = EventScanner::new(&self.provider, self.config.clone());
+
+        // Build a filter for swap events from the price source
+        let filter = Filter::new()
+            .address(self.price_source.router_address())
+            .event_signature(event_topics.clone());
+
+        // Scan for all swap events in this range
+        let logs = scanner
+            .scan(self.chain, filter, start_block, end_block)
+            .await
+            .map_err(|e| {
+                PriceCalculationError::processing_failed(format!(
+                    "Failed to scan swap events from {start_block} to {end_block}: {e}"
+                ))
+            })?;
+
+        info!(
+            logs_count = logs.len(),
+            start_block = start_block,
+            end_block = end_block,
+            "Fetched logs for raw swap extraction"
+        );
+
+        // First pass: Extract all swap data and collect unique token addresses
+        let mut swaps = Vec::new();
+        let mut token_addresses = HashSet::new();
+
+        for log in &logs {
+            match self.price_source.extract_swap_from_log(log) {
+                Ok(Some(swap_data)) => {
+                    if !self.price_source.should_include_swap(&swap_data) {
+                        continue;
+                    }
+
+                    // Collect token addresses for batch fetching
+                    token_addresses.insert(swap_data.token_in);
+                    token_addresses.insert(swap_data.token_out);
+                    swaps.push(swap_data);
+                }
+                Ok(None) => {
+                    // Log is not a relevant swap event
+                }
+                Err(e @ PriceSourceError::DecodeError(_)) => {
+                    error!(error = ?e, "Failed to decode log");
+                }
+                Err(
+                    e @ (PriceSourceError::EmptyTokenArrays
+                    | PriceSourceError::ArrayLengthMismatch { .. }
+                    | PriceSourceError::InvalidSwapData { .. }),
+                ) => {
+                    error!(error = ?e, "Invalid swap data in log");
+                }
+            }
+        }
+
+        // Batch fetch all token decimals in parallel
+        let addresses: Vec<Address> = token_addresses.into_iter().collect();
+        self.batch_fetch_token_decimals(&addresses).await;
+
+        // Second pass: Create RawSwapResult with normalized amounts
+        let mut results = Vec::with_capacity(swaps.len());
+        for swap in swaps {
+            // Get decimals for both tokens
+            let token_in_decimals = match self.get_token_decimals(swap.token_in).await {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!(token = ?swap.token_in, error = ?e, "Failed to get decimals for token_in, skipping swap");
+                    continue;
+                }
+            };
+
+            let token_out_decimals = match self.get_token_decimals(swap.token_out).await {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!(token = ?swap.token_out, error = ?e, "Failed to get decimals for token_out, skipping swap");
+                    continue;
+                }
+            };
+
+            let normalized_token_in =
+                self.normalize_amount(swap.token_in_amount, token_in_decimals);
+            let normalized_token_out =
+                self.normalize_amount(swap.token_out_amount, token_out_decimals);
+
+            results.push(RawSwapResult {
+                swap,
+                normalized_token_in_amount: normalized_token_in,
+                normalized_token_out_amount: normalized_token_out,
+                token_in_decimals,
+                token_out_decimals,
+            });
+        }
+
+        info!(swap_count = results.len(), "Finished raw swap extraction");
+
+        Ok(results)
     }
 }
 

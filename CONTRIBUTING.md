@@ -136,6 +136,8 @@ impl PriceSource for YourDexPriceSource {
             token_out: self.token1,
             token_out_amount: event.amount1Out,
             sender: Some(event.sender),
+            tx_hash: log.transaction_hash,
+            block_number: log.block_number,
         }))
     }
 }

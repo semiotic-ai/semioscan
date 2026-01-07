@@ -72,6 +72,7 @@ pub fn u256_to_bigdecimal(
         DecimalPrecision::BinancePegUsdc | DecimalPrecision::NativeToken => {
             U256::from(1_000_000_000_000_000_000u128) // 10^18
         }
+        DecimalPrecision::Custom(decimals) => U256::from(10u64).pow(U256::from(decimals)),
     };
 
     // Perform division in U256 space to get whole and fractional parts
@@ -192,5 +193,39 @@ mod tests {
         let result = u256_to_bigdecimal(value, DecimalPrecision::NativeToken).unwrap();
         let expected = BigDecimal::from_str("0.123456789012345678").unwrap();
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn u256_to_bigdecimal_with_custom_8_decimals() {
+        // Test Custom(8) for tokens like WBTC
+        let value = U256::from(100_000_000u64); // 1 WBTC (8 decimals)
+        let result = u256_to_bigdecimal(value, DecimalPrecision::Custom(8)).unwrap();
+        let expected = BigDecimal::from_str("1.0").unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn u256_to_bigdecimal_with_custom_12_decimals() {
+        // Test Custom(12) for arbitrary token
+        let value = U256::from(1_500_000_000_000u64); // 1.5 tokens (12 decimals)
+        let result = u256_to_bigdecimal(value, DecimalPrecision::Custom(12)).unwrap();
+        let expected = BigDecimal::from_str("1.5").unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn u256_to_bigdecimal_with_custom_zero_decimals() {
+        // Test Custom(0) for tokens with no decimals
+        let value = U256::from(42u64);
+        let result = u256_to_bigdecimal(value, DecimalPrecision::Custom(0)).unwrap();
+        let expected = BigDecimal::from_str("42").unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn decimal_precision_custom_returns_correct_decimals() {
+        assert_eq!(DecimalPrecision::Custom(8).decimals(), 8);
+        assert_eq!(DecimalPrecision::Custom(12).decimals(), 12);
+        assert_eq!(DecimalPrecision::Custom(0).decimals(), 0);
     }
 }
