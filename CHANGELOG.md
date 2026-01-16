@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-01-16
+
+### Changed
+
+- Updated odos-sdk to 2.0
+- Updated and upgraded cargo dependencies
+
 ## [0.8.0] - 2026-01-07
 
 ### Added
