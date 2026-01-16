@@ -36,7 +36,7 @@
 //!
 //! // Chain-aware constructor (recommended)
 //! let price_source = OdosPriceSource::for_chain(NamedChain::Arbitrum, RouterType::V2)?
-//!     .with_liquidator_filter("0x123...".parse().unwrap());
+//!     .with_sender_filter("0x123...".parse().unwrap());
 //!
 //! // Manual router address (fallback)
 //! let router_address = "0xa669e7A0d4b3e4Fa48af2dE86BD4CD7126Be4e13".parse().unwrap();
@@ -97,7 +97,7 @@ impl OdosError {
 ///
 /// # Filtering
 ///
-/// Optionally filter swaps by liquidator address using [`with_liquidator_filter`](OdosPriceSource::with_liquidator_filter).
+/// Optionally filter swaps by sender address using [`with_sender_filter`](OdosPriceSource::with_sender_filter).
 /// This is useful when analyzing swaps from a specific address (e.g., your own liquidation bot).
 ///
 /// # Event Handling
@@ -111,7 +111,7 @@ impl OdosError {
 pub struct OdosPriceSource {
     router_address: Address,
     router_type: RouterType,
-    liquidator_address: Option<Address>,
+    sender_address: Option<Address>,
 }
 
 impl OdosPriceSource {
@@ -134,7 +134,7 @@ impl OdosPriceSource {
         Self {
             router_address,
             router_type: RouterType::V2,
-            liquidator_address: None,
+            sender_address: None,
         }
     }
 
@@ -187,7 +187,7 @@ impl OdosPriceSource {
         Ok(Self {
             router_address,
             router_type,
-            liquidator_address: None,
+            sender_address: None,
         })
     }
 
@@ -227,22 +227,22 @@ impl OdosPriceSource {
             .collect()
     }
 
-    /// Add a filter to only include swaps from a specific liquidator address
+    /// Add a filter to only include swaps from a specific sender address
     ///
     /// When set, only swaps where the sender matches this address will be included.
     ///
     /// # Arguments
     ///
-    /// * `liquidator` - The address to filter by
+    /// * `sender` - The address to filter by
     ///
     /// # Example
     ///
     /// ```rust,ignore
     /// let price_source = OdosPriceSource::new(router)
-    ///     .with_liquidator_filter("0x123...".parse().unwrap());
+    ///     .with_sender_filter("0x123...".parse().unwrap());
     /// ```
-    pub fn with_liquidator_filter(mut self, liquidator: Address) -> Self {
-        self.liquidator_address = Some(liquidator);
+    pub fn with_sender_filter(mut self, sender: Address) -> Self {
+        self.sender_address = Some(sender);
         self
     }
 }
@@ -250,6 +250,10 @@ impl OdosPriceSource {
 impl PriceSource for OdosPriceSource {
     fn router_address(&self) -> Address {
         self.router_address
+    }
+
+    fn sender_address(&self) -> Option<Address> {
+        self.sender_address
     }
 
     fn event_topics(&self) -> Vec<B256> {
@@ -295,7 +299,7 @@ impl PriceSource for OdosPriceSource {
         Ok(None)
     }
 
-    /// Determine if a swap should be included based on the liquidator filter
+    /// Determine if a swap should be included based on the sender filter
     ///
     /// # Arguments
     ///
@@ -305,10 +309,10 @@ impl PriceSource for OdosPriceSource {
     ///
     /// `true` if the swap should be included, `false` otherwise
     ///
-    /// If the liquidator filter is set, only include swaps from that address. Otherwise accept all swaps.
+    /// If the sender filter is set, only include swaps from that address. Otherwise accept all swaps.
     fn should_include_swap(&self, swap: &SwapData) -> bool {
-        match self.liquidator_address {
-            Some(liquidator) => swap.sender == Some(liquidator),
+        match self.sender_address {
+            Some(sender) => swap.sender == Some(sender),
             None => true,
         }
     }
@@ -490,14 +494,14 @@ mod tests {
     }
 
     #[test]
-    fn test_for_chain_with_liquidator_filter() {
-        let liquidator: Address = "0x1234567890123456789012345678901234567890"
+    fn test_for_chain_with_sender_filter() {
+        let sender: Address = "0x1234567890123456789012345678901234567890"
             .parse()
             .unwrap();
 
         let source = OdosPriceSource::for_chain(NamedChain::Arbitrum, RouterType::V2)
             .expect("Arbitrum V2 should be supported")
-            .with_liquidator_filter(liquidator);
+            .with_sender_filter(sender);
 
         // Verify filter is applied
         let swap = SwapData {
@@ -505,7 +509,7 @@ mod tests {
             token_in_amount: Default::default(),
             token_out: Address::ZERO,
             token_out_amount: Default::default(),
-            sender: Some(liquidator),
+            sender: Some(sender),
             tx_hash: None,
             block_number: None,
         };
@@ -522,23 +526,23 @@ mod tests {
     }
 
     #[test]
-    fn test_liquidator_filter() {
+    fn test_sender_filter() {
         let router: Address = "0xa669e7A0d4b3e4Fa48af2dE86BD4CD7126Be4e13"
             .parse()
             .unwrap();
-        let liquidator: Address = "0x1234567890123456789012345678901234567890"
+        let sender: Address = "0x1234567890123456789012345678901234567890"
             .parse()
             .unwrap();
 
-        let price_source = OdosPriceSource::new(router).with_liquidator_filter(liquidator);
+        let price_source = OdosPriceSource::new(router).with_sender_filter(sender);
 
-        // Test that swaps from liquidator are included
+        // Test that swaps from sender are included
         let swap = SwapData {
             token_in: Address::ZERO,
             token_in_amount: Default::default(),
             token_out: Address::ZERO,
             token_out_amount: Default::default(),
-            sender: Some(liquidator),
+            sender: Some(sender),
             tx_hash: None,
             block_number: None,
         };
@@ -584,6 +588,26 @@ mod tests {
     }
 
     #[test]
+    fn test_v3_swapmulti_signature_matches_expected() {
+        // Expected signature from user: 0x2c96555a96d94780f3a97aeb724514e80e331842f3143742d85da5aa68df9d30
+        let expected: B256 = "0x2c96555a96d94780f3a97aeb724514e80e331842f3143742d85da5aa68df9d30"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            SwapMultiV3::SIGNATURE_HASH,
+            expected,
+            "SwapMultiV3 signature hash should match expected value"
+        );
+    }
+
+    #[test]
+    fn test_for_chain_v3_base() {
+        let source = OdosPriceSource::for_chain(NamedChain::Base, RouterType::V3)
+            .expect("Base V3 should be supported");
+        assert_ne!(source.router_address(), Address::ZERO);
+    }
+
+    #[test]
     fn test_all_routers_for_chain_mainnet() {
         let sources = OdosPriceSource::all_routers_for_chain(NamedChain::Mainnet);
 
@@ -607,5 +631,80 @@ mod tests {
 
         // Unsupported chain should return empty vec
         assert!(sources.is_empty());
+    }
+
+    #[test]
+    fn test_extract_swap_multi_v3_simple_swap() {
+        use alloy_primitives::{LogData, I256, U256};
+        use alloy_sol_types::SolEvent;
+
+        // Create a V3 price source for Base
+        let source = OdosPriceSource::for_chain(NamedChain::Base, RouterType::V3)
+            .expect("Base V3 should be supported");
+
+        // Create test data for a simple 1-to-1 SwapMulti event
+        let sender: Address = "0x1234567890123456789012345678901234567890"
+            .parse()
+            .unwrap();
+        let token_in: Address = "0x4200000000000000000000000000000000000006"
+            .parse()
+            .unwrap(); // WETH on Base
+        let token_out: Address = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+            .parse()
+            .unwrap(); // USDC on Base
+        let amount_in = U256::from(1_000_000_000_000_000_000u128); // 1 ETH
+        let amount_out = U256::from(2_000_000_000u128); // 2000 USDC
+
+        // Encode the SwapMulti event
+        let event = SwapMultiV3 {
+            sender,
+            amountsIn: vec![amount_in],
+            tokensIn: vec![token_in],
+            amountsOut: vec![amount_out],
+            tokensOut: vec![token_out],
+            slippage: vec![I256::ZERO],
+            referralCode: 0,
+            referralFee: 0,
+            referralFeeRecipient: Address::ZERO,
+        };
+
+        let log_data = LogData::new(
+            vec![SwapMultiV3::SIGNATURE_HASH],
+            event.encode_data().into(),
+        )
+        .expect("Log data should be valid");
+
+        let log = Log {
+            inner: alloy_primitives::Log {
+                address: source.router_address(),
+                data: log_data,
+            },
+            block_hash: None,
+            block_number: Some(12345678),
+            block_timestamp: None,
+            transaction_hash: Some(
+                "0x229c93653ee98127a71fda4c0be337acbbd459c4a4063a427bcfec67706ee11d"
+                    .parse()
+                    .unwrap(),
+            ),
+            transaction_index: None,
+            log_index: None,
+            removed: false,
+        };
+
+        // Extract swap data
+        let result = source.extract_swap_from_log(&log);
+        assert!(result.is_ok(), "Should successfully extract swap data");
+
+        let swap_data = result.unwrap();
+        assert!(swap_data.is_some(), "Should return Some(SwapData)");
+
+        let swap = swap_data.unwrap();
+        assert_eq!(swap.token_in, token_in);
+        assert_eq!(swap.token_out, token_out);
+        assert_eq!(swap.token_in_amount, amount_in);
+        assert_eq!(swap.token_out_amount, amount_out);
+        assert_eq!(swap.sender, Some(sender));
+        assert_eq!(swap.block_number, Some(12345678));
     }
 }

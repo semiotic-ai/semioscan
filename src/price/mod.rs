@@ -146,6 +146,7 @@ pub struct SwapData {
 ///
 /// # Optional Methods
 ///
+/// - [`sender_address`](PriceSource::sender_address): Optional sender filter address
 /// - [`should_include_swap`](PriceSource::should_include_swap): Filter swaps (default: accept all)
 pub trait PriceSource: Send + Sync {
     /// Returns the contract address to scan for swap events
@@ -187,6 +188,14 @@ pub trait PriceSource: Send + Sync {
     /// Return `DecodeError` if the log doesn't match the expected event structure.
     /// Return `InvalidSwapData` if the event data is malformed (e.g., empty arrays).
     fn extract_swap_from_log(&self, log: &Log) -> Result<Option<SwapData>, PriceSourceError>;
+
+    /// Optional sender address filter
+    ///
+    /// When set, consumers can use this value to understand or display the active
+    /// sender filter configured by the price source.
+    fn sender_address(&self) -> Option<Address> {
+        None
+    }
 
     /// Optional filter to exclude certain swaps
     ///
