@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-01-16
+
+### Breaking Changes
+
+**Renamed liquidator filter to sender filter in OdosPriceSource**
+
+- `with_liquidator_filter()` renamed to `with_sender_filter()`
+- Internal `liquidator_address` field renamed to `sender_address`
+- The filter applies to any sender address, not just liquidation bots
+
+#### Migration Guide
+
+```rust
+// Before (v0.8.x)
+let price_source = OdosPriceSource::for_chain(NamedChain::Arbitrum, RouterType::V2)?
+    .with_liquidator_filter("0x123...".parse().unwrap());
+
+// After (v0.9.0)
+let price_source = OdosPriceSource::for_chain(NamedChain::Arbitrum, RouterType::V2)?
+    .with_sender_filter("0x123...".parse().unwrap());
+```
+
+### Added
+
+- **`sender_address()` method on `PriceSource` trait**: Returns the configured sender filter address (if any). Default implementation returns `None`.
+- **V3 router tests**: Added signature verification test for SwapMultiV3 event and Base chain V3 support test
+- **SwapMulti V3 extraction test**: Added integration test for V3 router SwapMulti event decoding
+
 ## [0.8.1] - 2026-01-16
 
 ### Changed
