@@ -53,7 +53,7 @@
 //! }
 //! ```
 
-use alloy_erc20_full::LazyToken;
+use alloy_erc20::LazyToken;
 use alloy_network::Network;
 use alloy_primitives::{Address, U256};
 use alloy_provider::Provider;

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use alloy_chains::NamedChain;
-use alloy_erc20_full::LazyToken;
+use alloy_erc20::LazyToken;
 use alloy_primitives::{Address, BlockNumber, B256, U256};
 use alloy_provider::Provider;
 use alloy_rpc_types::Filter;
