@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-02-25
+
+### Changed
+
+- Upgraded alloy crates to 1.7
+- Switched from `alloy-erc20-full` fork to upstream `alloy-erc20`
+- Upgraded `op-alloy-network` to 0.24
+
+### Fixed
+
+- Removed broken intra-doc link to non-existent `ChainProvider` type
+
 ## [0.9.0] - 2026-01-16
 
 ### Breaking Changes

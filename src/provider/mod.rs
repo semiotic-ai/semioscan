@@ -16,7 +16,6 @@
 //! This module provides:
 //! - [`create_http_provider`] - Create an HTTP provider with optional rate limiting
 //! - [`create_ws_provider`] - Create a WebSocket provider for real-time subscriptions (requires `ws` feature)
-//! - [`ChainProvider`] - Enum-based provider for common chains
 //!
 //! # When to Use Dynamic Providers
 //!
