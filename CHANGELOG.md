@@ -456,7 +456,7 @@ If you were using semioscan as a CLI tool or API server, those features have bee
 
 - **Feature flags simplified**:
   - `default = ["odos-example"]` - includes Odos reference implementation
-  - `odos-example` - optional Odos DEX support (requires `odos-sdk` and `usdshe`)
+  - `odos-example` - optional Odos DEX support (requires `odos-sdk`)
   - All other functionality is always included (no feature gates for core library)
 
 - **Gas calculation constants deprecated**:
