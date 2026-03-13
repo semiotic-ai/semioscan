@@ -7,20 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-03-13
+
 ### Breaking Changes
 
 - `CombinedDataResult` now includes `retrieval_metadata`, exposing structured partial-failure details so callers can reject incomplete combined retrieval results explicitly.
+
+### Added
+
+- Configurable serial combined-lookup fallback attempts in `SemioscanConfig`, including per-chain overrides.
+- `zksync_combined_probe` diagnostic example for comparing scanned transfer totals, typed transaction lookup behavior, permissive raw decoding, and the combined retrieval path against a real zkSync provider.
 
 ### Fixed
 
 - Combined transfer-and-gas retrieval no longer silently hides decoded transfers that fail transaction or receipt enrichment; the result now records structured partial-failure metadata and does one bounded serial fallback pass.
 - zkSync combined retrieval now retries transaction lookups with permissive raw decoding when Ethereum-typed transaction deserialization fails on zkSync-specific response shapes.
-- Request-failure errors for transaction and receipt lookups now use `RpcError::RequestFailed`, improving operator-facing error semantics and skip-site logging.
+- EIP-2930 (access-list) transactions now correctly use the transaction's own gas price instead of the receipt effective gas price.
+- Async tracing spans now correctly instrument the full async function body instead of only the synchronous prefix before the first `.await`.
 
-### Added
+### Deprecated
 
-- Added the `zksync_combined_probe` example to compare scanned transfer totals, typed transaction lookup behavior, permissive raw decoding, and the combined retrieval path against a real zkSync provider.
-- Added configurable serial combined-lookup fallback attempts to `SemioscanConfig`, including per-chain overrides.
+- `RpcError::ChainConnectionFailed` and its `chain_connection_failed()` helper in favor of `RpcError::RequestFailed` / `request_failed()` for tx/receipt/log method failures.
 
 ## [0.9.2] - 2026-02-26
 
