@@ -65,6 +65,10 @@ pub struct SemioscanConfig {
     /// Default: 30 seconds (prevents hanging on unresponsive providers)
     pub rpc_timeout: Duration,
 
+    /// Maximum number of serial tx/receipt enrichment retries after a batch failure.
+    /// Default: 1 (one bounded retry pass per failed decoded transfer)
+    pub serial_lookup_fallback_attempts: usize,
+
     /// Chain-specific overrides
     pub chain_overrides: HashMap<NamedChain, ChainConfig>,
 }
@@ -72,7 +76,7 @@ pub struct SemioscanConfig {
 /// Chain-specific configuration overrides
 ///
 /// Allows per-chain customization of block ranges, rate limits, and timeouts.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ChainConfig {
     /// Override max block range for this chain
     pub max_block_range: Option<MaxBlockRange>,
@@ -82,6 +86,9 @@ pub struct ChainConfig {
 
     /// Override RPC timeout for this chain
     pub rpc_timeout: Option<Duration>,
+
+    /// Override serial tx/receipt enrichment retries for this chain
+    pub serial_lookup_fallback_attempts: Option<usize>,
 }
 
 impl Default for SemioscanConfig {
@@ -110,6 +117,7 @@ impl SemioscanConfig {
             max_block_range: MaxBlockRange::new(500),
             rate_limit_delay: None,
             rpc_timeout: Duration::from_secs(30), // 30 second default timeout
+            serial_lookup_fallback_attempts: 1,
             chain_overrides: HashMap::new(),
         };
 
@@ -120,6 +128,7 @@ impl SemioscanConfig {
                 max_block_range: None, // Use default 500
                 rate_limit_delay: Some(Duration::from_millis(250)),
                 rpc_timeout: None, // Use default timeout
+                serial_lookup_fallback_attempts: None,
             },
         );
 
@@ -130,6 +139,7 @@ impl SemioscanConfig {
                 max_block_range: None,
                 rate_limit_delay: Some(Duration::from_millis(250)),
                 rpc_timeout: None, // Use default timeout
+                serial_lookup_fallback_attempts: None,
             },
         );
 
@@ -153,6 +163,7 @@ impl SemioscanConfig {
             max_block_range: MaxBlockRange::new(500),
             rate_limit_delay: None,
             rpc_timeout: Duration::from_secs(30), // Still include timeout for safety
+            serial_lookup_fallback_attempts: 1,
             chain_overrides: HashMap::new(),
         }
     }
@@ -174,6 +185,7 @@ impl SemioscanConfig {
     ///         max_block_range: Some(MaxBlockRange::new(1000)),
     ///         rate_limit_delay: None,
     ///         rpc_timeout: None,
+    ///         serial_lookup_fallback_attempts: None,
     ///     },
     ///     );
     ///
@@ -242,6 +254,17 @@ impl SemioscanConfig {
             .unwrap_or(self.rpc_timeout)
     }
 
+    /// Get effective serial tx/receipt enrichment fallback attempts for a specific chain.
+    ///
+    /// Returns chain-specific override if set, otherwise returns global default.
+    #[must_use]
+    pub fn get_serial_lookup_fallback_attempts(&self, chain: NamedChain) -> usize {
+        self.chain_overrides
+            .get(&chain)
+            .and_then(|c| c.serial_lookup_fallback_attempts)
+            .unwrap_or(self.serial_lookup_fallback_attempts)
+    }
+
     /// Set chain-specific override
     ///
     /// # Example
@@ -258,6 +281,7 @@ impl SemioscanConfig {
     ///         max_block_range: Some(MaxBlockRange::new(2000)),
     ///         rate_limit_delay: Some(Duration::from_millis(500)),
     ///         rpc_timeout: None,
+    ///         serial_lookup_fallback_attempts: None,
     ///     },
     /// );
     /// ```
@@ -383,6 +407,14 @@ impl SemioscanConfigBuilder {
         self
     }
 
+    /// Set global serial tx/receipt enrichment fallback attempts.
+    ///
+    /// `0` disables the serial fallback pass after batch lookup failures.
+    pub fn serial_lookup_fallback_attempts(mut self, attempts: usize) -> Self {
+        self.config.serial_lookup_fallback_attempts = attempts;
+        self
+    }
+
     /// Add chain-specific configuration
     ///
     /// # Example
@@ -399,6 +431,7 @@ impl SemioscanConfigBuilder {
     ///             max_block_range: Some(MaxBlockRange::new(2000)),
     ///             rate_limit_delay: Some(Duration::from_millis(500)),
     ///             rpc_timeout: None,
+    ///             serial_lookup_fallback_attempts: None,
     ///         },
     ///     )
     ///     .build();
@@ -422,11 +455,16 @@ impl SemioscanConfigBuilder {
     ///     .build();
     /// ```
     pub fn chain_rate_limit(mut self, chain: NamedChain, delay: Duration) -> Self {
-        let existing = self.config.chain_overrides.remove(&chain);
+        let existing = self
+            .config
+            .chain_overrides
+            .remove(&chain)
+            .unwrap_or_default();
         let chain_config = ChainConfig {
-            max_block_range: existing.as_ref().and_then(|c| c.max_block_range),
+            max_block_range: existing.max_block_range,
             rate_limit_delay: Some(delay),
-            rpc_timeout: existing.and_then(|c| c.rpc_timeout),
+            rpc_timeout: existing.rpc_timeout,
+            serial_lookup_fallback_attempts: existing.serial_lookup_fallback_attempts,
         };
         self.config.set_chain_override(chain, chain_config);
         self
@@ -445,11 +483,16 @@ impl SemioscanConfigBuilder {
     ///     .build();
     /// ```
     pub fn chain_max_blocks(mut self, chain: NamedChain, max: u64) -> Self {
-        let existing = self.config.chain_overrides.remove(&chain);
+        let existing = self
+            .config
+            .chain_overrides
+            .remove(&chain)
+            .unwrap_or_default();
         let chain_config = ChainConfig {
             max_block_range: Some(MaxBlockRange::new(max)),
-            rate_limit_delay: existing.as_ref().and_then(|c| c.rate_limit_delay),
-            rpc_timeout: existing.and_then(|c| c.rpc_timeout),
+            rate_limit_delay: existing.rate_limit_delay,
+            rpc_timeout: existing.rpc_timeout,
+            serial_lookup_fallback_attempts: existing.serial_lookup_fallback_attempts,
         };
         self.config.set_chain_override(chain, chain_config);
         self
@@ -469,11 +512,39 @@ impl SemioscanConfigBuilder {
     ///     .build();
     /// ```
     pub fn chain_timeout(mut self, chain: NamedChain, timeout: Duration) -> Self {
-        let existing = self.config.chain_overrides.remove(&chain);
+        let existing = self
+            .config
+            .chain_overrides
+            .remove(&chain)
+            .unwrap_or_default();
         let chain_config = ChainConfig {
-            max_block_range: existing.as_ref().and_then(|c| c.max_block_range),
-            rate_limit_delay: existing.as_ref().and_then(|c| c.rate_limit_delay),
+            max_block_range: existing.max_block_range,
+            rate_limit_delay: existing.rate_limit_delay,
             rpc_timeout: Some(timeout),
+            serial_lookup_fallback_attempts: existing.serial_lookup_fallback_attempts,
+        };
+        self.config.set_chain_override(chain, chain_config);
+        self
+    }
+
+    /// Convenience: set serial tx/receipt enrichment fallback attempts for a specific chain.
+    ///
+    /// `0` disables the serial fallback pass for that chain.
+    pub fn chain_serial_lookup_fallback_attempts(
+        mut self,
+        chain: NamedChain,
+        attempts: usize,
+    ) -> Self {
+        let existing = self
+            .config
+            .chain_overrides
+            .remove(&chain)
+            .unwrap_or_default();
+        let chain_config = ChainConfig {
+            max_block_range: existing.max_block_range,
+            rate_limit_delay: existing.rate_limit_delay,
+            rpc_timeout: existing.rpc_timeout,
+            serial_lookup_fallback_attempts: Some(attempts),
         };
         self.config.set_chain_override(chain, chain_config);
         self
@@ -527,6 +598,10 @@ mod tests {
             config.get_max_block_range(NamedChain::Arbitrum),
             MaxBlockRange::new(500)
         );
+        assert_eq!(
+            config.get_serial_lookup_fallback_attempts(NamedChain::Base),
+            1
+        );
     }
 
     #[test]
@@ -541,6 +616,10 @@ mod tests {
         assert_eq!(
             config.get_max_block_range(NamedChain::Base),
             MaxBlockRange::new(500)
+        );
+        assert_eq!(
+            config.get_serial_lookup_fallback_attempts(NamedChain::Base),
+            1
         );
     }
 
@@ -571,6 +650,7 @@ mod tests {
                 max_block_range: Some(MaxBlockRange::new(2000)),
                 rate_limit_delay: Some(Duration::from_millis(100)),
                 rpc_timeout: None, // Use default timeout
+                serial_lookup_fallback_attempts: None,
             },
         );
 
@@ -590,6 +670,10 @@ mod tests {
             config.get_rpc_timeout(NamedChain::Arbitrum),
             Duration::from_secs(30)
         ); // Uses default
+        assert_eq!(
+            config.get_serial_lookup_fallback_attempts(NamedChain::Arbitrum),
+            1
+        );
     }
 
     #[test]
@@ -619,6 +703,7 @@ mod tests {
     fn test_chain_config_preserves_existing() {
         let config = SemioscanConfigBuilder::new()
             .chain_max_blocks(NamedChain::Arbitrum, 1000)
+            .chain_serial_lookup_fallback_attempts(NamedChain::Arbitrum, 2)
             .chain_rate_limit(NamedChain::Arbitrum, Duration::from_millis(100))
             .build();
 
@@ -630,6 +715,10 @@ mod tests {
         assert_eq!(
             config.get_rate_limit_delay(NamedChain::Arbitrum),
             Some(Duration::from_millis(100))
+        );
+        assert_eq!(
+            config.get_serial_lookup_fallback_attempts(NamedChain::Arbitrum),
+            2
         );
     }
 
@@ -647,6 +736,39 @@ mod tests {
         assert_eq!(
             config.get_rate_limit_delay(NamedChain::Base),
             Some(Duration::from_millis(500))
+        );
+    }
+
+    #[test]
+    fn test_global_serial_lookup_fallback_attempts() {
+        let config = SemioscanConfigBuilder::new()
+            .serial_lookup_fallback_attempts(3)
+            .build();
+
+        assert_eq!(
+            config.get_serial_lookup_fallback_attempts(NamedChain::Arbitrum),
+            3
+        );
+        assert_eq!(
+            config.get_serial_lookup_fallback_attempts(NamedChain::Base),
+            3
+        );
+    }
+
+    #[test]
+    fn test_chain_override_global_serial_lookup_fallback_attempts() {
+        let config = SemioscanConfigBuilder::new()
+            .serial_lookup_fallback_attempts(3)
+            .chain_serial_lookup_fallback_attempts(NamedChain::ZkSync, 0)
+            .build();
+
+        assert_eq!(
+            config.get_serial_lookup_fallback_attempts(NamedChain::Arbitrum),
+            3
+        );
+        assert_eq!(
+            config.get_serial_lookup_fallback_attempts(NamedChain::ZkSync),
+            0
         );
     }
 

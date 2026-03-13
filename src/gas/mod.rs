@@ -38,6 +38,7 @@ pub mod blob;
 pub mod cache;
 pub mod calculator;
 pub mod core;
+pub(crate) mod transaction;
 
 // Re-export public API
 pub use calculator::*;

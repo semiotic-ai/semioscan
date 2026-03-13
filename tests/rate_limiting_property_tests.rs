@@ -321,6 +321,7 @@ fn test_chain_config_with_only_rate_limit() {
         max_block_range: None,
         rate_limit_delay: Some(Duration::from_millis(250)),
         rpc_timeout: None,
+        serial_lookup_fallback_attempts: None,
     };
 
     assert!(config.rate_limit_delay.is_some());
@@ -334,6 +335,7 @@ fn test_chain_config_with_only_max_blocks() {
         max_block_range: Some(MaxBlockRange::new(1000)),
         rate_limit_delay: None,
         rpc_timeout: None,
+        serial_lookup_fallback_attempts: None,
     };
 
     assert!(config.max_block_range.is_some());
@@ -347,6 +349,7 @@ fn test_chain_config_with_both_settings() {
         max_block_range: Some(MaxBlockRange::new(1000)),
         rate_limit_delay: Some(Duration::from_millis(250)),
         rpc_timeout: None,
+        serial_lookup_fallback_attempts: None,
     };
 
     assert_eq!(config.max_block_range, Some(MaxBlockRange::new(1000)));

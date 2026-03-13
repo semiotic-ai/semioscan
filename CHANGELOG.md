@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added the `zksync_combined_probe` example to compare scanned transfer totals, typed transaction lookup behavior, permissive raw decoding, and the combined retrieval path against a real zkSync provider.
+- Added configurable serial combined-lookup fallback attempts to `SemioscanConfig`, including per-chain overrides.
 
 ## [0.9.2] - 2026-02-26
 

@@ -10,7 +10,7 @@ use alloy_rpc_types::{Filter, TransactionTrait};
 use alloy_sol_types::SolEvent;
 
 use crate::events::definitions::Transfer;
-use crate::types::gas::BlobCount;
+use crate::gas::transaction;
 
 /// Core gas calculation logic
 pub struct GasCalculationCore;
@@ -20,18 +20,14 @@ impl GasCalculationCore {
     where
         T: TransactionTrait + Typed2718,
     {
-        if !transaction.is_eip4844() {
-            return U256::ZERO;
-        }
-        let blob_count = BlobCount::new(
-            transaction
-                .blob_versioned_hashes()
-                .map(|hashes| hashes.len())
-                .unwrap_or_default(),
-        );
-        let blob_gas_used = blob_count.to_blob_gas_amount();
-        let blob_gas_price = U256::from(transaction.max_fee_per_blob_gas().unwrap_or_default());
-        blob_gas_used.as_u256().saturating_mul(blob_gas_price)
+        transaction::blob_gas_cost(transaction)
+    }
+
+    pub(crate) fn gas_price_override<T>(transaction: &T) -> Option<U256>
+    where
+        T: TransactionTrait + Typed2718,
+    {
+        transaction::gas_price_override(transaction)
     }
 
     pub(crate) fn create_transfer_filter(

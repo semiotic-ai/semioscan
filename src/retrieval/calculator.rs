@@ -106,16 +106,8 @@ impl TransactionGasData {
     where
         T: TransactionTrait + alloy_provider::network::eip2718::Typed2718,
     {
-        let gas_price_override = if transaction.is_legacy() || transaction.is_eip2930() {
-            Some(alloy_primitives::U256::from(
-                transaction.gas_price().unwrap_or_default(),
-            ))
-        } else {
-            None
-        };
-
         Self {
-            gas_price_override,
+            gas_price_override: GasCalculationCore::gas_price_override(transaction),
             blob_gas_cost: GasCalculationCore::calculate_blob_gas_cost(transaction),
         }
     }
@@ -128,8 +120,6 @@ impl TransactionGasData {
             .unwrap_or(receipt_effective_gas_price)
     }
 }
-
-const SERIAL_LOOKUP_FALLBACK_ATTEMPTS: usize = 1;
 
 fn collect_error_chain(error: &(dyn StdError + 'static)) -> Vec<String> {
     let mut chain = vec![error.to_string()];
@@ -489,6 +479,7 @@ where
         &self,
         chain: NamedChain,
         mut failure: CombinedDataLookupFailure,
+        max_attempts: usize,
         adapter: &A,
     ) -> (Result<GasAndAmountForTx, CombinedDataLookupFailure>, usize) {
         let entry = LogBatchEntry {
@@ -498,14 +489,14 @@ where
         };
 
         let mut attempts = 0;
-        while attempts < SERIAL_LOOKUP_FALLBACK_ATTEMPTS {
+        while attempts < max_attempts {
             attempts += 1;
             warn!(
                 ?failure.tx_hash,
                 block_number = failure.block_number,
                 transfer_value = ?failure.transfer_value,
                 attempt = attempts,
-                max_attempts = SERIAL_LOOKUP_FALLBACK_ATTEMPTS,
+                max_attempts,
                 "Retrying combined data lookup serially after batch failure"
             );
 
@@ -553,6 +544,8 @@ where
             // Get config values for this chain
             let max_block_range = self.config.get_max_block_range(chain);
             let rate_limit = self.config.get_rate_limit_delay(chain);
+            let serial_lookup_fallback_attempts =
+                self.config.get_serial_lookup_fallback_attempts(chain);
 
             while current_block <= to_block {
                 let chunk_end =
@@ -640,18 +633,30 @@ where
                 }
 
                 if !batch_failures.is_empty() {
-                    warn!(
-                        failed_lookups = batch_failures.len(),
-                        max_attempts_per_lookup = SERIAL_LOOKUP_FALLBACK_ATTEMPTS,
-                        "Retrying failed combined lookups serially after batch pass"
-                    );
+                    if serial_lookup_fallback_attempts == 0 {
+                        warn!(
+                            failed_lookups = batch_failures.len(),
+                            "Batch combined lookups failed and serial fallback is disabled for this chain"
+                        );
+                    } else {
+                        warn!(
+                            failed_lookups = batch_failures.len(),
+                            max_attempts_per_lookup = serial_lookup_fallback_attempts,
+                            "Retrying failed combined lookups serially after batch pass"
+                        );
+                    }
                 }
 
                 // The fallback pass is intentionally sequential across failures to avoid
                 // reproducing the original burst pattern against the provider.
                 for batch_failure in batch_failures {
                     let (retry_result, fallback_attempts) = self
-                        .retry_failed_tx_data(chain, batch_failure, adapter)
+                        .retry_failed_tx_data(
+                            chain,
+                            batch_failure,
+                            serial_lookup_fallback_attempts,
+                            adapter,
+                        )
                         .await;
                     result
                         .retrieval_metadata
@@ -826,6 +831,8 @@ mod tests {
         sync::{Arc, Mutex},
         task::{Context, Poll},
     };
+
+    use crate::SemioscanConfigBuilder;
 
     #[derive(Clone, Debug, Default)]
     struct MethodResponseTransport {
@@ -1166,8 +1173,15 @@ mod tests {
     fn create_calculator(
         transport: MethodResponseTransport,
     ) -> CombinedCalculator<Ethereum, RootProvider<Ethereum>> {
+        create_calculator_with_config(transport, SemioscanConfig::default())
+    }
+
+    fn create_calculator_with_config(
+        transport: MethodResponseTransport,
+        config: SemioscanConfig,
+    ) -> CombinedCalculator<Ethereum, RootProvider<Ethereum>> {
         let provider = ProviderBuilder::default().connect_client(RpcClient::new(transport, true));
-        CombinedCalculator::new(provider)
+        CombinedCalculator::with_config(provider, config)
     }
 
     #[tokio::test]
@@ -1476,6 +1490,63 @@ mod tests {
         assert!(result.retrieval_metadata.partial_failures.is_empty());
         assert_eq!(transport.request_count("eth_getTransactionByHash"), 2);
         assert_eq!(transport.request_count("eth_getTransactionReceipt"), 2);
+    }
+
+    #[tokio::test]
+    async fn zero_configured_serial_fallback_attempts_skip_retry_pass() {
+        let transport = MethodResponseTransport::default();
+        let chain = NamedChain::ZkSync;
+        let from_address = address!("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let to_address = address!("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+        let token_address = address!("0xcccccccccccccccccccccccccccccccccccccccc");
+        let tx_hash = TxHash::from(B256::repeat_byte(0xCD));
+        let transfer_value = U256::from(1_111_u64);
+
+        transport.push_success(
+            "eth_getLogs",
+            &vec![create_transfer_log(
+                tx_hash,
+                301,
+                token_address,
+                from_address,
+                to_address,
+                transfer_value,
+            )],
+        );
+        transport.push_failure_msg("eth_getTransactionByHash", "batch tx lookup failed");
+        transport.push_success(
+            "eth_getTransactionReceipt",
+            &Some(create_test_receipt(
+                tx_hash,
+                from_address,
+                to_address,
+                21_000,
+                100,
+            )),
+        );
+
+        let config = SemioscanConfigBuilder::new()
+            .chain_serial_lookup_fallback_attempts(chain, 0)
+            .build();
+        let calculator = create_calculator_with_config(transport.clone(), config);
+        let result = calculator
+            .calculate_combined_data_ethereum(
+                chain,
+                from_address,
+                to_address,
+                token_address,
+                301,
+                301,
+            )
+            .await
+            .expect("combined calculation should return partial result");
+
+        assert!(result.is_partial());
+        assert_eq!(result.retrieval_metadata.skipped_logs, 1);
+        assert_eq!(result.retrieval_metadata.fallback_attempts, 0);
+        assert_eq!(result.retrieval_metadata.fallback_recovered, 0);
+        assert_eq!(transport.request_count("eth_getTransactionByHash"), 1);
+        assert_eq!(transport.request_count("eth_getTransactionReceipt"), 1);
     }
 
     #[tokio::test]
