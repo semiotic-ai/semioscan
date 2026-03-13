@@ -94,7 +94,9 @@ pub use events::{Approval, Transfer};
 pub use retrieval::{
     batch_fetch_balances, batch_fetch_eth_balances, get_token_decimal_precision,
     u256_to_bigdecimal, BalanceError, BalanceQuery, BalanceResult, CombinedCalculator,
-    CombinedDataResult, DecimalPrecision,
+    CombinedDataLookupAttempt, CombinedDataLookupFailure, CombinedDataLookupPass,
+    CombinedDataLookupStage, CombinedDataResult, CombinedDataRetrievalMetadata, DecimalPrecision,
+    GasAndAmountForTx,
 };
 
 // === Transport Layers ===

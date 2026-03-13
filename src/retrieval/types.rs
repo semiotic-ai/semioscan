@@ -12,19 +12,27 @@ use crate::types::config::TransactionCount;
 use crate::types::gas::{GasAmount, GasPrice};
 
 /// Data for a single transaction including gas and transferred amount.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GasAndAmountForTx {
+    /// Transaction hash for the enriched transfer.
     pub tx_hash: TxHash,
+    /// Block number containing the transaction.
     pub block_number: BlockNumber,
-    pub gas_used: GasAmount,           // L2 gas used
-    pub effective_gas_price: GasPrice, // L2 effective gas price
-    pub l1_fee: Option<U256>,          // L1 data fee for L2s
-    pub blob_gas_cost: U256,           // Cost from EIP-4844 blobs
+    /// L2 gas used by the transaction.
+    pub gas_used: GasAmount,
+    /// Effective L2 gas price charged for the transaction.
+    pub effective_gas_price: GasPrice,
+    /// Optional L1 data fee charged by L2 chains that expose it in the receipt.
+    pub l1_fee: Option<U256>,
+    /// Additional blob gas cost for EIP-4844 transactions.
+    pub blob_gas_cost: U256,
+    /// ERC-20 amount transferred by the decoded log this transaction matched.
     pub transferred_amount: U256,
 }
 
 impl GasAndAmountForTx {
     /// Calculates the total gas cost for this transaction, including L2 gas, L1 fee, and blob gas.
+    #[must_use]
     pub fn total_gas_cost(&self) -> U256 {
         let l2_execution_cost = self.gas_used * self.effective_gas_price;
         let total_cost = l2_execution_cost.saturating_add(self.blob_gas_cost);
@@ -32,8 +40,106 @@ impl GasAndAmountForTx {
     }
 }
 
+/// Which follow-up RPC lookup failed while enriching a decoded transfer log.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CombinedDataLookupStage {
+    Transaction,
+    Receipt,
+}
+
+impl CombinedDataLookupStage {
+    #[must_use]
+    pub const fn operation_name(self) -> &'static str {
+        match self {
+            Self::Transaction => "get_transaction_by_hash",
+            Self::Receipt => "get_transaction_receipt",
+        }
+    }
+}
+
+/// Which pass produced a lookup error while enriching a decoded transfer log.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CombinedDataLookupPass {
+    Batch,
+    SerialFallback,
+}
+
+/// Diagnostic details for one failed tx/receipt lookup attempt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CombinedDataLookupAttempt {
+    pub pass: CombinedDataLookupPass,
+    pub stage: CombinedDataLookupStage,
+    pub error: String,
+    pub error_chain: Vec<String>,
+    pub transport_error: Option<String>,
+}
+
+/// Structured metadata describing a decoded transfer that could not be fully enriched.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CombinedDataLookupFailure {
+    pub tx_hash: TxHash,
+    pub block_number: BlockNumber,
+    pub transfer_value: U256,
+    pub attempts: Vec<CombinedDataLookupAttempt>,
+}
+
+impl CombinedDataLookupFailure {
+    #[must_use]
+    pub fn final_attempt(&self) -> Option<&CombinedDataLookupAttempt> {
+        self.attempts.last()
+    }
+}
+
+/// Retrieval metadata for combined data calculations.
+///
+/// This exposes whether decoded transfers had to be skipped after bounded retry/fallback logic,
+/// so callers can reject partial accounting results instead of silently persisting them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CombinedDataRetrievalMetadata {
+    pub skipped_logs: usize,
+    pub fallback_attempts: usize,
+    pub fallback_recovered: usize,
+    pub partial_failures: Vec<CombinedDataLookupFailure>,
+}
+
+impl CombinedDataRetrievalMetadata {
+    #[must_use]
+    pub fn has_partial_failures(&self) -> bool {
+        !self.partial_failures.is_empty()
+    }
+
+    #[must_use]
+    pub fn skipped_tx_hashes(&self) -> Vec<TxHash> {
+        self.partial_failures
+            .iter()
+            .map(|failure| failure.tx_hash)
+            .collect()
+    }
+
+    pub fn record_fallback_attempts(&mut self, attempts: usize) {
+        self.fallback_attempts += attempts;
+    }
+
+    pub fn record_fallback_recovery(&mut self) {
+        self.fallback_recovered += 1;
+    }
+
+    pub fn record_partial_failure(&mut self, failure: CombinedDataLookupFailure) {
+        self.skipped_logs += 1;
+        self.partial_failures.push(failure);
+    }
+
+    pub fn merge(&mut self, other: &CombinedDataRetrievalMetadata) {
+        self.skipped_logs += other.skipped_logs;
+        self.fallback_attempts += other.fallback_attempts;
+        self.fallback_recovered += other.fallback_recovered;
+        self.partial_failures
+            .extend(other.partial_failures.iter().cloned());
+    }
+}
+
 /// Aggregated result for combined data retrieval over a block range.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CombinedDataResult {
     pub chain: NamedChain,
     pub from_address: Address,
@@ -46,9 +152,12 @@ pub struct CombinedDataResult {
     pub total_amount_transferred: U256,
     pub transaction_count: TransactionCount,
     pub transactions_data: Vec<GasAndAmountForTx>,
+    #[serde(default)]
+    pub retrieval_metadata: CombinedDataRetrievalMetadata,
 }
 
 impl CombinedDataResult {
+    #[must_use]
     pub fn new(
         chain: NamedChain,
         from_address: Address,
@@ -67,6 +176,7 @@ impl CombinedDataResult {
             total_amount_transferred: U256::ZERO,
             transaction_count: TransactionCount::new(0),
             transactions_data: Vec::new(),
+            retrieval_metadata: CombinedDataRetrievalMetadata::default(),
         }
     }
 
@@ -106,7 +216,13 @@ impl CombinedDataResult {
             .saturating_add(other.total_amount_transferred);
         self.transaction_count += other.transaction_count;
         self.transactions_data
-            .extend(other.transactions_data.iter().cloned()); // Consider efficiency for very large Vecs
+            .extend(other.transactions_data.iter().cloned());
+        self.retrieval_metadata.merge(&other.retrieval_metadata);
+    }
+
+    #[must_use]
+    pub fn is_partial(&self) -> bool {
+        self.retrieval_metadata.has_partial_failures()
     }
 }
 
@@ -273,6 +389,105 @@ mod tests {
         assert!(
             debug_str.contains("tx_hash"),
             "Debug output should include tx_hash"
+        );
+    }
+
+    #[test]
+    fn test_combined_result_is_partial_when_metadata_has_failures() {
+        let mut result = CombinedDataResult::new(
+            NamedChain::Mainnet,
+            Address::ZERO,
+            Address::ZERO,
+            Address::ZERO,
+        );
+
+        result
+            .retrieval_metadata
+            .record_partial_failure(CombinedDataLookupFailure {
+                tx_hash: TxHash::repeat_byte(0x11),
+                block_number: 123,
+                transfer_value: U256::from(42_u64),
+                attempts: vec![CombinedDataLookupAttempt {
+                    pass: CombinedDataLookupPass::Batch,
+                    stage: CombinedDataLookupStage::Transaction,
+                    error: "RPC error".to_string(),
+                    error_chain: vec!["RPC error".to_string(), "inner transport".to_string()],
+                    transport_error: Some("inner transport".to_string()),
+                }],
+            });
+
+        assert!(result.is_partial());
+        assert!(result.retrieval_metadata.has_partial_failures());
+        assert_eq!(
+            result.retrieval_metadata.skipped_tx_hashes(),
+            vec![TxHash::repeat_byte(0x11)]
+        );
+    }
+
+    #[test]
+    fn test_metadata_has_partial_failures_tracks_failure_entries_not_skip_counter() {
+        let metadata = CombinedDataRetrievalMetadata {
+            skipped_logs: 0,
+            fallback_attempts: 0,
+            fallback_recovered: 0,
+            partial_failures: vec![CombinedDataLookupFailure {
+                tx_hash: TxHash::repeat_byte(0x22),
+                block_number: 456,
+                transfer_value: U256::from(7_u64),
+                attempts: vec![CombinedDataLookupAttempt {
+                    pass: CombinedDataLookupPass::Batch,
+                    stage: CombinedDataLookupStage::Receipt,
+                    error: "missing receipt".to_string(),
+                    error_chain: vec!["missing receipt".to_string()],
+                    transport_error: None,
+                }],
+            }],
+        };
+
+        assert!(metadata.has_partial_failures());
+    }
+
+    #[test]
+    fn test_combined_result_merge_includes_retrieval_metadata() {
+        let mut left = CombinedDataResult::new(
+            NamedChain::Mainnet,
+            Address::ZERO,
+            Address::ZERO,
+            Address::ZERO,
+        );
+        let mut right = CombinedDataResult::new(
+            NamedChain::Mainnet,
+            Address::ZERO,
+            Address::ZERO,
+            Address::ZERO,
+        );
+
+        left.retrieval_metadata.fallback_attempts = 1;
+        left.retrieval_metadata.fallback_recovered = 1;
+        right
+            .retrieval_metadata
+            .record_partial_failure(CombinedDataLookupFailure {
+                tx_hash: TxHash::repeat_byte(0x22),
+                block_number: 456,
+                transfer_value: U256::from(99_u64),
+                attempts: vec![CombinedDataLookupAttempt {
+                    pass: CombinedDataLookupPass::SerialFallback,
+                    stage: CombinedDataLookupStage::Receipt,
+                    error: "missing receipt".to_string(),
+                    error_chain: vec!["missing receipt".to_string()],
+                    transport_error: None,
+                }],
+            });
+
+        left.merge(&right);
+
+        assert_eq!(left.retrieval_metadata.fallback_attempts, 1);
+        assert_eq!(left.retrieval_metadata.fallback_recovered, 1);
+        assert_eq!(left.retrieval_metadata.skipped_logs, 1);
+        assert_eq!(left.retrieval_metadata.partial_failures.len(), 1);
+        assert_eq!(
+            left.retrieval_metadata.skipped_tx_hashes(),
+            vec![TxHash::repeat_byte(0x22)]
         );
     }
 }

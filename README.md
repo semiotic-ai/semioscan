@@ -89,10 +89,10 @@ Add semioscan to your `Cargo.toml`:
 ```toml
 [dependencies]
 # Core library (gas, block windows, events)
-semioscan = "0.9"
+semioscan = "0.10"
 
 # With Odos DEX reference implementation (optional)
-semioscan = { version = "0.9", features = ["odos-example"] }
+semioscan = { version = "0.10", features = ["odos-example"] }
 ```
 
 ### Feature Flags
@@ -224,6 +224,7 @@ The [`examples/`](examples/) directory contains complete, production-ready examp
 | [`daily_block_window.rs`](examples/daily_block_window.rs) | Map UTC dates to block ranges | Beginner |
 | [`router_token_discovery.rs`](examples/router_token_discovery.rs) | Discover tokens sent to router contracts | Intermediate |
 | [`eip4844_blob_gas.rs`](examples/eip4844_blob_gas.rs) | Calculate EIP-4844 blob gas for L2 rollups | Advanced |
+| [`zksync_combined_probe.rs`](examples/zksync_combined_probe.rs) | Diagnose zkSync typed tx lookup failures, permissive raw decode, and combined fallback behavior | Advanced |
 | [`custom_dex_integration.rs`](examples/custom_dex_integration.rs) | Implement `PriceSource` for any DEX | Advanced |
 
 ### Running Examples
@@ -237,6 +238,10 @@ ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc cargo run --example router_token_d
 
 # With logging for debugging
 RUST_LOG=debug cargo run --example eip4844_blob_gas
+
+# Diagnose zkSync combined retrieval behavior
+ZKSYNC_RPC_URL=https://your-zksync-rpc \
+cargo run --example zksync_combined_probe
 ```
 
 **For detailed setup, configuration, performance tips, and troubleshooting, see [examples/README.md](examples/README.md).**

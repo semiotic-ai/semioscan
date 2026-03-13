@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `CombinedDataResult` now includes `retrieval_metadata`, exposing structured partial-failure details so callers can reject incomplete combined retrieval results explicitly.
+
+### Fixed
+
+- Combined transfer-and-gas retrieval no longer silently hides decoded transfers that fail transaction or receipt enrichment; the result now records structured partial-failure metadata and does one bounded serial fallback pass.
+- zkSync combined retrieval now retries transaction lookups with permissive raw decoding when Ethereum-typed transaction deserialization fails on zkSync-specific response shapes.
+- Request-failure errors for transaction and receipt lookups now use `RpcError::RequestFailed`, improving operator-facing error semantics and skip-site logging.
+
+### Added
+
+- Added the `zksync_combined_probe` example to compare scanned transfer totals, typed transaction lookup behavior, permissive raw decoding, and the combined retrieval path against a real zkSync provider.
+
 ## [0.9.2] - 2026-02-26
 
 ### Changed

@@ -29,8 +29,8 @@
 //!     Err(GasCalculationError::Rpc(RpcError::BlockNotFound { block_number })) => {
 //!         eprintln!("Block {block_number} not found - may be beyond chain tip");
 //!     }
-//!     Err(GasCalculationError::Rpc(RpcError::ChainConnectionFailed { operation, .. })) => {
-//!         eprintln!("Network error during {operation} - retrying...");
+//!     Err(GasCalculationError::Rpc(RpcError::RequestFailed { operation, .. })) => {
+//!         eprintln!("RPC request failed during {operation} - retrying...");
 //!     }
 //!     Err(e) => eprintln!("Other error: {e}"),
 //! }
@@ -124,12 +124,31 @@ pub enum RpcError {
         block_number: BlockNumber,
     },
 
-    /// Failed to connect to the blockchain or execute an RPC call.
+    /// Failed to connect to the blockchain before a request could complete.
     ///
-    /// This is a catch-all for RPC failures that don't fit other categories,
-    /// such as network errors or provider downtime.
+    /// Retained for backward compatibility. Prefer [`RpcError::RequestFailed`]
+    /// for tx/receipt/log method failures that reached the provider transport
+    /// stack and came back as transport or JSON-RPC errors.
+    #[deprecated(
+        since = "0.10.0",
+        note = "Prefer RpcError::RequestFailed for tx/receipt/log method failures that reached the provider transport stack"
+    )]
     #[error("Chain connection failed during {operation}")]
     ChainConnectionFailed {
+        /// Description of the operation that failed
+        operation: Cow<'static, str>,
+        /// The underlying transport error from alloy
+        #[source]
+        source: TransportError,
+    },
+
+    /// RPC request failed after reaching the provider transport stack.
+    ///
+    /// This is more precise than `ChainConnectionFailed` for tx/receipt/log lookups
+    /// where the provider may return JSON-RPC errors, rate limits, or other
+    /// non-connectivity failures through `TransportError`.
+    #[error("RPC request failed during {operation}")]
+    RequestFailed {
         /// Description of the operation that failed
         operation: Cow<'static, str>,
         /// The underlying transport error from alloy
@@ -224,6 +243,10 @@ impl RpcError {
 
     /// Helper to create a `ChainConnectionFailed` error from a transport error.
     ///
+    /// Prefer [`RpcError::request_failed`] for ordinary RPC method failures.
+    /// This helper is retained for backward compatibility with callers that
+    /// still distinguish pre-request connectivity failures separately.
+    ///
     /// # Examples
     ///
     /// ```rust,ignore
@@ -235,11 +258,27 @@ impl RpcError {
     ///     Err(e) => return Err(RpcError::chain_connection_failed("get_transaction", e)),
     /// }
     /// ```
+    #[deprecated(
+        since = "0.10.0",
+        note = "Prefer RpcError::request_failed for tx/receipt/log method failures that reached the provider transport stack"
+    )]
+    #[allow(deprecated)]
     pub fn chain_connection_failed(
         operation: impl Into<Cow<'static, str>>,
         source: TransportError,
     ) -> Self {
         RpcError::ChainConnectionFailed {
+            operation: operation.into(),
+            source,
+        }
+    }
+
+    /// Helper to create a `RequestFailed` error from a transport error.
+    ///
+    /// Use this when the request reached the provider stack but failed with a
+    /// transport- or JSON-RPC-level error that is not necessarily a connection issue.
+    pub fn request_failed(operation: impl Into<Cow<'static, str>>, source: TransportError) -> Self {
+        RpcError::RequestFailed {
             operation: operation.into(),
             source,
         }

@@ -17,7 +17,7 @@ use crate::gas::adapter::{EthereumReceiptAdapter, OptimismReceiptAdapter, Receip
 use crate::gas::calculator::{GasCostCalculator, GasCostResult, GasForTx};
 use crate::tracing::spans;
 use crate::types::gas::BlobCount;
-use tracing::{error, info, trace};
+use tracing::{error, info, trace, Instrument};
 
 /// Type of ERC-20 event for gas calculation
 ///
@@ -121,7 +121,7 @@ mod gas_calc_core {
         transaction: &N::TransactionResponse,
         receipt_effective_gas_price: U256,
     ) -> U256 {
-        if transaction.is_legacy() {
+        if transaction.is_legacy() || transaction.is_eip2930() {
             U256::from(transaction.gas_price().unwrap_or_default())
         } else {
             info!("EIP-1559 or EIP-4844 transaction");
@@ -168,21 +168,29 @@ where
             .ok_or_else(GasCalculationError::missing_transaction_hash)?;
 
         let span = spans::process_event_log(tx_hash);
-        let _guard = span.enter();
+        let (transaction, receipt) = async {
+            let transaction = self
+                .provider
+                .get_transaction_by_hash(tx_hash)
+                .await
+                .map_err(|e| {
+                    RpcError::request_failed(format!("get_transaction_by_hash({tx_hash})"), e)
+                })?
+                .ok_or_else(|| RpcError::TransactionNotFound { tx_hash })?;
 
-        let transaction = self
-            .provider
-            .get_transaction_by_hash(tx_hash)
-            .await
-            .map_err(|e| RpcError::chain_connection_failed("get_transaction_by_hash", e))?
-            .ok_or_else(|| RpcError::TransactionNotFound { tx_hash })?;
+            let receipt = self
+                .provider
+                .get_transaction_receipt(tx_hash)
+                .await
+                .map_err(|e| {
+                    RpcError::request_failed(format!("get_transaction_receipt({tx_hash})"), e)
+                })?
+                .ok_or_else(|| RpcError::ReceiptNotFound { tx_hash })?;
 
-        let receipt = self
-            .provider
-            .get_transaction_receipt(tx_hash)
-            .await
-            .map_err(|e| RpcError::chain_connection_failed("get_transaction_receipt", e))?
-            .ok_or_else(|| RpcError::ReceiptNotFound { tx_hash })?;
+            Ok::<_, GasCalculationError>((transaction, receipt))
+        }
+        .instrument(span)
+        .await?;
 
         let gas_used = adapter.gas_used(&receipt);
         let receipt_effective_gas_price = adapter.effective_gas_price(&receipt);
@@ -254,85 +262,86 @@ where
             from_block,
             to_block,
         );
-        let _guard = span.enter();
+        async {
+            let mut result = GasCostResult::new(chain, topic1_addr, topic2_addr);
+            let mut current_block = from_block;
 
-        let mut result = GasCostResult::new(chain, topic1_addr, topic2_addr);
-        let mut current_block = from_block;
+            let max_block_range = self.config.get_max_block_range(chain);
+            let rate_limit = self.config.get_rate_limit_delay(chain);
 
-        let max_block_range = self.config.get_max_block_range(chain);
-        let rate_limit = self.config.get_rate_limit_delay(chain);
-
-        info!(
-            event_type = event_type.name(),
-            total_blocks = to_block.saturating_sub(from_block) + 1,
-            max_block_range = max_block_range.as_u64(),
-            "Starting log processing"
-        );
-
-        let mut total_logs = 0;
-        let mut chunk_count = 0;
-
-        while current_block <= to_block {
-            let chunk_end = std::cmp::min(current_block + max_block_range.as_u64() - 1, to_block);
-            chunk_count += 1;
-
-            let filter = gas_calc_core::create_event_filter(
-                event_type,
-                current_block,
-                chunk_end,
-                token,
-                topic1_addr,
-                topic2_addr,
-            );
-
-            let logs = self.provider.get_logs(&filter).await.map_err(|e| {
-                RpcError::get_logs_failed(
-                    format!(
-                        "{} events from block {} to {}",
-                        event_type.name(),
-                        current_block,
-                        chunk_end
-                    ),
-                    e,
-                )
-            })?;
-            total_logs += logs.len();
-
-            trace!(
+            info!(
                 event_type = event_type.name(),
-                logs_count = logs.len(),
-                current_block,
-                to_block = chunk_end,
-                chunk = chunk_count,
-                "Fetched logs for gas cost calculation"
+                total_blocks = to_block.saturating_sub(from_block) + 1,
+                max_block_range = max_block_range.as_u64(),
+                "Starting log processing"
             );
 
-            for log in &logs {
-                // Decode and process the log
-                event_type.decode_and_log(log, current_block)?;
-                self.handle_log(log, &mut result, adapter).await?;
-            }
+            let mut total_logs = 0;
+            let mut chunk_count = 0;
 
-            current_block = chunk_end + 1;
+            while current_block <= to_block {
+                let chunk_end =
+                    std::cmp::min(current_block + max_block_range.as_u64() - 1, to_block);
+                chunk_count += 1;
 
-            // Apply rate limiting if configured for this chain
-            if let Some(delay) = rate_limit {
-                if current_block <= to_block {
-                    sleep(delay).await;
+                let filter = gas_calc_core::create_event_filter(
+                    event_type,
+                    current_block,
+                    chunk_end,
+                    token,
+                    topic1_addr,
+                    topic2_addr,
+                );
+
+                let logs = self.provider.get_logs(&filter).await.map_err(|e| {
+                    RpcError::get_logs_failed(
+                        format!(
+                            "{event_name} events from block {current_block} to {chunk_end}",
+                            event_name = event_type.name()
+                        ),
+                        e,
+                    )
+                })?;
+                total_logs += logs.len();
+
+                trace!(
+                    event_type = event_type.name(),
+                    logs_count = logs.len(),
+                    current_block,
+                    to_block = chunk_end,
+                    chunk = chunk_count,
+                    "Fetched logs for gas cost calculation"
+                );
+
+                for log in &logs {
+                    // Decode and process the log
+                    event_type.decode_and_log(log, current_block)?;
+                    self.handle_log(log, &mut result, adapter).await?;
+                }
+
+                current_block = chunk_end + 1;
+
+                // Apply rate limiting if configured for this chain
+                if let Some(delay) = rate_limit {
+                    if current_block <= to_block {
+                        sleep(delay).await;
+                    }
                 }
             }
+
+            info!(
+                event_type = event_type.name(),
+                total_logs,
+                total_chunks = chunk_count,
+                total_transactions = result.transaction_count.as_usize(),
+                total_gas_cost = %result.total_gas_cost,
+                "Completed log processing"
+            );
+
+            Ok(result)
         }
-
-        info!(
-            event_type = event_type.name(),
-            total_logs,
-            total_chunks = chunk_count,
-            total_transactions = result.transaction_count.as_usize(),
-            total_gas_cost = %result.total_gas_cost,
-            "Completed log processing"
-        );
-
-        Ok(result)
+        .instrument(span)
+        .await
     }
 
     /// Handle a single log and update the result
@@ -383,128 +392,130 @@ where
             start_block,
             end_block,
         );
-        let _guard = span.enter();
-
-        info!(
-            event_type = event_type.name(),
-            ?chain,
-            topic1 = %topic1_addr,
-            topic2 = %topic2_addr,
-            start_block,
-            end_block,
-            block_count = end_block.saturating_sub(start_block) + 1,
-            "Starting gas cost calculation"
-        );
-
-        // Check cache and calculate gaps that need to be filled
-        let (cached_result, gaps) = {
-            let cache = self.gas_cache.lock().await;
-            cache.calculate_gaps(chain, topic1_addr, topic2_addr, start_block, end_block)
-        };
-
-        // If there are no gaps, we can return the cached result
-        if let Some(result) = cached_result.clone() {
-            if gaps.is_empty() {
-                info!(
-                    event_type = event_type.name(),
-                    ?chain,
-                    topic1 = %topic1_addr,
-                    topic2 = %topic2_addr,
-                    cached_tx_count = result.transaction_count.as_usize(),
-                    cached_gas_cost = %result.total_gas_cost,
-                    "Using complete cached result for gas cost block range"
-                );
-                return Ok(result);
-            }
-        }
-
-        // Initialize with any cached data or create new result
-        let mut gas_data =
-            cached_result.unwrap_or_else(|| GasCostResult::new(chain, topic1_addr, topic2_addr));
-
-        info!(
-            event_type = event_type.name(),
-            gap_count = gaps.len(),
-            "Processing uncached block ranges"
-        );
-
-        // Process each gap
-        for (gap_index, (gap_start, gap_end)) in gaps.iter().enumerate() {
+        async {
             info!(
                 event_type = event_type.name(),
                 ?chain,
                 topic1 = %topic1_addr,
                 topic2 = %topic2_addr,
-                gap_start,
-                gap_end,
-                gap_index = gap_index + 1,
-                total_gaps = gaps.len(),
-                gap_blocks = gap_end.saturating_sub(*gap_start) + 1,
-                "Processing uncached block range for gas cost"
+                start_block,
+                end_block,
+                block_count = end_block.saturating_sub(start_block) + 1,
+                "Starting gas cost calculation"
             );
 
-            let gap_result = self
-                .process_logs_in_range(
-                    event_type,
-                    chain,
-                    topic1_addr,
-                    topic2_addr,
-                    token,
-                    *gap_start,
-                    *gap_end,
-                    adapter,
-                )
-                .await?;
+            // Check cache and calculate gaps that need to be filled
+            let (cached_result, gaps) = {
+                let cache = self.gas_cache.lock().await;
+                cache.calculate_gaps(chain, topic1_addr, topic2_addr, start_block, end_block)
+            };
 
-            // Cache the gap result
+            // If there are no gaps, we can return the cached result
+            if let Some(result) = cached_result.clone() {
+                if gaps.is_empty() {
+                    info!(
+                        event_type = event_type.name(),
+                        ?chain,
+                        topic1 = %topic1_addr,
+                        topic2 = %topic2_addr,
+                        cached_tx_count = result.transaction_count.as_usize(),
+                        cached_gas_cost = %result.total_gas_cost,
+                        "Using complete cached result for gas cost block range"
+                    );
+                    return Ok(result);
+                }
+            }
+
+            // Initialize with any cached data or create new result
+            let mut gas_data = cached_result
+                .unwrap_or_else(|| GasCostResult::new(chain, topic1_addr, topic2_addr));
+
+            info!(
+                event_type = event_type.name(),
+                gap_count = gaps.len(),
+                "Processing uncached block ranges"
+            );
+
+            // Process each gap
+            for (gap_index, (gap_start, gap_end)) in gaps.iter().enumerate() {
+                info!(
+                    event_type = event_type.name(),
+                    ?chain,
+                    topic1 = %topic1_addr,
+                    topic2 = %topic2_addr,
+                    gap_start,
+                    gap_end,
+                    gap_index = gap_index + 1,
+                    total_gaps = gaps.len(),
+                    gap_blocks = gap_end.saturating_sub(*gap_start) + 1,
+                    "Processing uncached block range for gas cost"
+                );
+
+                let gap_result = self
+                    .process_logs_in_range(
+                        event_type,
+                        chain,
+                        topic1_addr,
+                        topic2_addr,
+                        token,
+                        *gap_start,
+                        *gap_end,
+                        adapter,
+                    )
+                    .await?;
+
+                // Cache the gap result
+                {
+                    let mut cache = self.gas_cache.lock().await;
+                    cache.insert(
+                        topic1_addr,
+                        topic2_addr,
+                        *gap_start,
+                        *gap_end,
+                        gap_result.clone(),
+                    );
+                }
+
+                // Merge the gap result with our main result
+                gas_data.merge(&gap_result);
+
+                info!(
+                    event_type = event_type.name(),
+                    gap_index = gap_index + 1,
+                    gap_tx_count = gap_result.transaction_count.as_usize(),
+                    gap_gas_cost = %gap_result.total_gas_cost,
+                    cumulative_tx_count = gas_data.transaction_count.as_usize(),
+                    cumulative_gas_cost = %gas_data.total_gas_cost,
+                    "Completed gap processing"
+                );
+            }
+
+            // Cache the complete result
             {
                 let mut cache = self.gas_cache.lock().await;
                 cache.insert(
                     topic1_addr,
                     topic2_addr,
-                    *gap_start,
-                    *gap_end,
-                    gap_result.clone(),
+                    start_block,
+                    end_block,
+                    gas_data.clone(),
                 );
             }
 
-            // Merge the gap result with our main result
-            gas_data.merge(&gap_result);
-
             info!(
                 event_type = event_type.name(),
-                gap_index = gap_index + 1,
-                gap_tx_count = gap_result.transaction_count.as_usize(),
-                gap_gas_cost = %gap_result.total_gas_cost,
-                cumulative_tx_count = gas_data.transaction_count.as_usize(),
-                cumulative_gas_cost = %gas_data.total_gas_cost,
-                "Completed gap processing"
+                ?chain,
+                topic1 = %topic1_addr,
+                topic2 = %topic2_addr,
+                total_gas_cost = %gas_data.total_gas_cost,
+                transaction_count = gas_data.transaction_count.as_usize(),
+                "Finished gas cost calculation"
             );
+
+            Ok(gas_data)
         }
-
-        // Cache the complete result
-        {
-            let mut cache = self.gas_cache.lock().await;
-            cache.insert(
-                topic1_addr,
-                topic2_addr,
-                start_block,
-                end_block,
-                gas_data.clone(),
-            );
-        }
-
-        info!(
-            event_type = event_type.name(),
-            ?chain,
-            topic1 = %topic1_addr,
-            topic2 = %topic2_addr,
-            total_gas_cost = %gas_data.total_gas_cost,
-            transaction_count = gas_data.transaction_count.as_usize(),
-            "Finished gas cost calculation"
-        );
-
-        Ok(gas_data)
+        .instrument(span)
+        .await
     }
 }
 
@@ -628,6 +639,8 @@ impl<P: Provider<Optimism>> GasCostCalculator<Optimism, P> {
 mod tests {
     use super::*;
     use alloy_eips::eip4844::DATA_GAS_PER_BLOB;
+    use alloy_primitives::B256;
+    use serde_json::json;
 
     #[test]
     fn test_blob_gas_per_blob_constant() {
@@ -686,5 +699,37 @@ mod tests {
     fn test_event_type_name() {
         assert_eq!(EventType::Transfer.name(), "Transfer");
         assert_eq!(EventType::Approval.name(), "Approval");
+    }
+
+    #[test]
+    fn test_calculate_effective_gas_price_uses_tx_gas_price_for_eip2930() {
+        let transaction: <Ethereum as Network>::TransactionResponse =
+            serde_json::from_value(json!({
+                "hash": B256::repeat_byte(0x11),
+                "nonce": "0x1",
+                "blockHash": B256::repeat_byte(0x22),
+                "blockNumber": "0x2a",
+                "transactionIndex": "0x0",
+                "from": Address::from([0x33; 20]),
+                "to": Address::from([0x44; 20]),
+                "value": "0x0",
+                "gasPrice": "0x539",
+                "gas": "0x5208",
+                "input": "0x",
+                "accessList": [],
+                "chainId": "0x1",
+                "r": B256::repeat_byte(0x55),
+                "s": B256::repeat_byte(0x66),
+                "v": "0x1",
+                "type": "0x1"
+            }))
+            .expect("valid access-list transaction response");
+
+        let effective_gas_price = gas_calc_core::calculate_effective_gas_price::<Ethereum>(
+            &transaction,
+            U256::from(999_u64),
+        );
+
+        assert_eq!(effective_gas_price, U256::from(0x539_u64));
     }
 }

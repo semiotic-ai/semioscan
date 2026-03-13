@@ -10,6 +10,7 @@ This directory contains examples demonstrating the key features of the semioscan
     - [Block Window Calculations](#block-window-calculations)
     - [Token Discovery](#token-discovery)
     - [Gas Calculations](#gas-calculations)
+    - [Diagnostics](#diagnostics)
     - [Custom DEX Integration](#custom-dex-integration)
   - [Configuration](#configuration)
   - [Prerequisites](#prerequisites)
@@ -160,11 +161,57 @@ cargo run --package semioscan --example eip4844_blob_gas
 
 ---
 
+### Diagnostics
+
+**[`zksync_combined_probe.rs`](./zksync_combined_probe.rs)**
+
+Diagnostic probe for zkSync combined retrieval incidents. It compares the
+typed `eth_getTransactionByHash` behavior from semioscan's
+`Ethereum`-typed provider path with a permissive raw transaction decode and
+the full combined retrieval path over the same transfer window.
+
+**Features:**
+
+- Repeated historical tx and receipt lookups for one target tx hash
+- Repeated raw `eth_getTransactionByHash` lookups into `AnyRpcTransaction`
+- semioscan-backed chunked transfer scan for the matching ERC-20 window
+- Full `CombinedCalculator` execution with surfaced partial metadata
+- Optional alternate-provider comparison via `ZKSYNC_PROBE_ALT_RPC_URL`
+
+**Use Cases:**
+
+- Investigating provider-specific zkSync transaction-shape mismatches
+- Confirming whether typed tx lookups fail while raw permissive decoding succeeds
+- Verifying that semioscan's combined fallback matches scanned transfer totals
+- Comparing two zkSync RPC providers against the same historical tx
+
+**Run:**
+
+```bash
+ZKSYNC_RPC_URL=https://your-zksync-rpc \
+cargo run --package semioscan --example zksync_combined_probe
+```
+
+**Key Environment Variables:**
+
+- `ZKSYNC_PROBE_TX_HASH` (defaults to the March 11, 2026 incident tx)
+- `ZKSYNC_PROBE_START_BLOCK`
+- `ZKSYNC_PROBE_END_BLOCK`
+- `ZKSYNC_PROBE_FROM_ADDRESS`
+- `ZKSYNC_PROBE_TO_ADDRESS`
+- `ZKSYNC_PROBE_TOKEN`
+- `ZKSYNC_PROBE_ATTEMPTS` (default: `3`)
+- `ZKSYNC_PROBE_DELAY_MS` (default: `250`)
+- `ZKSYNC_PROBE_ALT_RPC_URL` for side-by-side provider comparison
+
+---
+
 ### Custom DEX Integration
 
 **[`custom_dex_integration.rs`](./custom_dex_integration.rs)**
 
-Template showing how to implement the `PriceSource` trait for any DEX protocol.
+Template/tutorial showing how to implement the `PriceSource` trait for any DEX protocol.
+It compiles as an example, but it is not a turnkey production integration.
 
 **Features:**
 
@@ -206,7 +253,8 @@ cargo run --package semioscan --example custom_dex_integration
 
 **[`chains_config.json`](./chains_config.json)**
 
-Configuration file for multi-chain operations. Defines:
+Reference example data for multi-chain workflows and local experimentation.
+Semioscan does not automatically load this file. Defines:
 
 - RPC endpoints per chain
 - Rate limiting parameters

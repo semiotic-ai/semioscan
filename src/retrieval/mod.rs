@@ -24,5 +24,8 @@ pub use balance::{
 };
 pub use calculator::CombinedCalculator;
 pub use decimal_precision::DecimalPrecision;
-pub use types::CombinedDataResult;
+pub use types::{
+    CombinedDataLookupAttempt, CombinedDataLookupFailure, CombinedDataLookupPass,
+    CombinedDataLookupStage, CombinedDataResult, CombinedDataRetrievalMetadata, GasAndAmountForTx,
+};
 pub use utils::{get_token_decimal_precision, u256_to_bigdecimal};
