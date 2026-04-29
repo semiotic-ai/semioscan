@@ -59,9 +59,6 @@ pub fn create_http_provider(config: ProviderConfig) -> Result<AnyHttpProvider, R
         .parse()
         .map_err(|e| RpcError::ProviderUrlInvalid(format!("{e}")))?;
 
-    // Build the provider based on configuration. We construct `RootProvider`
-    // directly so the returned type carries no fillers, leaving all transaction
-    // population to consumers.
     match (config.rate_limit_per_second, config.min_delay) {
         // Rate limit
         (Some(rps), None) => {
@@ -138,8 +135,6 @@ pub async fn create_ws_provider(
 
     let ws = WsConnect::new(&config.url);
 
-    // Build provider with optional layers. Construct `RootProvider` directly so
-    // the returned type carries no fillers.
     let client = match config.rate_limit_per_second {
         Some(rps) => ClientBuilder::default()
             .layer(RateLimitLayer::per_second(rps))
@@ -186,8 +181,6 @@ where
         .parse()
         .map_err(|e| RpcError::ProviderUrlInvalid(format!("{e}")))?;
 
-    // Construct `RootProvider` directly to avoid pulling in network-specific
-    // recommended fillers. The caller is responsible for any filler stack.
     match config.rate_limit_per_second {
         Some(rps) => {
             let client = ClientBuilder::default()
