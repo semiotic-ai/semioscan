@@ -5,7 +5,7 @@
 //! Provider factory functions for creating type-erased providers
 
 use alloy_network::AnyNetwork;
-use alloy_provider::ProviderBuilder;
+use alloy_provider::RootProvider;
 use alloy_rpc_client::ClientBuilder;
 
 use crate::errors::RpcError;
@@ -59,8 +59,9 @@ pub fn create_http_provider(config: ProviderConfig) -> Result<AnyHttpProvider, R
         .parse()
         .map_err(|e| RpcError::ProviderUrlInvalid(format!("{e}")))?;
 
-    // Build the provider based on configuration
-    // We disable recommended fillers to return a RootProvider for maximum flexibility
+    // Build the provider based on configuration. We construct `RootProvider`
+    // directly so the returned type carries no fillers, leaving all transaction
+    // population to consumers.
     match (config.rate_limit_per_second, config.min_delay) {
         // Rate limit
         (Some(rps), None) => {
@@ -68,10 +69,7 @@ pub fn create_http_provider(config: ProviderConfig) -> Result<AnyHttpProvider, R
                 .layer(RateLimitLayer::per_second(rps))
                 .http(url);
 
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<AnyNetwork>()
-                .connect_client(client))
+            Ok(RootProvider::<AnyNetwork>::new(client))
         }
 
         // Min delay
@@ -80,17 +78,11 @@ pub fn create_http_provider(config: ProviderConfig) -> Result<AnyHttpProvider, R
                 .layer(RateLimitLayer::with_min_delay(delay))
                 .http(url);
 
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<AnyNetwork>()
-                .connect_client(client))
+            Ok(RootProvider::<AnyNetwork>::new(client))
         }
 
         // No layers
-        (None, None) => Ok(ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .network::<AnyNetwork>()
-            .connect_http(url)),
+        (None, None) => Ok(RootProvider::<AnyNetwork>::new_http(url)),
 
         // Both rate limit and min delay (prefer rate limit)
         (Some(rps), Some(_)) => {
@@ -146,29 +138,22 @@ pub async fn create_ws_provider(
 
     let ws = WsConnect::new(&config.url);
 
-    // Build provider with optional layers
-    // We disable recommended fillers to return a RootProvider
-    match config.rate_limit_per_second {
-        Some(rps) => {
-            let client = ClientBuilder::default()
-                .layer(RateLimitLayer::per_second(rps))
-                .ws(ws)
-                .await
-                .map_err(|e| RpcError::ProviderConnectionFailed(e.to_string()))?;
-
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<AnyNetwork>()
-                .connect_client(client))
-        }
-
-        None => ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .network::<AnyNetwork>()
-            .connect_ws(ws)
+    // Build provider with optional layers. Construct `RootProvider` directly so
+    // the returned type carries no fillers.
+    let client = match config.rate_limit_per_second {
+        Some(rps) => ClientBuilder::default()
+            .layer(RateLimitLayer::per_second(rps))
+            .ws(ws)
             .await
-            .map_err(|e| RpcError::ProviderConnectionFailed(e.to_string())),
-    }
+            .map_err(|e| RpcError::ProviderConnectionFailed(e.to_string()))?,
+
+        None => ClientBuilder::default()
+            .ws(ws)
+            .await
+            .map_err(|e| RpcError::ProviderConnectionFailed(e.to_string()))?,
+    };
+
+    Ok(RootProvider::<AnyNetwork>::new(client))
 }
 
 /// Create an HTTP provider with specific network type
@@ -201,24 +186,18 @@ where
         .parse()
         .map_err(|e| RpcError::ProviderUrlInvalid(format!("{e}")))?;
 
-    // Build the provider based on configuration
-    // We disable recommended fillers to return a RootProvider
+    // Construct `RootProvider` directly to avoid pulling in network-specific
+    // recommended fillers. The caller is responsible for any filler stack.
     match config.rate_limit_per_second {
         Some(rps) => {
             let client = ClientBuilder::default()
                 .layer(RateLimitLayer::per_second(rps))
                 .http(url);
 
-            Ok(ProviderBuilder::new()
-                .disable_recommended_fillers()
-                .network::<N>()
-                .connect_client(client))
+            Ok(RootProvider::<N>::new(client))
         }
 
-        None => Ok(ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .network::<N>()
-            .connect_http(url)),
+        None => Ok(RootProvider::<N>::new_http(url)),
     }
 }
 

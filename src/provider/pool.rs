@@ -80,7 +80,7 @@
 
 use alloy_chains::NamedChain;
 use alloy_network::AnyNetwork;
-use alloy_provider::{ProviderBuilder, RootProvider};
+use alloy_provider::RootProvider;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tracing::{debug, info, warn};
@@ -431,12 +431,7 @@ fn create_pooled_provider(
 
     // Create a bare provider without fillers - fillers are application-specific
     // and should be added by consumers if needed
-    let provider = ProviderBuilder::new()
-        .disable_recommended_fillers()
-        .network::<AnyNetwork>()
-        .connect_client(client);
-
-    Ok(provider)
+    Ok(RootProvider::<AnyNetwork>::new(client))
 }
 
 #[cfg(test)]

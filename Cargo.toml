@@ -20,27 +20,27 @@ odos-example = ["dep:odos-sdk"]
 [dependencies]
 # Core blockchain dependencies (always required)
 alloy-chains = { version = "0.2", features = ["serde"] }
-alloy-consensus = { version = "1.7", default-features = false }
-alloy-contract = { version = "1.7", default-features = false }
+alloy-consensus = { version = "2.0", default-features = false }
+alloy-contract = { version = "2.0", default-features = false }
 alloy-dyn-abi = { version = "1.5", default-features = false }
-alloy-json-rpc = "1.7"
-alloy-eips = { version = "1.7", default-features = false }
-alloy-erc20 = { version = "1.1", default-features = false }
-alloy-network = { version = "1.7", default-features = false }
+alloy-json-rpc = "2.0"
+alloy-eips = { version = "2.0", default-features = false }
+alloy-erc20 = { version = "2.0", default-features = false }
+alloy-network = { version = "2.0", default-features = false }
 alloy-primitives = { version = "1.5", default-features = false, features = [
     "std",
     "rlp",
 ] }
-alloy-provider = { version = "1.7", default-features = false, features = [
+alloy-provider = { version = "2.0", default-features = false, features = [
     "anvil-node",
     "reqwest",
 ] }
-alloy-rpc-client = "1.7"
-alloy-rpc-types = "1.7"
+alloy-rpc-client = "2.0"
+alloy-rpc-types = "2.0"
 alloy-sol-types = { version = "1.5", features = ["json"] }
 alloy-sol-type-parser = "1.5"
-alloy-transport = "1.7"
-alloy-transport-http = { version = "1.7", default-features = false, features = [
+alloy-transport = "2.0"
+alloy-transport-http = { version = "2.0", default-features = false, features = [
     "reqwest",
 ] }
 async-trait = "0.1"
@@ -51,7 +51,7 @@ futures = { version = "0.3", default-features = false, features = [
 ] }
 bigdecimal = { version = "0.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-op-alloy-network = "0.24"
+op-alloy-network = "2.0"
 url = { version = "2.5", default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -61,15 +61,15 @@ tower = { version = "0.5", default-features = false }
 tracing = "0.1"
 
 # Optional: Odos DEX price source example (feature: odos-example)
-odos-sdk = { version = "4.0", features = [
+odos-sdk = { version = "6.0", features = [
     "v2",
     "v3",
     "limit-orders",
 ], optional = true }
 
 [dev-dependencies]
-alloy-consensus = "1.7"
-alloy-transport = "1.7"
+alloy-consensus = "2.0"
+alloy-transport = "2.0"
 anyhow = "1.0"
 async-trait = "0.1"
 dotenvy = "0.15"
