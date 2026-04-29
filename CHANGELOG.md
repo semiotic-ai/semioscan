@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-04-29
+
+### Changed
+
+- Upgraded `alloy` crates to 2.0 (and `op-alloy-network` to 2.0). Consumers must update their own `alloy` dependency to 2.0 to use this version.
+- Upgraded `odos-sdk` to 6.0 (only affects consumers using the `odos-example` feature).
+- `create_typed_http_provider<N>` no longer requires `N: RecommendedFillers`; the helper now produces a bare `RootProvider<N>` for any `N: Network`.
+
 ## [0.10.1] - 2026-04-10
 
 ### Changed
