@@ -454,20 +454,8 @@ impl SemioscanConfigBuilder {
     ///     .chain_rate_limit(NamedChain::Arbitrum, Duration::from_millis(100))
     ///     .build();
     /// ```
-    pub fn chain_rate_limit(mut self, chain: NamedChain, delay: Duration) -> Self {
-        let existing = self
-            .config
-            .chain_overrides
-            .remove(&chain)
-            .unwrap_or_default();
-        let chain_config = ChainConfig {
-            max_block_range: existing.max_block_range,
-            rate_limit_delay: Some(delay),
-            rpc_timeout: existing.rpc_timeout,
-            serial_lookup_fallback_attempts: existing.serial_lookup_fallback_attempts,
-        };
-        self.config.set_chain_override(chain, chain_config);
-        self
+    pub fn chain_rate_limit(self, chain: NamedChain, delay: Duration) -> Self {
+        self.modify_chain(chain, |c| c.rate_limit_delay = Some(delay))
     }
 
     /// Convenience: set max block range for a specific chain
@@ -482,20 +470,8 @@ impl SemioscanConfigBuilder {
     ///     .chain_max_blocks(NamedChain::Polygon, 1000)
     ///     .build();
     /// ```
-    pub fn chain_max_blocks(mut self, chain: NamedChain, max: u64) -> Self {
-        let existing = self
-            .config
-            .chain_overrides
-            .remove(&chain)
-            .unwrap_or_default();
-        let chain_config = ChainConfig {
-            max_block_range: Some(MaxBlockRange::new(max)),
-            rate_limit_delay: existing.rate_limit_delay,
-            rpc_timeout: existing.rpc_timeout,
-            serial_lookup_fallback_attempts: existing.serial_lookup_fallback_attempts,
-        };
-        self.config.set_chain_override(chain, chain_config);
-        self
+    pub fn chain_max_blocks(self, chain: NamedChain, max: u64) -> Self {
+        self.modify_chain(chain, |c| c.max_block_range = Some(MaxBlockRange::new(max)))
     }
 
     /// Convenience: set RPC timeout for a specific chain
@@ -511,42 +487,21 @@ impl SemioscanConfigBuilder {
     ///     .chain_timeout(NamedChain::Polygon, Duration::from_secs(60))
     ///     .build();
     /// ```
-    pub fn chain_timeout(mut self, chain: NamedChain, timeout: Duration) -> Self {
-        let existing = self
-            .config
-            .chain_overrides
-            .remove(&chain)
-            .unwrap_or_default();
-        let chain_config = ChainConfig {
-            max_block_range: existing.max_block_range,
-            rate_limit_delay: existing.rate_limit_delay,
-            rpc_timeout: Some(timeout),
-            serial_lookup_fallback_attempts: existing.serial_lookup_fallback_attempts,
-        };
-        self.config.set_chain_override(chain, chain_config);
-        self
+    pub fn chain_timeout(self, chain: NamedChain, timeout: Duration) -> Self {
+        self.modify_chain(chain, |c| c.rpc_timeout = Some(timeout))
     }
 
     /// Convenience: set serial tx/receipt enrichment fallback attempts for a specific chain.
     ///
     /// `0` disables the serial fallback pass for that chain.
-    pub fn chain_serial_lookup_fallback_attempts(
-        mut self,
-        chain: NamedChain,
-        attempts: usize,
-    ) -> Self {
-        let existing = self
-            .config
-            .chain_overrides
-            .remove(&chain)
-            .unwrap_or_default();
-        let chain_config = ChainConfig {
-            max_block_range: existing.max_block_range,
-            rate_limit_delay: existing.rate_limit_delay,
-            rpc_timeout: existing.rpc_timeout,
-            serial_lookup_fallback_attempts: Some(attempts),
-        };
-        self.config.set_chain_override(chain, chain_config);
+    pub fn chain_serial_lookup_fallback_attempts(self, chain: NamedChain, attempts: usize) -> Self {
+        self.modify_chain(chain, |c| {
+            c.serial_lookup_fallback_attempts = Some(attempts)
+        })
+    }
+
+    fn modify_chain<F: FnOnce(&mut ChainConfig)>(mut self, chain: NamedChain, f: F) -> Self {
+        f(self.config.chain_overrides.entry(chain).or_default());
         self
     }
 
