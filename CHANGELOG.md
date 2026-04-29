@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-04-29
+
+### Changed
+
+- Upgraded `odos-sdk` to 8.0 (only affects consumers using the `odos-example` feature).
+
 ## [0.11.0] - 2026-04-29
 
 ### Changed

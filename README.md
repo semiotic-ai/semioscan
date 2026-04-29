@@ -92,7 +92,7 @@ Add semioscan to your `Cargo.toml`:
 semioscan = "0.11"
 
 # With Odos DEX reference implementation (optional)
-semioscan = { version = "0.10", features = ["odos-example"] }
+semioscan = { version = "0.11", features = ["odos-example"] }
 ```
 
 ### Feature Flags
