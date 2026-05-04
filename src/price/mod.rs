@@ -82,13 +82,12 @@ use alloy_primitives::{Address, BlockNumber, B256, U256};
 use alloy_rpc_types::Log;
 use serde::Serialize;
 
-// Re-export PriceSourceError from types module
 pub use crate::types::price::PriceSourceError;
 
 pub mod cache;
 pub mod calculator;
 
-pub use calculator::*;
+pub use calculator::{PriceCalculator, RawSwapResult, TokenPriceResult};
 
 /// Represents a single token swap extracted from on-chain events
 ///
