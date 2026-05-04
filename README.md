@@ -88,16 +88,12 @@ Add semioscan to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-# Core library (gas, block windows, events)
-semioscan = "0.11"
-
-# With Odos DEX reference implementation (optional)
-semioscan = { version = "0.11", features = ["odos-example"] }
+semioscan = "0.12"
 ```
 
 ### Feature Flags
 
-- **`odos-example`**: Includes `OdosPriceSource` as a reference implementation of the `PriceSource` trait for Odos DEX aggregator (optional, not included by default)
+- **`ws`**: Enables WebSocket transport (`alloy-provider/pubsub` + `ws`) and `create_ws_provider` for streaming event subscriptions
 
 ## Quick Start
 
@@ -177,41 +173,7 @@ async fn main() -> anyhow::Result<()> {
 
 ### 3. Extract DEX Price Data
 
-Use the `PriceSource` trait to extract price data from on-chain swap events:
-
-```rust
-use semioscan::price::odos::OdosPriceSource;  // requires "odos-example" feature
-use semioscan::PriceCalculator;
-use alloy_provider::ProviderBuilder;
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Create provider
-    let provider = ProviderBuilder::new()
-        .connect_http("https://arb1.arbitrum.io/rpc".parse()?);
-
-    // Create Odos price source for V2 router
-    let router_address = "0xa669e7A0d4b3e4Fa48af2dE86BD4CD7126Be4e13".parse()?;
-    let price_source = OdosPriceSource::new(router_address);
-
-    // Create price calculator with the price source
-    let calculator = PriceCalculator::with_price_source(
-        provider.clone(),
-        Box::new(price_source)
-    );
-
-    // Calculate average price for a token over a block range
-    let token_address = "0x789...".parse()?;
-    let result = calculator
-        .get_price(token_address, 200_000_000, 200_001_000)
-        .await?;
-
-    println!("Average price: {}", result.average_price);
-    println!("Total volume: {}", result.total_volume_in);
-
-    Ok(())
-}
-```
+The `PriceSource` trait is the integration point for any DEX. Implement it for your protocol and pass it to `PriceCalculator`. See [`examples/custom_dex_integration.rs`](examples/custom_dex_integration.rs) for a fully worked Uniswap V3 template — adapt it to Curve, Balancer, SushiSwap, 1inch, or any other DEX. The [Implementing Custom Price Sources](#implementing-custom-price-sources) section below walks through the pattern.
 
 ## Examples and Tutorials
 
@@ -222,7 +184,6 @@ The [`examples/`](examples/) directory contains complete, production-ready examp
 | Example | Use Case | Difficulty |
 |---------|----------|------------|
 | [`daily_block_window.rs`](examples/daily_block_window.rs) | Map UTC dates to block ranges | Beginner |
-| [`router_token_discovery.rs`](examples/router_token_discovery.rs) | Discover tokens sent to router contracts | Intermediate |
 | [`eip4844_blob_gas.rs`](examples/eip4844_blob_gas.rs) | Calculate EIP-4844 blob gas for L2 rollups | Advanced |
 | [`zksync_combined_probe.rs`](examples/zksync_combined_probe.rs) | Diagnose zkSync typed tx lookup failures, permissive raw decode, and combined fallback behavior | Advanced |
 | [`custom_dex_integration.rs`](examples/custom_dex_integration.rs) | Implement `PriceSource` for any DEX | Advanced |
@@ -232,9 +193,6 @@ The [`examples/`](examples/) directory contains complete, production-ready examp
 ```bash
 # Basic usage
 RPC_URL=https://arb1.arbitrum.io/rpc cargo run --example daily_block_window
-
-# With chain-specific environment variables
-ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc cargo run --example router_token_discovery -- arbitrum
 
 # With logging for debugging
 RUST_LOG=debug cargo run --example eip4844_blob_gas
@@ -580,12 +538,11 @@ Examples demonstrate real-world usage with live blockchain connections:
 RPC_URL=https://arb1.arbitrum.io/rpc cargo run --package semioscan --example daily_block_window
 
 # Run with logging
-RUST_LOG=info RPC_URL=https://arb1.arbitrum.io/rpc cargo run --package semioscan --example router_token_discovery
+RUST_LOG=info RPC_URL=https://arb1.arbitrum.io/rpc cargo run --package semioscan --example daily_block_window
 
-# Run with chain-specific configuration
-ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc \
-API_KEY=your_api_key \
-cargo run --package semioscan --example router_token_discovery -- arbitrum
+# Diagnose zkSync combined retrieval behavior
+ZKSYNC_RPC_URL=https://your-zksync-rpc \
+cargo run --package semioscan --example zksync_combined_probe
 ```
 
 **For detailed example documentation, see [examples/README.md](examples/README.md).**

@@ -188,14 +188,8 @@ impl<P: Provider + Clone> PriceCalculator<P> {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// use semioscan::price::odos::OdosPriceSource;
-    /// use semioscan::price_calculator::PriceCalculator;
-    ///
-    /// let price_source = OdosPriceSource::new(router_address)
-    ///     .with_liquidator_filter(liquidator_address);
-    /// let calculator = PriceCalculator::new(provider, usdc_address, Box::new(price_source));
-    /// ```
+    /// See [`examples/custom_dex_integration.rs`](https://github.com/semiotic-ai/semioscan/blob/main/examples/custom_dex_integration.rs)
+    /// for a complete `PriceSource` implementation that can be passed in here.
     pub fn new(
         provider: P,
         chain: NamedChain,

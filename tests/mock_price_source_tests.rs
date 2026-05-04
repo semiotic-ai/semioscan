@@ -9,8 +9,6 @@
 //! Note: Full PriceCalculator integration tests require a Provider implementation
 //! and are validated through examples/ that connect to real blockchain networks.
 
-#![cfg(feature = "odos-example")]
-
 mod helpers;
 
 use alloy_primitives::address;

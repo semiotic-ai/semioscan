@@ -300,7 +300,7 @@ fn main() {
     println!("  - PoolId identifies specific pools");
     println!("  - Multi-token swaps possible\n");
 
-    println!("Aggregators (1inch, Odos, etc.):");
+    println!("Aggregators (1inch, etc.):");
     println!("  - Router address for all swaps");
     println!("  - Filter by specific tokens");
     println!("  - May have multiple event types\n");
@@ -315,5 +315,4 @@ fn main() {
     println!("=== Additional Resources ===\n");
     println!("- Alloy docs: https://alloy.rs");
     println!("- Semioscan examples: crates/semioscan/examples/");
-    println!("- Odos implementation: crates/semioscan/src/price/odos.rs");
 }

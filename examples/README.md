@@ -8,7 +8,6 @@ This directory contains examples demonstrating the key features of the semioscan
   - [Table of Contents](#table-of-contents)
   - [Rust Examples](#rust-examples)
     - [Block Window Calculations](#block-window-calculations)
-    - [Token Discovery](#token-discovery)
     - [Gas Calculations](#gas-calculations)
     - [Diagnostics](#diagnostics)
     - [Custom DEX Integration](#custom-dex-integration)
@@ -70,52 +69,6 @@ cargo run --package semioscan --example daily_block_window
 - Block windows map calendar dates to blockchain block ranges
 - Different chains have different block production rates
 - Caching saves expensive RPC calls
-
----
-
-### Token Discovery
-
-**[`router_token_discovery.rs`](./router_token_discovery.rs)**
-
-Discovers all tokens transferred to a router contract, useful for liquidation systems and token inventory management.
-
-**Features:**
-
-- Scan blockchain for ERC-20 Transfer events
-- Discover tokens sent to specific addresses
-- Handle rate limiting and chunking automatically
-- Compare token sets across time periods
-
-**Use Cases:**
-
-- **Liquidation Systems**: Discover tokens that need to be liquidated from router contracts
-- **Token Inventory**: Track all tokens sent to a contract
-- **Analytics**: Analyze token flow patterns
-- **Monitoring**: Alert when new tokens appear
-
-**Run:**
-
-```bash
-# Arbitrum Odos router
-ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc/ \
-cargo run --package semioscan --example router_token_discovery -- arbitrum
-
-# Base Odos router
-BASE_RPC_URL=https://mainnet.base.org \
-cargo run --package semioscan --example router_token_discovery -- base
-
-# Custom block range
-ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc/ \
-START_BLOCK=270000000 \
-END_BLOCK=270010000 \
-cargo run --package semioscan --example router_token_discovery -- arbitrum --custom-range
-```
-
-**Key Concepts:**
-
-- Transfer events reveal token movements
-- Deduplication provides unique token set
-- Large block ranges require chunking and rate limiting
 
 ---
 
@@ -451,7 +404,7 @@ Examples demonstrate caching strategies:
 
 ## Example Workflow
 
-Complete workflow for analyzing liquidations on Arbitrum:
+Complete workflow for date-driven blockchain analytics on Arbitrum:
 
 ```bash
 # 1. Calculate block window for specific day
@@ -461,14 +414,8 @@ DAY=2025-10-15 \
 CACHE_PATH=block_windows.json \
 cargo run --package semioscan --example daily_block_window
 
-# 2. Discover tokens in router
-ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc/ \
-START_BLOCK=<from_step_1> \
-END_BLOCK=<from_step_1> \
-cargo run --package semioscan --example router_token_discovery -- arbitrum --custom-range
-
-# 3. Generate multi-chain report
-./examples/multi_chain_daily_report.sh
+# 2. Feed the resulting block range into your own application
+#    (gas calculation, custom PriceSource scans, etc.)
 ```
 
 ---

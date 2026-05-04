@@ -75,16 +75,8 @@
 //! }
 //! ```
 //!
-//! # Odos Example Implementation
-//!
-//! An Odos DEX implementation is available behind the `odos-example` feature flag:
-//!
-//! ```toml
-//! [dependencies]
-//! semioscan = { version = "0.2", features = ["odos-example"] }
-//! ```
-//!
-//! See [`odos::OdosPriceSource`] for implementation details.
+//! See [`examples/custom_dex_integration.rs`](https://github.com/semiotic-ai/semioscan/blob/main/examples/custom_dex_integration.rs)
+//! for a complete reference implementation.
 
 use alloy_primitives::{Address, BlockNumber, B256, U256};
 use alloy_rpc_types::Log;
@@ -93,15 +85,9 @@ use serde::Serialize;
 // Re-export PriceSourceError from types module
 pub use crate::types::price::PriceSourceError;
 
-#[cfg(feature = "odos-example")]
 pub mod cache;
-#[cfg(feature = "odos-example")]
 pub mod calculator;
-#[cfg(feature = "odos-example")]
-pub mod odos;
 
-// Re-export calculator types when feature is enabled
-#[cfg(feature = "odos-example")]
 pub use calculator::*;
 
 /// Represents a single token swap extracted from on-chain events
@@ -152,7 +138,7 @@ pub trait PriceSource: Send + Sync {
     /// Returns the contract address to scan for swap events
     ///
     /// For DEXes like Uniswap, this is typically the pool address.
-    /// For aggregators like Odos, this is the router address.
+    /// For aggregators, this is typically the router address.
     fn router_address(&self) -> Address;
 
     /// Returns the event topic hashes to filter for

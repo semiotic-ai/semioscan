@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-05-04
+
+### Breaking Changes
+
+- Removed the `odos-example` feature and the `odos-sdk` dependency. `OdosPriceSource`, the `RouterType` re-export, and the `router_token_discovery` example are deleted. Consumers that need Odos integration should vendor `OdosPriceSource` from a prior tag (last available in `v0.11.3` at `src/price/odos.rs`) into their own crate.
+- `PriceCalculator`, `RawSwapResult`, `TokenPriceResult`, and `price::cache` are no longer feature-gated and are now part of the always-on public API.
+- `RouterType` is no longer re-exported from `semioscan`. Import it from `odos-sdk` directly if needed.
+
 ## [0.11.3] - 2026-05-04
 
 ### Changed

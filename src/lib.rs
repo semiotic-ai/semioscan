@@ -66,13 +66,9 @@ pub use gas::cache::GasCache;
 pub use gas::{EventType, GasCostCalculator, GasCostResult, GasForTx};
 
 // === Price Extraction (from price/) ===
-// Core trait and types are always available
-pub use price::{PriceSource, PriceSourceError, SwapData};
-// Calculator is feature-gated
-#[cfg(feature = "odos-example")]
-pub use price::odos::OdosPriceSource;
-#[cfg(feature = "odos-example")]
-pub use price::{PriceCalculator, RawSwapResult, TokenPriceResult};
+pub use price::{
+    PriceCalculator, PriceSource, PriceSourceError, RawSwapResult, SwapData, TokenPriceResult,
+};
 
 // === Block Windows (from blocks/) ===
 pub use blocks::{
@@ -113,10 +109,6 @@ pub use provider::{
     ChainEndpoint, DynProviderBuilder, EthereumHttpProvider, NetworkType, OptimismHttpProvider,
     PooledProvider, ProviderConfig, ProviderPool, ProviderPoolBuilder, SharedProvider,
 };
-
-// Re-export RouterType from odos-sdk for convenience
-#[cfg(feature = "odos-example")]
-pub use odos_sdk::RouterType;
 
 // Note: Cache internals (cache::BlockRangeCache) and tracing spans are NOT re-exported
 // as they are implementation details. Users can access them via fully-qualified paths if needed.
