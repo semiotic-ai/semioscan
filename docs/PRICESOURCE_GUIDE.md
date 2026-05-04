@@ -16,9 +16,9 @@ This guide teaches you how to implement the `PriceSource` trait to add support f
 
 The `PriceSource` trait is the core extensibility mechanism in semioscan for extracting price data from DEX swap events. By implementing this trait, you can add support for:
 
-- **DEX Aggregators** (Odos, 1inch, Cowswap)
+- **DEX Aggregators** (1inch, Cowswap, etc.)
 - **AMM Protocols** (Uniswap V2/V3, Curve, Balancer)
-- **Limit Order DEXes** (Odos LO routers)
+- **Limit Order DEXes**
 - **Custom Trading Protocols**
 
 ### Why Trait-Based?
@@ -328,7 +328,7 @@ impl PriceSource for UniswapV3PriceSource {
 }
 ```
 
-### Example 2: Multi-Token Swaps (Odos Pattern)
+### Example 2: Multi-Token Swaps
 
 For DEX aggregators that support multi-token swaps:
 
@@ -764,8 +764,8 @@ let token_in = event.tokens[0];
 ## Next Steps
 
 1. **Study the reference implementations**:
-   - `OdosPriceSource` in `src/price/odos.rs`
-   - Uniswap V3 example in `src/price/mod.rs` docs
+   - Uniswap V3 template in `examples/custom_dex_integration.rs`
+   - Inline Uniswap V3 example in `src/price/mod.rs` docs
 
 2. **Try implementing a price source for your DEX**:
    - Start with a simple single-event protocol
