@@ -21,12 +21,12 @@ ws = ["alloy-provider/pubsub", "alloy-provider/ws"]
 alloy-chains = { version = "0.2", features = ["serde"] }
 alloy-consensus = { version = "2.0", default-features = false }
 alloy-contract = { version = "2.0", default-features = false }
-alloy-dyn-abi = { version = "1.5", default-features = false }
+alloy-dyn-abi = { version = "1.6", default-features = false }
 alloy-json-rpc = "2.0"
 alloy-eips = { version = "2.0", default-features = false }
 alloy-erc20 = { version = "2.0", default-features = false }
 alloy-network = { version = "2.0", default-features = false }
-alloy-primitives = { version = "1.5", default-features = false, features = [
+alloy-primitives = { version = "1.6", default-features = false, features = [
     "std",
     "rlp",
 ] }
@@ -36,8 +36,8 @@ alloy-provider = { version = "2.0", default-features = false, features = [
 ] }
 alloy-rpc-client = "2.0"
 alloy-rpc-types = "2.0"
-alloy-sol-types = { version = "1.5", features = ["json"] }
-alloy-sol-type-parser = "1.5"
+alloy-sol-types = { version = "1.6", features = ["json"] }
+alloy-sol-type-parser = "1.6"
 alloy-transport = "2.0"
 alloy-transport-http = { version = "2.0", default-features = false, features = [
     "reqwest",
